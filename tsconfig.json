@@ -1,0 +1,19 @@
+{
+  "// note": "allowJs baseline (RTV-19) — the code is still JavaScript (ESM). strict is intentionally OFF; it is tightened during the .js->.ts conversion (RTV-21..24). NodeNext: relative imports need explicit .js extensions even in .ts source.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowJs": true,
+    "checkJs": false,
+    "strict": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "outDir": "dist",
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["**/*.js", "**/*.ts"],
+  "exclude": ["node_modules", "dist", "coverage", "tests", "website", "seeds", "data"]
+}

@@ -1,0 +1,116 @@
+# =============================================================================
+# Continuous Integration — retrieva-backend (L0 lint/types + L1 unit + L2 integration)
+# =============================================================================
+# The vitest suite is the safety net for the JS->TS migration (RTV-21..24); it
+# must stay green from the split forward. Postgres/Drizzle only (Mongo removed at
+# RTV-49); integration tests also use @testcontainers/postgresql (Docker on the runner).
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'website/**'
+      - '*.md'
+      - 'bmad/**'
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+env:
+  NODE_VERSION: '20.x'
+
+jobs:
+  test:
+    name: Lint + Typecheck + Tests
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6378:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: retrieva
+          POSTGRES_PASSWORD: retrieva
+          POSTGRES_DB: retrieva_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U retrieva"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: './package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Typecheck (allowJs baseline)
+        run: npm run typecheck
+
+      - name: Unit + integration tests
+        run: npm run test:coverage
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://retrieva:retrieva@localhost:5432/retrieva_test
+          REDIS_URL: redis://localhost:6378
+          REDIS_HOST: localhost
+          REDIS_PORT: 6378
+          JWT_ACCESS_SECRET: test-access-secret-key-that-is-at-least-32-characters-long
+          JWT_REFRESH_SECRET: test-refresh-secret-key-that-is-at-least-32-characters-long
+          JWT_ACCESS_EXPIRY: 15m
+          JWT_REFRESH_EXPIRY: 7d
+          ENCRYPTION_KEY: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2
+
+  docker-build:
+    name: Docker Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
+      - name: Build image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          tags: retrieva-backend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  ci-success:
+    name: CI Success
+    needs: [test, docker-build]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+          DOCKER_RESULT: ${{ needs.docker-build.result }}
+        run: |
+          fail=0
+          for name in TEST DOCKER; do
+            var="${name}_RESULT"; r="${!var}"
+            if [[ "$r" != "success" ]]; then echo "$name job did not pass (result=$r)"; fail=1; fi
+          done
+          [[ $fail -eq 0 ]] && echo "All CI checks passed." || exit 1

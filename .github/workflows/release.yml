@@ -1,0 +1,26 @@
+# =============================================================================
+# Release — release-please (retrieva-backend)
+# =============================================================================
+# On every push to main, release-please opens/updates a release PR that bumps
+# package.json + CHANGELOG.md from conventional commits. Merging that PR creates
+# the git tag (vX.Y.Z) + a GitHub Release. Zero manual steps.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
