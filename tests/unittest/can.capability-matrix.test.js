@@ -101,3 +101,49 @@ describe('can() — resolver behaviour', () => {
     expect(findByUser).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('can() — RTV-54 scope matching', () => {
+  const A = 'entity-a';
+  const B = 'entity-b';
+  beforeEach(() => findByUser.mockReset());
+
+  it('no resource → action-only (RTV-53 back-compat)', async () => {
+    findByUser.mockResolvedValue([{ role: 'analyst', scopeType: 'entity', scopeId: A }]);
+    expect(await can({ userId: 'u' }, 'assessment:edit')).toBe(true);
+  });
+
+  it('resource in the held entity → allow; other entity → deny', async () => {
+    findByUser.mockResolvedValue([{ role: 'analyst', scopeType: 'entity', scopeId: A }]);
+    const user = { userId: 'u' };
+    expect(await can(user, 'assessment:edit', { entityId: A })).toBe(true);
+    expect(await can(user, 'assessment:edit', { entityId: B })).toBe(false);
+  });
+
+  it('matches on resource.organizationId too', async () => {
+    findByUser.mockResolvedValue([{ role: 'analyst', scopeType: 'entity', scopeId: A }]);
+    expect(await can({ userId: 'u' }, 'assessment:read', { organizationId: B })).toBe(false);
+  });
+
+  it('home org (user.organizationId) is in scope even without an assignment row', async () => {
+    findByUser.mockResolvedValue([{ role: 'analyst', scopeType: 'entity', scopeId: A }]);
+    expect(await can({ userId: 'u', organizationId: B }, 'assessment:read', { entityId: B })).toBe(
+      true
+    );
+  });
+
+  it('group role → read-across any entity', async () => {
+    findByUser.mockResolvedValue([{ role: 'group_risk', scopeType: 'entity', scopeId: A }]);
+    expect(await can({ userId: 'u' }, 'finding:read', { entityId: B })).toBe(true);
+  });
+
+  it('platform_admin → any entity (short-circuits)', async () => {
+    expect(
+      await can({ userId: 'u', platformAdmin: true }, 'finding:approve', { entityId: B })
+    ).toBe(true);
+  });
+
+  it('action-deny still wins over scope (analyst cannot approve, even in its entity)', async () => {
+    findByUser.mockResolvedValue([{ role: 'analyst', scopeType: 'entity', scopeId: A }]);
+    expect(await can({ userId: 'u' }, 'finding:approve', { entityId: A })).toBe(false);
+  });
+});

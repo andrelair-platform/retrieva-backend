@@ -7,6 +7,7 @@
 import { and, eq, gte, lte, isNotNull, inArray, sql, desc } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
 import { workspaces } from '../../db/schema/index.js';
+import { entityScopeCondition } from '../../services/security/entityScope.js';
 
 export class WorkspaceRepository extends BaseDrizzleRepository {
   constructor(opts = {}) {
@@ -14,9 +15,13 @@ export class WorkspaceRepository extends BaseDrizzleRepository {
   }
 
   async findByOrganization(organizationId, { orderBy } = {}) {
-    return this.find(eq(workspaces.organizationId, organizationId), {
-      orderBy: orderBy ?? desc(workspaces.createdAt),
-    });
+    return this.find(
+      and(
+        eq(workspaces.organizationId, organizationId),
+        entityScopeCondition(workspaces.organizationId, { action: 'workspace:read' })
+      ),
+      { orderBy: orderBy ?? desc(workspaces.createdAt) }
+    );
   }
 
   /** Workspaces with at least one certification (JSONB array non-empty). */

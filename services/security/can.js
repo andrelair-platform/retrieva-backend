@@ -17,6 +17,7 @@
  */
 import { roleGrants } from '../../config/authz/capabilities.js';
 import { roleAssignmentRepository } from '../../repositories/index.js';
+import { computeScope, scopeAllowsEntity } from './entityScope.js';
 import logger from '../../config/logger.js';
 
 // Per-request memo of a user's assignments, keyed off the req.user object so repeated
@@ -31,9 +32,10 @@ async function loadAssignments(user) {
 }
 
 /**
- * @param {{ userId: string, platformAdmin?: boolean }} user  req.user
+ * @param {{ userId: string, platformAdmin?: boolean, organizationId?: string }} user  req.user
  * @param {string} action  `resource:action`, e.g. 'finding:approve'
- * @param {object} [resource]  the target (reserved for RTV-54 scope matching)
+ * @param {{entityId?: string, organizationId?: string}} [resource]  the target; when it names an
+ *        entity, the granting role must be IN THAT SCOPE (RTV-54 scope matching)
  * @returns {Promise<boolean>}
  */
 export async function can(user, action, resource) {
@@ -41,17 +43,28 @@ export async function can(user, action, resource) {
   if (user.platformAdmin === true) return true;
 
   const assignments = await loadAssignments(user);
-  const allowed = assignments.some((a) => roleGrants(a.role, action));
-  if (!allowed) {
-    logger.debug('authz deny', {
+
+  // 1) action gate — does any held role grant `resource:action`?
+  if (!assignments.some((a) => roleGrants(a.role, action))) {
+    logger.debug('authz deny (action)', {
       userId: user.userId,
       action,
       roles: assignments.map((a) => a.role),
     });
+    return false;
   }
-  // `resource` intentionally unused in pass-1 (scope isolation lands in RTV-54).
-  void resource;
-  return allowed;
+
+  // 2) scope gate (RTV-54) — if the resource names an entity, require a role in that scope.
+  // can() answers the ACTION; this answers WHICH ENTITY. No resource → action-only (RTV-53
+  // back-compat). Always enforced (default-deny) — it has no live callers gated by the
+  // isolation flag; that flag governs the query-layer filter (entityScope.js), not this.
+  const entityId = resource?.entityId ?? resource?.organizationId;
+  if (entityId && !scopeAllowsEntity(computeScope(user, assignments), entityId)) {
+    logger.debug('authz deny (scope)', { userId: user.userId, action, entityId });
+    return false;
+  }
+
+  return true;
 }
 
 export default can;
