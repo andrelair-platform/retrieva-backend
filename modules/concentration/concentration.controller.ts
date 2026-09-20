@@ -1,4 +1,4 @@
-import { catchAsync, sendSuccess, sendError } from '../utils/index.js';
+import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import {
   analyzeOrganization,
   getGraph,
@@ -8,7 +8,7 @@ import {
   listDependencies,
   setDependencyConfirmed,
   extractSubProvidersForWorkspace,
-} from '../services/concentrationService.js';
+} from '../../services/concentrationService.js';
 
 // Concentration is ORG-scoped (spans all the firm's vendors). Every handler keys off
 // req.user.organizationId — never a caller-supplied org id — so tenants can't cross.

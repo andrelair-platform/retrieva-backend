@@ -13,8 +13,8 @@ import logger from '../config/logger.js';
  * Uses user ID if authenticated, otherwise normalized IP
  */
 function generateKey(req, prefix = '') {
-  if (req.user?.id && req.user.id !== 'anonymous') {
-    return `${prefix}user:${req.user.id}`;
+  if (req.user?.userId && req.user.userId !== 'anonymous') {
+    return `${prefix}user:${req.user.userId}`;
   }
   // Use a simple IP string (express-rate-limit handles IPv6 normalization by default)
   return `${prefix}ip:${req.ip || 'unknown'}`;
@@ -28,7 +28,7 @@ export const ragQueryLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour window
   max: (req) => {
     // Authenticated users get higher limits
-    if (req.user?.id && req.user.id !== 'anonymous') {
+    if (req.user?.userId && req.user.userId !== 'anonymous') {
       return 100; // 100 requests/hour for authenticated users
     }
     return 20; // 20 requests/hour for anonymous users
@@ -46,7 +46,7 @@ export const ragQueryLimiter = rateLimit({
     logger.warn('RAG rate limit exceeded', {
       service: 'rate-limiter',
       ip: req.ip,
-      userId: req.user?.id || 'anonymous',
+      userId: req.user?.userId || 'anonymous',
       path: req.path,
     });
     res.status(429).json(options.message);
@@ -64,7 +64,7 @@ export const ragQueryLimiter = rateLimit({
 export const ragStreamLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour window
   max: (req) => {
-    if (req.user?.id && req.user.id !== 'anonymous') {
+    if (req.user?.userId && req.user.userId !== 'anonymous') {
       return 50; // 50 streaming requests/hour for authenticated
     }
     return 10; // 10 streaming requests/hour for anonymous
@@ -82,7 +82,7 @@ export const ragStreamLimiter = rateLimit({
     logger.warn('RAG streaming rate limit exceeded', {
       service: 'rate-limiter',
       ip: req.ip,
-      userId: req.user?.id || 'anonymous',
+      userId: req.user?.userId || 'anonymous',
       path: req.path,
     });
     res.status(429).json(options.message);
@@ -109,7 +109,7 @@ export const ragBurstLimiter = rateLimit({
     logger.warn('RAG burst limit exceeded', {
       service: 'rate-limiter',
       ip: req.ip,
-      userId: req.user?.id || 'anonymous',
+      userId: req.user?.userId || 'anonymous',
       path: req.path,
     });
     res.status(429).json(options.message);

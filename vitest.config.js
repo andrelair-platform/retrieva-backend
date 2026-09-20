@@ -19,8 +19,24 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
-      include: ['utils/**/*.js', 'controllers/**/*.js', 'middleware/**/*.js', 'services/**/*.js'],
-      exclude: ['node_modules', 'tests', 'utils/rag/qdrantExplorer.js'],
+      // RTV-23: the Express layer is now TypeScript — match .ts too (and the
+      // concentration module controller). Type-only files carry no executable
+      // logic, so they're excluded from the coverage denominator.
+      include: [
+        'utils/**/*.js',
+        'controllers/**/*.{js,ts}',
+        'middleware/**/*.{js,ts}',
+        'services/**/*.js',
+        'modules/**/*.controller.ts',
+      ],
+      exclude: [
+        'node_modules',
+        'tests',
+        'utils/rag/qdrantExplorer.js',
+        '**/*.d.ts',
+        'types/**',
+        '**/*.types.ts',
+      ],
       thresholds: {
         // Recalibrated for Vitest 4: its v8 provider uses AST-aware branch
         // remapping, which counts branches/functions more accurately (and

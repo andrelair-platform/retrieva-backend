@@ -1,4 +1,6 @@
 import express from 'express';
+import type { Request, Response } from 'express';
+import type { CorsOptions } from 'cors';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -15,7 +17,7 @@ import authRoutes from './routes/authRoutes.js';
 import healthRoutes from './routes/healthRoutes.js';
 import assessmentRoutes from './routes/assessmentRoutes.js';
 import complianceRoutes from './routes/complianceRoutes.js';
-import concentrationRoutes from './routes/concentrationRoutes.js';
+import concentrationRoutes from './modules/concentration/concentration.routes.js';
 import questionnaireRoutes from './routes/questionnaireRoutes.js';
 import questionnairePublicRoutes from './routes/questionnairePublicRoutes.js';
 import organizationRoutes from './routes/organizationRoutes.js';
@@ -26,6 +28,7 @@ import { optionalAuth } from './middleware/auth.js';
 import { setTenantContext } from './db/tenantContext.js';
 import logger from './config/logger.js';
 import { globalErrorHandler } from './utils/index.js';
+import { sendError } from './utils/core/responseFormatter.js';
 
 // =============================================================================
 // ISSUE #12 FIX: Global Request Timeout Configuration
@@ -43,8 +46,10 @@ const app = express();
 // =============================================================================
 // Assigns a unique ID to each request for logging and debugging
 app.use((req, res, next) => {
-  // Use existing request ID from header (e.g., from load balancer) or generate new one
-  const requestId = req.headers['x-request-id'] || req.headers['x-correlation-id'] || randomUUID();
+  // Use existing request ID from header (e.g., from load balancer) or generate new one.
+  // Headers can be string | string[]; normalize to a single string.
+  const headerId = req.headers['x-request-id'] ?? req.headers['x-correlation-id'];
+  const requestId = (Array.isArray(headerId) ? headerId[0] : headerId) || randomUUID();
   req.requestId = requestId;
   res.setHeader('X-Request-Id', requestId);
 
@@ -90,7 +95,7 @@ const getAllowedOrigins = () => {
 
 const allowedOrigins = getAllowedOrigins();
 
-const corsOptions = {
+const corsOptions: CorsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, Postman, curl, server-to-server)
     if (!origin) {
@@ -275,11 +280,19 @@ app.use(
   questionnaireRoutes
 );
 
-app.get('/', (req, res) => {
-  res.send('Hello from a secure app.js!');
+app.get('/', (_req: Request, res: Response) => {
+  res.send('Hello from a secure app.ts!');
 });
 
-// Global error handler
+// 404 — no route matched. Must come AFTER all routes and BEFORE the error handler.
+// Typed catch-all so an unknown path returns a consistent JSON envelope instead of
+// Express's default HTML "Cannot GET /..." page.
+const notFoundHandler = (req: Request, res: Response): void => {
+  sendError(res, 404, `Not found: ${req.method} ${req.originalUrl}`);
+};
+app.use(notFoundHandler);
+
+// Global error handler (typed: err, req, res, next)
 app.use(globalErrorHandler);
 
 export default app;

@@ -87,7 +87,7 @@ export const deleteQuestionnaire = catchAsync(async (req, res) => {
 export const sendQuestionnaire = catchAsync(async (req, res) => {
   const questionnaire = await questionnaireService.sendQuestionnaire(
     req.params.id,
-    { userId: req.user.userId, userName: req.user.name, userEmail: req.user.email },
+    { userName: req.user.name, userEmail: req.user.email },
     req.authorizedWorkspaces || []
   );
 

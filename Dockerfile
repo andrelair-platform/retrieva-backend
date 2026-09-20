@@ -67,5 +67,8 @@ EXPOSE 3007
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3007/health',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 
-# Start the application
-CMD ["node", "--import", "./instrument.js", "index.js"]
+# Start the application.
+# tsx is imported first (registers the .ts loader), then instrument.js (Sentry/OTel),
+# before the app graph is evaluated. index.ts + the Express layer are TypeScript
+# (RTV-23); services/workers/etc. remain .js under allowJs — tsx runs both.
+CMD ["node", "--import", "tsx", "--import", "./instrument.js", "index.ts"]

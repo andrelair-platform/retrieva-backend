@@ -62,14 +62,13 @@ export const batchProcess = async (items, fn, batchSize = 10) => {
  * Execute async function with timeout
  * @param {Promise} promise - Promise to execute
  * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {string} [message] - Custom timeout error message
  * @returns {Promise<any>}
  */
-export const promiseWithTimeout = (promise, timeoutMs) => {
+export const promiseWithTimeout = (promise, timeoutMs, message = 'Operation timed out') => {
   return Promise.race([
     promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Operation timed out')), timeoutMs)
-    ),
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), timeoutMs)),
   ]);
 };
 

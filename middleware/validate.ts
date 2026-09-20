@@ -1,16 +1,16 @@
-import { ZodError } from 'zod';
+import { ZodError, type ZodTypeAny } from 'zod';
+import type { RequestHandler } from 'express';
 import logger from '../config/logger.js';
 import { sendError } from '../utils/core/responseFormatter.js';
 
+type ValidationSource = 'body' | 'query' | 'params';
+
 /**
- * Validation middleware factory
- * Creates middleware that validates request data against Zod schemas
- *
- * @param {Object} schema - Zod schema to validate against
- * @param {string} source - Where to get data from ('body', 'query', 'params')
- * @returns {Function} Express middleware
+ * Validation middleware factory — validates a request part against a Zod schema.
+ * @param schema Zod schema to validate against
+ * @param source Where to read the data from ('body' | 'query' | 'params')
  */
-export const validate = (schema, source = 'body') => {
+export const validate = (schema: ZodTypeAny, source: ValidationSource = 'body'): RequestHandler => {
   return async (req, res, next) => {
     try {
       // Handle undefined/null data - default to empty object for body
@@ -37,7 +37,7 @@ export const validate = (schema, source = 'body') => {
     } catch (error) {
       if (error instanceof ZodError) {
         // Format Zod errors for user-friendly response
-        const zodErrors = error.errors || error.issues || [];
+        const zodErrors = error.issues || [];
         const errors = zodErrors.map((err) => ({
           field: err.path?.join('.') || 'unknown',
           message: err.message || 'Validation error',
