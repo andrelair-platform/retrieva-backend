@@ -22,6 +22,15 @@ describe('getVectorSize', () => {
     expect(getVectorSize('nomic-embed-text')).toBe(768);
   });
 
+  it('returns 2048 for NVIDIA NIM embeddings (nemotron-3-embed-1b, dev-free)', () => {
+    expect(getVectorSize('nvidia-embed')).toBe(2048);
+    expect(getVectorSize('nvidia/nemotron-3-embed-1b')).toBe(2048);
+  });
+
+  it('returns 1024 for mistral-embed', () => {
+    expect(getVectorSize('mistral-embed')).toBe(1024);
+  });
+
   it('returns 1024 default for unknown models', () => {
     expect(getVectorSize('unknown-model')).toBe(1024);
   });

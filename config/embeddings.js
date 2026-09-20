@@ -1,4 +1,5 @@
 import { OllamaEmbeddings } from '@langchain/ollama';
+import { OpenAIEmbeddings } from '@langchain/openai';
 import logger from './logger.js';
 import {
   embedTexts as hybridEmbedTexts,
@@ -7,19 +8,22 @@ import {
 } from './embeddingProvider.js';
 
 // =============================================================================
-// EMBEDDING CONFIGURATION (Ollama)
+// EMBEDDING CONFIGURATION
 // =============================================================================
 
 const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'bge-m3:latest';
+// ollama = self-hosted Ollama (native /api/embeddings). azure/openai/litellm =
+// an OpenAI-compatible gateway (LiteLLM /v1/embeddings). The gateway does NOT
+// serve Ollama's /api path, so a gateway provider MUST use the OpenAI client
+// (using OllamaEmbeddings against LiteLLM 404s — the bug this fixes).
 const EMBEDDING_PROVIDER = process.env.EMBEDDING_PROVIDER || 'ollama';
+const GATEWAY_PROVIDERS = new Set(['azure', 'azure_openai', 'openai', 'litellm']);
 
 // Ollama configuration
 // Embeddings prefer a dedicated env var so they can target a self-hosted Ollama
 // while the chat LLM uses Ollama Cloud.
 const OLLAMA_BASE_URL =
-  process.env.EMBEDDING_OLLAMA_BASE_URL ||
-  process.env.OLLAMA_BASE_URL ||
-  'http://localhost:11434';
+  process.env.EMBEDDING_OLLAMA_BASE_URL || process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
 const OLLAMA_API_KEY =
   process.env.OLLAMA_API_KEY_1 || process.env.OLLAMA_API_KEY_2 || process.env.OLLAMA_API_KEY_3;
 const OLLAMA_AUTH_HEADERS = OLLAMA_API_KEY
@@ -104,19 +108,41 @@ export function resetEmbeddingMetrics() {
 // BASE EMBEDDINGS (Ollama cloud)
 // =============================================================================
 
-const baseEmbeddings = new OllamaEmbeddings({
-  model: EMBEDDING_MODEL,
-  baseUrl: OLLAMA_BASE_URL,
-  headers: OLLAMA_AUTH_HEADERS,
-});
+function createBaseEmbeddings() {
+  if (GATEWAY_PROVIDERS.has(EMBEDDING_PROVIDER)) {
+    // OpenAI-compatible embeddings via the LiteLLM gateway (/v1/embeddings).
+    // AZURE_OPENAI_ENDPOINT points at LiteLLM (no /v1 suffix); the OpenAI client
+    // appends /embeddings to the configured baseURL, so we add /v1 here.
+    const endpoint = (
+      process.env.AZURE_OPENAI_ENDPOINT ||
+      process.env.OPENAI_BASE_URL ||
+      OLLAMA_BASE_URL
+    ).replace(/\/+$/, '');
+    const baseURL = endpoint.endsWith('/v1') ? endpoint : `${endpoint}/v1`;
+    const apiKey =
+      process.env.AZURE_OPENAI_API_KEY ||
+      process.env.LITELLM_API_KEY ||
+      process.env.OPENAI_API_KEY ||
+      'sk-litellm';
+    return {
+      client: new OpenAIEmbeddings({ model: EMBEDDING_MODEL, apiKey, configuration: { baseURL } }),
+      meta: { provider: EMBEDDING_PROVIDER, baseUrl: baseURL, model: EMBEDDING_MODEL },
+    };
+  }
+  return {
+    client: new OllamaEmbeddings({
+      model: EMBEDDING_MODEL,
+      baseUrl: OLLAMA_BASE_URL,
+      headers: OLLAMA_AUTH_HEADERS,
+    }),
+    meta: { provider: 'ollama', baseUrl: OLLAMA_BASE_URL, model: EMBEDDING_MODEL },
+  };
+}
+
+const { client: baseEmbeddings, meta: embeddingsMeta } = createBaseEmbeddings();
 
 // Log embedding provider on startup
-logger.info('Embeddings configured', {
-  service: 'embeddings',
-  provider: 'ollama',
-  baseUrl: OLLAMA_BASE_URL,
-  model: EMBEDDING_MODEL,
-});
+logger.info('Embeddings configured', { service: 'embeddings', ...embeddingsMeta });
 
 // =============================================================================
 // BATCHED EMBEDDINGS CLASS
