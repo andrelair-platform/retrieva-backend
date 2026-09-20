@@ -34,6 +34,9 @@ export function getVectorSize(model = process.env.EMBEDDING_MODEL || 'bge-m3:lat
   if (model.includes('bge-m3')) return 1024;
   if (model.includes('text-embedding-3')) return 1536;
   if (model.includes('nomic')) return 768;
+  // NVIDIA NIM embeddings (dev-free): nemotron-3-embed-1b → 2048-dim.
+  if (model.includes('nvidia') || model.includes('nemotron')) return 2048;
+  if (model.includes('mistral-embed')) return 1024;
   return 1024;
 }
 
@@ -306,12 +309,16 @@ export async function ingestFile({
       if (captions.length) {
         rawText += `\n\n## Figures\n\n${captions.join('\n\n')}`;
         logger.info('Appended VLM figure captions', {
-          service: 'file-ingestion', fileName, captions: captions.length,
+          service: 'file-ingestion',
+          fileName,
+          captions: captions.length,
         });
       }
     } catch (err) {
       logger.warn('Figure-aware ingestion failed; falling back to text parse', {
-        service: 'file-ingestion', fileName, error: err.message,
+        service: 'file-ingestion',
+        fileName,
+        error: err.message,
       });
       rawText = await parseFile(buffer, fileType, fileName);
     }
