@@ -49,7 +49,7 @@ export const getMyOrganization = catchAsync(async (req, res) => {
 
   sendSuccess(res, 200, 'Organization retrieved', {
     organization: {
-      id: organization._id,
+      id: organization.id,
       name: organization.name,
       industry: organization.industry,
       country: organization.country,
@@ -80,7 +80,7 @@ export const inviteMember = catchAsync(async (req, res) => {
 
   sendSuccess(res, 201, 'Invitation sent', {
     member: {
-      id: member._id,
+      id: member.id,
       email: member.email,
       role: member.role,
       status: member.status,
@@ -103,16 +103,16 @@ export const getMembers = catchAsync(async (req, res) => {
   const members = await organizationService.getMembers(req.user.userId);
 
   const memberList = members.map((m) => ({
-    id: m._id.toString(),
+    id: m.id,
     email: m.email,
     role: m.role,
     status: m.status,
     joinedAt: m.joinedAt,
-    user: m.userId
+    user: m.user
       ? {
-          id: m.userId._id.toString(),
-          name: safeDecrypt(m.userId.name),
-          email: m.userId.email,
+          id: m.user.id,
+          name: safeDecrypt(m.user.name),
+          email: m.user.email,
         }
       : null,
   }));

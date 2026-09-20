@@ -97,6 +97,30 @@ describe('Drizzle non-tenant repos (RTV-49 pt3)', () => {
     expect(await orgRepo.countAdmins(orgId)).toBe(1);
   });
 
+  it('findActiveByOrgAndEmail + findByOrganizationWithUser (retrieva-backend#10)', async () => {
+    // an active member (activate an invite → status active, userId set)
+    await orgRepo.createInvite(orgId, 'Alice@X.io', 'org_admin', userId);
+    const [pending] = await orgRepo.findByOrganization(orgId, 'pending');
+    await orgRepo.activate(pending.id, userId);
+    // a revoked member — must be excluded from findByOrganizationWithUser
+    await orgRepo.createInvite(orgId, 'gone@x.io', 'viewer', userId);
+    const gone = (await orgRepo.findByOrganization(orgId, 'pending')).find(
+      (m) => m.email === 'gone@x.io'
+    );
+    await orgRepo.revokeMembership(gone.id);
+
+    // case-insensitive active lookup (the duplicate-invite guard)
+    const active = await orgRepo.findActiveByOrgAndEmail(orgId, 'alice@x.io');
+    expect(active?.email).toBe('alice@x.io');
+    expect(await orgRepo.findActiveByOrgAndEmail(orgId, 'nobody@x.io')).toBeNull();
+
+    // relational load: non-revoked members WITH their user (populate replacement)
+    const withUser = await orgRepo.findByOrganizationWithUser(orgId);
+    expect(withUser.map((m) => m.email)).toEqual(['alice@x.io']); // revoked excluded
+    expect(withUser[0].user.id).toBe(userId);
+    expect(withUser[0].user.email).toBeTruthy();
+  });
+
   it('Workspace JSONB certification queries', async () => {
     const soon = new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString();
     const far = new Date(Date.now() + 400 * 24 * 3600 * 1000).toISOString();
