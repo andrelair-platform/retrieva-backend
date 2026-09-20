@@ -44,6 +44,9 @@ const EMAIL_CONFIG = {
     name: process.env.SMTP_FROM_NAME || 'Retrieva',
     email: process.env.RESEND_FROM_EMAIL || 'noreply@retrieva.online',
   },
+  // Optional monitored reply-to (e.g. support@retrieva.online). We send FROM
+  // noreply@ but point replies at a real, routed inbox. Only set when configured.
+  replyTo: process.env.RESEND_REPLY_TO || undefined,
 };
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
@@ -70,6 +73,7 @@ async function _sendEmailInProcess({ to, subject, html, text }) {
       subject,
       html,
       text: text || html.replace(/<[^>]*>/g, ''),
+      ...(EMAIL_CONFIG.replyTo ? { replyTo: EMAIL_CONFIG.replyTo } : {}),
     });
     if (error) {
       logger.error('Failed to send email', { service: 'email', to, subject, error: error.message });
