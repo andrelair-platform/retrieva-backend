@@ -36,7 +36,7 @@ class OrganizationService {
     const user = await this.userRepo.findById(userId);
 
     await this.memberRepo.create({
-      organizationId: org._id,
+      organizationId: org.id,
       userId,
       email: user.email,
       role: 'org_admin',
@@ -44,7 +44,7 @@ class OrganizationService {
       joinedAt: new Date(),
     });
 
-    await this.userRepo.updateById(userId, { organizationId: org._id });
+    await this.userRepo.updateById(userId, { organizationId: org.id });
 
     // Provision Stripe billing — failure must never block org creation
     let billingFields = {
@@ -53,7 +53,7 @@ class OrganizationService {
       trialEndsAt: new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000),
     };
     try {
-      const billing = await this.setupOrgBilling(org._id, user.email, org.name);
+      const billing = await this.setupOrgBilling(org.id, user.email, org.name);
       billingFields = {
         stripeCustomerId: billing.customerId,
         stripeSubscriptionId: billing.subscriptionId,
@@ -64,16 +64,16 @@ class OrganizationService {
     } catch (err) {
       this.logger.error('Stripe billing provisioning failed — using local fallback', {
         service: 'organization',
-        orgId: org._id,
+        orgId: org.id,
         error: err.message,
       });
     }
 
-    await this.organizationRepo.updateById(org._id, billingFields);
+    await this.organizationRepo.updateById(org.id, billingFields);
 
     this.logger.info('Organization created', {
       service: 'organization',
-      orgId: org._id,
+      orgId: org.id,
       userId,
     });
 
@@ -142,12 +142,7 @@ class OrganizationService {
       throw new AppError('This user is already an active member', 409);
     }
 
-    const { member, rawToken } = await this.memberRepo.createInvite(
-      orgId,
-      email,
-      role,
-      inviterId
-    );
+    const { member, rawToken } = await this.memberRepo.createInvite(orgId, email, role, inviterId);
 
     const org = await this.organizationRepo.findById(orgId);
     const inviter = await this.userRepo.findById(inviterId, { select: 'name email' });
@@ -205,7 +200,7 @@ class OrganizationService {
       throw new AppError('You already belong to an organization', 409);
     }
 
-    await this.memberRepo.activate(member._id, userId);
+    await this.memberRepo.activate(member.id, userId);
     await this.userRepo.updateById(userId, { organizationId: member.organizationId });
 
     this.logger.info('Org invite accepted', {
