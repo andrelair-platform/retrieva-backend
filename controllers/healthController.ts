@@ -35,7 +35,15 @@ export const basicHealth = async (req, res) => {
  * GET /api/v1/health/detailed
  */
 export const detailedHealth = async (req, res) => {
-  const health = {
+  // Dynamic aggregation object — each probe adds a service entry; typed loosely
+  // (Record<string, any>) because the shape is built up per-check at runtime.
+  const health: {
+    status: string;
+    timestamp: string;
+    uptime: number;
+    services: Record<string, any>;
+    system?: Record<string, any>;
+  } = {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),

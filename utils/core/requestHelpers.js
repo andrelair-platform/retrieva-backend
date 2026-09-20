@@ -25,7 +25,7 @@ export const getUserId = (req, fallback = 'anonymous') => {
  * @returns {boolean} Whether user is authenticated
  */
 export const isAuthenticated = (req) => {
-  return !!(req.user?.userId);
+  return !!req.user?.userId;
 };
 
 /**
@@ -48,9 +48,9 @@ const safeParseInt = (value, fallback) => {
  * ISSUE #27 FIX: Robust handling of invalid/negative values
  * @param {Object} query - Request query object
  * @param {Object} options - Pagination options
- * @param {number} options.defaultLimit - Default limit (default 50)
- * @param {number} options.maxLimit - Maximum allowed limit (default 100)
- * @param {number} options.defaultSkip - Default skip (default 0)
+ * @param {number} [options.defaultLimit] - Default limit (default 50)
+ * @param {number} [options.maxLimit] - Maximum allowed limit (default 100)
+ * @param {number} [options.defaultSkip] - Default skip (default 0)
  * @returns {{ limit: number, skip: number, page: number }}
  */
 export const parsePagination = (query, options = {}) => {

@@ -24,6 +24,11 @@ export class InputGuardrailError extends AppError {
  * @param {string} params.conversationId   Conversation ID
  * @param {Object} [params.filters]        Retrieval filters
  * @param {Function} [params.onEvent]      SSE callback: (type, data) => void
+ * @param {string} [params.userId]         Requesting user id (tenant scope)
+ * @param {string[]} [params.authorizedWorkspaceIds]  Workspaces the user may query
+ * @param {string} [params.lang]           UI locale for language-aware citations
+ * @param {string} [params.forceIntent]    Optional intent override (accepted; may be a no-op)
+ * @param {boolean} [params.useIntentAware]  Enable intent-aware routing
  * @returns {Object} RAG result
  */
 export async function executeRAG({

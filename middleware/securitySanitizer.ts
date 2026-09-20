@@ -223,7 +223,7 @@ export function mongoSanitize(_options = {}) {
  * @param {boolean} options.aggressive - Escape all HTML entities (default: false)
  * @returns {Function} Express middleware
  */
-export function xssClean(options = {}) {
+export function xssClean(options: { aggressive?: boolean } = {}) {
   const aggressive = options.aggressive || false;
 
   return (req, res, next) => {
@@ -250,7 +250,7 @@ export function xssClean(options = {}) {
  * @param {Object} options - Configuration options
  * @returns {Function} Express middleware
  */
-export function securitySanitizer(options = {}) {
+export function securitySanitizer(options: { aggressiveXSS?: boolean } = {}) {
   return (req, res, next) => {
     // NoSQL sanitization
     // Note: In Express 5, req.query, req.params are read-only getters

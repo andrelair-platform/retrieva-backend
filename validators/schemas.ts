@@ -144,21 +144,13 @@ export const analyticsSummarySchema = z
 
 export const popularQuestionsSchema = z
   .object({
-    limit: z
-      .string()
-      .transform((val) => parseInt(val, 10))
-      .pipe(z.number().int().min(1).max(100))
-      .default('10'),
+    limit: z.coerce.number().int().min(1).max(100).default(10),
   })
   .strict();
 
 export const feedbackTrendsSchema = z
   .object({
-    days: z
-      .string()
-      .transform((val) => parseInt(val, 10))
-      .pipe(z.number().int().min(1).max(90))
-      .default('7'),
+    days: z.coerce.number().int().min(1).max(90).default(7),
   })
   .strict();
 
@@ -181,11 +173,7 @@ export const confidenceTrendsSchema = feedbackTrendsSchema;
 
 export const sourceStatsSchema = z
   .object({
-    limit: z
-      .string()
-      .transform((val) => parseInt(val, 10))
-      .pipe(z.number().int().min(1).max(100))
-      .default('20'),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
   })
   .strict();
 
@@ -410,7 +398,7 @@ export const createAssessmentSchema = z
 export const setRiskDecisionSchema = z
   .object({
     decision: z.enum(['proceed', 'conditional', 'reject'], {
-      errorMap: () => ({ message: "decision must be 'proceed', 'conditional', or 'reject'" }),
+      message: "decision must be 'proceed', 'conditional', or 'reject'",
     }),
     rationale: z.string().max(5000).optional(),
   })
@@ -420,7 +408,7 @@ export const setClauseSignoffSchema = z
   .object({
     clauseRef: z.string().min(1, 'clauseRef is required').max(200),
     status: z.enum(['accepted', 'rejected', 'waived'], {
-      errorMap: () => ({ message: "status must be 'accepted', 'rejected', or 'waived'" }),
+      message: "status must be 'accepted', 'rejected', or 'waived'",
     }),
     note: z.string().max(5000).optional(),
   })
@@ -429,16 +417,8 @@ export const setClauseSignoffSchema = z
 // Pagination schema
 export const paginationSchema = z
   .object({
-    page: z
-      .string()
-      .transform((val) => parseInt(val, 10))
-      .pipe(z.number().int().min(1))
-      .default('1'),
-    limit: z
-      .string()
-      .transform((val) => parseInt(val, 10))
-      .pipe(z.number().int().min(1).max(100))
-      .default('10'),
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(10),
   })
   .strict();
 

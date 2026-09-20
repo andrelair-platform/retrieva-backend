@@ -4,8 +4,8 @@ import logger from '../../config/logger.js';
  * Async handler wrapper to catch errors in async route handlers
  * Eliminates the need for try-catch blocks in controllers
  *
- * @param {Function} fn - Async function to wrap
- * @returns {Function} Express middleware function
+ * @param {import('express').RequestHandler} fn - Async handler to wrap
+ * @returns {import('express').RequestHandler} Express middleware function
  *
  * @example
  * router.get('/users', catchAsync(async (req, res) => {

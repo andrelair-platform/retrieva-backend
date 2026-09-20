@@ -72,7 +72,12 @@ export const getMetadata = catchAsync(async (req, res) => {
  * Optional query params: domain, chapter (I–VI), regulation (DORA | DORA-RTS)
  */
 export const listArticles = catchAsync(async (req, res) => {
-  const { domain, chapter, regulation } = req.query;
+  // Query params arrive as string | string[]; this endpoint expects single strings.
+  const { domain, chapter, regulation } = req.query as {
+    domain?: string;
+    chapter?: string;
+    regulation?: string;
+  };
   let articles = ARTICLES;
 
   if (regulation) {
@@ -119,7 +124,9 @@ export const listArticles = catchAsync(async (req, res) => {
  * :article — "Article 30" URL-encoded, "Article-30" kebab, or RTS ID e.g. "RTS-RM-01"
  */
 export const getArticle = catchAsync(async (req, res) => {
-  const raw = decodeURIComponent(req.params.article).replace(/-/g, ' ').trim();
+  const raw = decodeURIComponent(String(req.params.article))
+    .replace(/-/g, ' ')
+    .trim();
 
   const found = ARTICLES.find((a) => a.article.toLowerCase() === raw.toLowerCase());
   if (!found) {
