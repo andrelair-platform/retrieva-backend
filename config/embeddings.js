@@ -125,7 +125,16 @@ function createBaseEmbeddings() {
       process.env.OPENAI_API_KEY ||
       'sk-litellm';
     return {
-      client: new OpenAIEmbeddings({ model: EMBEDDING_MODEL, apiKey, configuration: { baseURL } }),
+      // encodingFormat: 'float' is REQUIRED. The OpenAI SDK defaults encoding_format
+      // to "base64"; LiteLLM's base64 response mis-decodes for some providers (Mistral
+      // 1024-dim came back as a corrupt 256-dim array), silently corrupting embeddings.
+      // Requesting the plain float array avoids the interop bug (verified 1024 vs 256).
+      client: new OpenAIEmbeddings({
+        model: EMBEDDING_MODEL,
+        apiKey,
+        configuration: { baseURL },
+        encodingFormat: 'float',
+      }),
       meta: { provider: EMBEDDING_PROVIDER, baseUrl: baseURL, model: EMBEDDING_MODEL },
     };
   }
