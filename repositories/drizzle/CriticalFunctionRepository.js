@@ -7,6 +7,7 @@
 import { and, eq, asc, inArray } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
 import { criticalFunctions, criticalFunctionDependencies } from '../../db/schema/index.js';
+import { entityScopeCondition } from '../../services/security/entityScope.js';
 
 export class CriticalFunctionRepository extends BaseDrizzleRepository {
   constructor(opts = {}) {
@@ -31,9 +32,13 @@ export class CriticalFunctionRepository extends BaseDrizzleRepository {
   }
 
   async listByOrg(organizationId) {
-    const rows = await this.find(eq(criticalFunctions.organizationId, organizationId), {
-      orderBy: [asc(criticalFunctions.criticality), asc(criticalFunctions.name)],
-    });
+    const rows = await this.find(
+      and(
+        eq(criticalFunctions.organizationId, organizationId),
+        entityScopeCondition(criticalFunctions.organizationId, { action: 'criticalFunction:read' })
+      ),
+      { orderBy: [asc(criticalFunctions.criticality), asc(criticalFunctions.name)] }
+    );
     return this._withDependsOn(rows);
   }
 
@@ -57,7 +62,13 @@ export class CriticalFunctionRepository extends BaseDrizzleRepository {
         .update(criticalFunctions)
         .set({ name, criticality, description: description || '' })
         .where(
-          and(eq(criticalFunctions.id, id), eq(criticalFunctions.organizationId, organizationId))
+          and(
+            eq(criticalFunctions.id, id),
+            eq(criticalFunctions.organizationId, organizationId),
+            entityScopeCondition(criticalFunctions.organizationId, {
+              action: 'criticalFunction:edit',
+            })
+          )
         )
         .returning();
       if (!row) return null;
@@ -78,7 +89,15 @@ export class CriticalFunctionRepository extends BaseDrizzleRepository {
   async deleteByIdAndOrg(organizationId, id) {
     const [row] = await this.db
       .delete(criticalFunctions)
-      .where(and(eq(criticalFunctions.id, id), eq(criticalFunctions.organizationId, organizationId)))
+      .where(
+        and(
+          eq(criticalFunctions.id, id),
+          eq(criticalFunctions.organizationId, organizationId),
+          entityScopeCondition(criticalFunctions.organizationId, {
+            action: 'criticalFunction:delete',
+          })
+        )
+      )
       .returning();
     return row ?? null;
   }

@@ -8,6 +8,7 @@
 import { and, eq, asc, desc } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
 import { providerNodes, providerDependencies } from '../../db/schema/index.js';
+import { entityScopeCondition } from '../../services/security/entityScope.js';
 
 const norm = (s) =>
   String(s || '')
@@ -29,7 +30,8 @@ export class ProviderGraphRepository extends BaseDrizzleRepository {
       .where(
         and(
           eq(providerNodes.organizationId, organizationId),
-          eq(providerNodes.canonicalName, canonicalName)
+          eq(providerNodes.canonicalName, canonicalName),
+          entityScopeCondition(providerNodes.organizationId, { action: 'provider:read' })
         )
       )
       .limit(1);
@@ -45,7 +47,10 @@ export class ProviderGraphRepository extends BaseDrizzleRepository {
   async _loadEdges(organizationId, { confirmedOnly = false } = {}) {
     const parent = { ...providerNodes };
     // Two joins against provider_nodes (parent + child) via aliased sub-selects.
-    const conds = [eq(providerDependencies.organizationId, organizationId)];
+    const conds = [
+      eq(providerDependencies.organizationId, organizationId),
+      entityScopeCondition(providerDependencies.organizationId, { action: 'dependency:read' }),
+    ];
     if (confirmedOnly) conds.push(eq(providerDependencies.confirmed, true));
     const edges = await this.db
       .select()
@@ -58,7 +63,11 @@ export class ProviderGraphRepository extends BaseDrizzleRepository {
     const nodeIds = [...new Set(edges.flatMap((e) => [e.parentNodeId, e.childNodeId]))];
     const nodeMap = new Map();
     for (const id of nodeIds) {
-      const [n] = await this.db.select().from(providerNodes).where(eq(providerNodes.id, id)).limit(1);
+      const [n] = await this.db
+        .select()
+        .from(providerNodes)
+        .where(eq(providerNodes.id, id))
+        .limit(1);
       if (n) nodeMap.set(id, n);
     }
     const toNode = (n) =>
@@ -96,7 +105,8 @@ export class ProviderGraphRepository extends BaseDrizzleRepository {
         .where(
           and(
             eq(providerDependencies.id, id),
-            eq(providerDependencies.organizationId, organizationId)
+            eq(providerDependencies.organizationId, organizationId),
+            entityScopeCondition(providerDependencies.organizationId, { action: 'dependency:edit' })
           )
         )
         .returning();
@@ -106,7 +116,11 @@ export class ProviderGraphRepository extends BaseDrizzleRepository {
       .update(providerDependencies)
       .set({ confirmed: true, lastVerifiedAt: new Date() })
       .where(
-        and(eq(providerDependencies.id, id), eq(providerDependencies.organizationId, organizationId))
+        and(
+          eq(providerDependencies.id, id),
+          eq(providerDependencies.organizationId, organizationId),
+          entityScopeCondition(providerDependencies.organizationId, { action: 'dependency:edit' })
+        )
       )
       .returning();
     return row ?? null;
@@ -121,7 +135,8 @@ export class ProviderGraphRepository extends BaseDrizzleRepository {
         and(
           eq(providerDependencies.organizationId, organizationId),
           eq(providerDependencies.parentNodeId, parentNodeId),
-          eq(providerDependencies.childNodeId, childNodeId)
+          eq(providerDependencies.childNodeId, childNodeId),
+          entityScopeCondition(providerDependencies.organizationId, { action: 'dependency:read' })
         )
       )
       .limit(1);

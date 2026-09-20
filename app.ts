@@ -26,6 +26,7 @@ import { handleStripeWebhook } from './controllers/billingController.js';
 import { requireActivePlan } from './middleware/requireActivePlan.js';
 import { optionalAuth } from './middleware/auth.js';
 import { setTenantContext } from './db/tenantContext.js';
+import { setEntityContext } from './middleware/setEntityContext.js';
 import logger from './config/logger.js';
 import { globalErrorHandler } from './utils/index.js';
 import { sendError } from './utils/core/responseFormatter.js';
@@ -271,7 +272,15 @@ app.use(
 app.use('/api/v1/workspaces', optionalAuth, requireActivePlan, workspaceRoutes);
 app.use('/api/v1/assessments', optionalAuth, requireActivePlan, setTenantContext, assessmentRoutes);
 app.use('/api/v1/compliance', optionalAuth, requireActivePlan, complianceRoutes);
-app.use('/api/v1/concentration', optionalAuth, requireActivePlan, concentrationRoutes);
+// Concentration is the org-scoped surface — setEntityContext (RTV-54) resolves the
+// user's legal-entity scope so the org-scoped repos apply row-level isolation.
+app.use(
+  '/api/v1/concentration',
+  optionalAuth,
+  requireActivePlan,
+  setEntityContext,
+  concentrationRoutes
+);
 app.use(
   '/api/v1/questionnaires',
   optionalAuth,
