@@ -56,7 +56,10 @@ export const users = pgTable(
     email: text('email').notNull().unique(),
     password: text('password').notNull(), // bcrypt; select:false enforced in the repo layer
     name: text('name').notNull(), // encrypted at rest
-    role: userRoleEnum('role').notNull().default('user'),
+    role: userRoleEnum('role').notNull().default('user'), // legacy global role — kept until the RTV-54+ cutover
+    // Authorization redesign (RTV-52): the SaaS-operator flag. Replaces role==='admin'
+    // for platform-admin gating (grants allow-all in can()). Domain roles live in role_assignments.
+    platformAdmin: boolean('platform_admin').notNull().default(false),
     isActive: boolean('is_active').notNull().default(true),
     // [{ tokenHash, deviceInfo, createdAt, expiresAt }]
     refreshTokens: jsonb('refresh_tokens').notNull().default([]),

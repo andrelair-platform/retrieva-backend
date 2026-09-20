@@ -4,6 +4,7 @@ export * from './enums.js';
 export * from './users.js';
 export * from './organizations.js';
 export * from './workspaces.js';
+export * from './roleAssignments.js';
 export * from './conversations.js';
 export * from './assessments.js';
 export * from './criticalFunctions.js';

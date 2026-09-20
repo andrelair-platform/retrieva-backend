@@ -149,6 +149,7 @@ describe('Auth Middleware', () => {
         role: 'user',
         name: 'Test User',
         organizationId: null,
+        platformAdmin: false,
       });
       expect(mockNext).toHaveBeenCalled();
     });
@@ -266,6 +267,7 @@ describe('Auth Middleware', () => {
         role: 'user',
         name: 'Test User',
         organizationId: null,
+        platformAdmin: false,
       });
       expect(mockNext).toHaveBeenCalled();
     });
