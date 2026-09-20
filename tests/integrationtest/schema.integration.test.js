@@ -40,12 +40,12 @@ describe('Drizzle schema (RTV-48)', () => {
     await stopPg();
   });
 
-  it('applied the migration — all 14 tables exist', async () => {
+  it('applied the migration — all domain tables exist', async () => {
     const res = await db.execute(
       sql`select count(*)::int as n from information_schema.tables where table_schema = 'public' and table_type = 'BASE TABLE'`
     );
-    // 14 domain tables + Drizzle's __drizzle_migrations bookkeeping table.
-    expect(res.rows[0].n).toBeGreaterThanOrEqual(14);
+    // 15 domain tables (incl. role_assignments, RTV-52) + Drizzle's __drizzle_migrations.
+    expect(res.rows[0].n).toBeGreaterThanOrEqual(15);
   });
 
   it('CRUD across the core graph (user → org → workspace → conversation → message)', async () => {
@@ -158,14 +158,12 @@ describe('Drizzle schema (RTV-48)', () => {
 
     // canonical_name is unique per org.
     await expect(
-      db
-        .insert(providerNodes)
-        .values({
-          organizationId: org.id,
-          kind: 'external',
-          canonicalName: 'azure',
-          displayName: 'Azure (dup)',
-        })
+      db.insert(providerNodes).values({
+        organizationId: org.id,
+        kind: 'external',
+        canonicalName: 'azure',
+        displayName: 'Azure (dup)',
+      })
     ).rejects.toThrow();
 
     await db.insert(providerDependencies).values([

@@ -9,7 +9,10 @@ export { BaseDrizzleRepository } from './drizzle/BaseDrizzleRepository.js';
 export { TenantScopedRepository } from './drizzle/TenantScopedRepository.js';
 
 export { UserRepository, userRepository } from './drizzle/UserRepository.js';
-export { OrganizationRepository, organizationRepository } from './drizzle/OrganizationRepository.js';
+export {
+  OrganizationRepository,
+  organizationRepository,
+} from './drizzle/OrganizationRepository.js';
 export {
   OrganizationMemberRepository,
   organizationMemberRepository,
@@ -19,6 +22,10 @@ export {
   WorkspaceMemberRepository,
   workspaceMemberRepository,
 } from './drizzle/WorkspaceMemberRepository.js';
+export {
+  RoleAssignmentRepository,
+  roleAssignmentRepository,
+} from './drizzle/RoleAssignmentRepository.js';
 export {
   ConversationRepository,
   conversationRepository,

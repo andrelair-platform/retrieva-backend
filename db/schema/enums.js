@@ -43,6 +43,29 @@ export const workspaceMemberRoleEnum = pgEnum('workspace_member_role', [
 
 export const messageRoleEnum = pgEnum('message_role', ['user', 'assistant']);
 
+// Authorization redesign (RTV-51/52). Scope hierarchy mirrors the domain hierarchy
+// (ADR §1). v1: 'entity' scope_id references organizations.id (org = legal entity);
+// 'group' is supported but has no rows/read-across until RTV-35/36.
+export const scopeTypeEnum = pgEnum('scope_type', ['group', 'entity']);
+// Full governance role set (ADR §2). platform_admin is a boolean on users, not here.
+export const domainRoleEnum = pgEnum('domain_role', [
+  // group scope
+  'group_admin',
+  'group_risk',
+  'group_compliance',
+  // entity scope — working roles
+  'entity_admin',
+  'analyst', // maker
+  'ict_risk_officer', // checker (finding approval / risk acceptance)
+  'legal', // checker (contractual clauses)
+  'dpo', // checker (data-protection dimension)
+  'business_owner', // attester (own functions only)
+  'auditor', // read-only everywhere
+  'viewer', // limited read-only
+  // external
+  'vendor_contact', // single-arrangement vendor portal (RTV-56)
+]);
+
 export const assessmentFrameworkEnum = pgEnum('assessment_framework', ['DORA', 'CONTRACT_A30']);
 export const assessmentStatusEnum = pgEnum('assessment_status', [
   'pending',

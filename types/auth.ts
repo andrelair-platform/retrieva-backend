@@ -6,4 +6,6 @@ export interface AuthenticatedUser {
   role: 'user' | 'admin';
   name: string;
   organizationId: string | null;
+  // RTV-52: SaaS-operator flag (users.platform_admin). can() treats it as allow-all.
+  platformAdmin: boolean;
 }

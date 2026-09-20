@@ -5,6 +5,7 @@ import { relations } from 'drizzle-orm';
 import { users } from './users.js';
 import { organizations, organizationMembers } from './organizations.js';
 import { workspaces, workspaceMembers } from './workspaces.js';
+import { roleAssignments } from './roleAssignments.js';
 import { conversations, messages } from './conversations.js';
 import { assessments } from './assessments.js';
 import { criticalFunctions, criticalFunctionDependencies } from './criticalFunctions.js';
@@ -22,6 +23,13 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   ownedOrganizations: many(organizations, { relationName: 'org_owner' }),
   ownedWorkspaces: many(workspaces),
   workspaceMemberships: many(workspaceMembers),
+  roleAssignments: many(roleAssignments),
+}));
+
+// scope_id is polymorphic (org for 'entity', future groups for 'group') so only the
+// user side gets a relation here.
+export const roleAssignmentsRelations = relations(roleAssignments, ({ one }) => ({
+  user: one(users, { fields: [roleAssignments.userId], references: [users.id] }),
 }));
 
 export const organizationsRelations = relations(organizations, ({ one, many }) => ({

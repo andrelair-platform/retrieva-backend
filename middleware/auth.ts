@@ -93,6 +93,7 @@ export const authenticate = async (req, res, next) => {
       role: user.role,
       name: user.name,
       organizationId: user.organizationId || null,
+      platformAdmin: user.platformAdmin === true, // RTV-52: SaaS-operator flag (can() allow-all)
     };
 
     logger.debug('User authenticated', {
@@ -190,6 +191,7 @@ export const optionalAuth = async (req, res, next) => {
           role: user.role,
           name: user.name,
           organizationId: user.organizationId || null,
+          platformAdmin: user.platformAdmin === true, // RTV-52
         };
       } else if (user && !user.isActive) {
         // SECURITY FIX: Log inactive user token usage
