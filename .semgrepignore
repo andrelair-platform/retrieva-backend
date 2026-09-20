@@ -1,0 +1,19 @@
+# Semgrep ignore file
+# https://semgrep.dev/docs/ignoring-files-folders-code/
+
+# Test files — intentionally use insecure patterns for testing
+tests/
+
+# Generated / vendored
+node_modules/
+dist/
+build/
+coverage/
+
+# Docs
+docs/
+website/
+
+# Local env files — gitignored, never committed, contain real dev credentials
+.env
+.env.*.enc

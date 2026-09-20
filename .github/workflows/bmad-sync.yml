@@ -1,0 +1,18 @@
+name: BMAD Sync
+
+# retrieva-backend is a MEMBER repo of the Retrieva product (Certification / Project #2).
+# The product HOME repo is `retrieva` (stories live there under bmad/stories/). This caller
+# exists so backend-scoped stories routed here by frontmatter (repo: retrieva-backend) still
+# sync via the org-shared reusable workflow. See andrelair rules bmad.md (Per-product BMAD).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bmad/stories/**'
+  workflow_dispatch:
+
+jobs:
+  bmad-sync:
+    uses: andrelair-platform/.github/.github/workflows/bmad-sync.yml@main
+    secrets: inherit

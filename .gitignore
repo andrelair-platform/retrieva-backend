@@ -1,1 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+coverage/
+
+# Logs
 logs/
+*.log
+
+# Env — plaintext env files are never committed (encrypted *.enc + *.example ARE)
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.*.enc
+
+# BMAD tooling (local only)
+_bmad/
+_bmad-output/
+.bmad/
+
+# OS / editor
+.DS_Store
+*.swp
