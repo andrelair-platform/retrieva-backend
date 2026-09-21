@@ -20,7 +20,9 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  check,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { providerNodeKindEnum, providerSourceEnum, tierEnum } from './enums.js';
 import { organizations } from './organizations.js';
 import { workspaces } from './workspaces.js';
@@ -40,6 +42,11 @@ export const providerNodes = pgTable(
     canonicalName: text('canonical_name').notNull(),
     displayName: text('display_name').notNull(),
     tier: tierEnum('tier'),
+    // Provider-global attributes (RTV-36) — the ADR §3 "assess Microsoft once" dimension: a
+    // provider_node is the shared Provider a contractual arrangement points at. lei = Legal
+    // Entity Identifier (RT.02.01); provider_type = growable taxonomy (RTV-33 provider modules).
+    lei: text('lei'),
+    providerType: text('provider_type'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
@@ -51,6 +58,11 @@ export const providerNodes = pgTable(
     uniqueIndex('provider_nodes_org_canonical_uniq').on(t.organizationId, t.canonicalName),
     index('provider_nodes_org_idx').on(t.organizationId),
     index('provider_nodes_workspace_idx').on(t.workspaceId),
+    // Mirrors PROVIDER_TYPES (enums.js). Nullable → NULL allowed.
+    check(
+      'provider_nodes_provider_type_check',
+      sql`${t.providerType} is null or ${t.providerType} in ('cloud', 'ai_ml', 'software', 'data', 'network', 'other')`
+    ),
   ]
 );
 

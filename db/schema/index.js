@@ -10,4 +10,9 @@ export * from './assessments.js';
 export * from './criticalFunctions.js';
 export * from './providerDependencies.js';
 export * from './questionnaires.js';
+// Arrangement graph (RTV-36) — dimensions before the fact table so drizzle-kit orders DDL.
+export * from './legalEntities.js';
+export * from './businessFunctions.js';
+export * from './ictServices.js';
+export * from './arrangements.js';
 export * from './relations.js';
