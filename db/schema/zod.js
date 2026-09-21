@@ -21,6 +21,8 @@ import {
   businessFunctions,
   ictServices,
   arrangements,
+  evidence,
+  auditLog,
 } from './index.js';
 
 export const userInsertSchema = createInsertSchema(users);
@@ -70,3 +72,9 @@ export const ictServiceInsertSchema = createInsertSchema(ictServices);
 export const ictServiceSelectSchema = createSelectSchema(ictServices);
 export const arrangementInsertSchema = createInsertSchema(arrangements);
 export const arrangementSelectSchema = createSelectSchema(arrangements);
+
+// Evidence + audit trail (RTV-37)
+export const evidenceInsertSchema = createInsertSchema(evidence);
+export const evidenceSelectSchema = createSelectSchema(evidence);
+export const auditLogInsertSchema = createInsertSchema(auditLog);
+export const auditLogSelectSchema = createSelectSchema(auditLog);
