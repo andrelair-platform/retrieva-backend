@@ -1,0 +1,187 @@
+{
+  "libraryVersion": "1.0.0",
+  "regulation": "DORA",
+  "publishedAt": "2026-09-21",
+  "controls": [
+    {
+      "id": "DORA-28.2-STRATEGY",
+      "doraArticleRef": "Article 28(2)",
+      "domain": "Governance",
+      "title": "ICT third-party risk strategy",
+      "description": "A strategy on ICT third-party risk, incl. a policy on the use of ICT services supporting critical or important functions, adopted and reviewed by the management body.",
+      "expectedEvidenceTypes": ["ict_tpr_strategy", "board_approval", "policy_document"],
+      "clauseMatchPatterns": ["third-party risk strategy", "policy on the use of ICT services", "management body"],
+      "applicability": "baseline"
+    },
+    {
+      "id": "DORA-28.3-REGISTER",
+      "doraArticleRef": "Article 28(3)",
+      "domain": "Governance",
+      "title": "Register of Information",
+      "description": "Maintain and update a register of information on all contractual arrangements for the use of ICT services provided by ICT third-party providers, distinguishing those supporting critical or important functions.",
+      "expectedEvidenceTypes": ["register_of_information", "contract_inventory"],
+      "clauseMatchPatterns": ["register of information", "contractual arrangements", "critical or important function"],
+      "applicability": "baseline"
+    },
+    {
+      "id": "DORA-28.4-DUE-DILIGENCE",
+      "doraArticleRef": "Article 28(4)",
+      "domain": "Third-Party Risk",
+      "title": "Pre-contract due diligence",
+      "description": "Before entering into a contractual arrangement, assess whether the provider is appropriate, undertake due diligence, and identify/assess conflicts of interest and subcontracting risk.",
+      "expectedEvidenceTypes": ["due_diligence_report", "risk_assessment", "conflict_of_interest_assessment"],
+      "clauseMatchPatterns": ["due diligence", "risk assessment prior to", "conflict of interest", "assessment of subcontracting"],
+      "applicability": "cif_mandatory"
+    },
+    {
+      "id": "DORA-28.7-MONITORING",
+      "doraArticleRef": "Article 28(7)",
+      "domain": "Monitoring",
+      "title": "Ongoing monitoring of provider performance",
+      "description": "Monitor, on an ongoing basis, the performance of the ICT third-party provider against the contractual arrangement and its ICT risk.",
+      "expectedEvidenceTypes": ["monitoring_report", "kpi_dashboard", "performance_review"],
+      "clauseMatchPatterns": ["ongoing monitoring", "performance against", "service performance review"],
+      "applicability": "baseline"
+    },
+    {
+      "id": "DORA-28.8-EXIT-STRATEGY",
+      "doraArticleRef": "Article 28(8)",
+      "domain": "Termination and Exit",
+      "title": "Exit strategy for critical or important functions",
+      "description": "Maintain exit strategies for ICT services supporting critical or important functions, ensuring exit without disruption, in breach of requirements, or degradation of service.",
+      "expectedEvidenceTypes": ["exit_strategy", "transition_plan", "alternative_provider_analysis"],
+      "clauseMatchPatterns": ["exit strategy", "exit plan", "transition to an alternative provider", "without disruption"],
+      "applicability": "cif_mandatory"
+    },
+    {
+      "id": "DORA-30.2a-SERVICE-DESCRIPTION",
+      "doraArticleRef": "Article 30(2)(a)",
+      "domain": "Service Description",
+      "title": "Clear and complete description of services",
+      "description": "A clear and complete description of all functions and ICT services to be provided, indicating whether subcontracting of a critical or important function (or material part) is permitted.",
+      "expectedEvidenceTypes": ["service_description", "statement_of_work"],
+      "clauseMatchPatterns": ["description of the services", "scope of services", "functions to be provided"],
+      "applicability": "baseline"
+    },
+    {
+      "id": "DORA-30.2b-DATA-LOCATION",
+      "doraArticleRef": "Article 30(2)(b)",
+      "domain": "Data Location",
+      "title": "Locations of data processing and storage",
+      "description": "The locations (regions or countries) where the contracted or subcontracted functions and ICT services are to be provided and where data is to be processed, including the storage location, and a requirement to notify in advance of changes.",
+      "expectedEvidenceTypes": ["data_location_schedule", "hosting_regions"],
+      "clauseMatchPatterns": ["locations", "where data is to be processed", "regions or countries", "storage location"],
+      "applicability": "baseline"
+    },
+    {
+      "id": "DORA-30.2c-DATA-PROTECTION",
+      "doraArticleRef": "Article 30(2)(c)",
+      "domain": "Data Governance",
+      "title": "Availability, authenticity, integrity and confidentiality of data",
+      "description": "Provisions on availability, authenticity, integrity and confidentiality in relation to the protection of data, including personal data.",
+      "expectedEvidenceTypes": ["data_protection_addendum", "security_policy", "encryption_standard"],
+      "clauseMatchPatterns": ["availability, authenticity, integrity", "confidentiality", "protection of data", "personal data"],
+      "applicability": "baseline"
+    },
+    {
+      "id": "DORA-30.2e-SLA",
+      "doraArticleRef": "Article 30(2)(e)",
+      "domain": "Service Levels",
+      "title": "Service level descriptions",
+      "description": "Service level descriptions, including updates and revisions, with precise quantitative and qualitative performance targets to allow effective monitoring and timely corrective action.",
+      "expectedEvidenceTypes": ["sla_document", "service_level_schedule"],
+      "clauseMatchPatterns": ["service level", "SLA", "performance targets", "quantitative and qualitative"],
+      "applicability": "baseline"
+    },
+    {
+      "id": "DORA-30.2f-INCIDENT-ASSISTANCE",
+      "doraArticleRef": "Article 30(2)(f)",
+      "domain": "Incident Management",
+      "title": "Assistance on ICT incidents",
+      "description": "The obligation of the provider to provide assistance in the case of an ICT incident related to the service, at no additional cost or at a cost determined ex-ante.",
+      "expectedEvidenceTypes": ["incident_response_terms", "support_procedure"],
+      "clauseMatchPatterns": ["assistance in the case of an ICT incident", "incident response", "notification of incidents"],
+      "applicability": "baseline"
+    },
+    {
+      "id": "DORA-30.2g-AUTHORITY-COOPERATION",
+      "doraArticleRef": "Article 30(2)(g)",
+      "domain": "Regulatory Compliance",
+      "title": "Cooperation with competent authorities",
+      "description": "The obligation of the provider to fully cooperate with the competent authorities and resolution authorities of the financial entity.",
+      "expectedEvidenceTypes": ["regulatory_cooperation_clause"],
+      "clauseMatchPatterns": ["cooperate with the competent authorities", "resolution authorities", "regulatory cooperation"],
+      "applicability": "baseline"
+    },
+    {
+      "id": "DORA-30.2h-TERMINATION-RIGHTS",
+      "doraArticleRef": "Article 30(2)(h)",
+      "domain": "Termination and Exit",
+      "title": "Termination rights",
+      "description": "Termination rights and related minimum notice periods, in accordance with the expectations of competent and resolution authorities (breach, impediments to supervision, weaknesses in ICT risk management).",
+      "expectedEvidenceTypes": ["termination_clause", "notice_period_schedule"],
+      "clauseMatchPatterns": ["termination rights", "notice period", "right to terminate", "material breach"],
+      "applicability": "baseline"
+    },
+    {
+      "id": "DORA-30.2i-TRANSITION-ASSISTANCE",
+      "doraArticleRef": "Article 30(2)(i)",
+      "domain": "Termination and Exit",
+      "title": "Exit and transition assistance",
+      "description": "Exit strategies, notably a mandatory adequate transition period during which the provider continues services, and provisions for the return and deletion of data.",
+      "expectedEvidenceTypes": ["transition_plan", "data_return_deletion_clause"],
+      "clauseMatchPatterns": ["transition period", "return and deletion of data", "exit assistance", "data portability"],
+      "applicability": "baseline"
+    },
+    {
+      "id": "DORA-30.3a-SLA-FULL",
+      "doraArticleRef": "Article 30(3)(a)",
+      "domain": "Service Levels",
+      "title": "Full service levels for critical or important functions",
+      "description": "Full service level descriptions, including updates and revisions, with precise quantitative and qualitative performance targets, for ICT services supporting critical or important functions.",
+      "expectedEvidenceTypes": ["sla_document", "kpi_dashboard"],
+      "clauseMatchPatterns": ["full service level", "precise quantitative", "updates and revisions"],
+      "applicability": "cif_enhanced"
+    },
+    {
+      "id": "DORA-30.3c-BCP",
+      "doraArticleRef": "Article 30(3)(c)",
+      "domain": "Business Continuity",
+      "title": "Business contingency plans and resilience testing",
+      "description": "The requirement for the provider to implement and test business contingency plans and to have ICT security measures, tools and policies providing an appropriate level of security, for CIF-supporting services.",
+      "expectedEvidenceTypes": ["bcp_document", "bcp_test_report", "resilience_test_results"],
+      "clauseMatchPatterns": ["business contingency", "business continuity plan", "resilience testing", "disaster recovery"],
+      "applicability": "cif_mandatory"
+    },
+    {
+      "id": "DORA-30.3d-ICT-SECURITY",
+      "doraArticleRef": "Article 30(3)(d)",
+      "domain": "Security and Resilience",
+      "title": "ICT security measures for critical or important functions",
+      "description": "The requirement to implement and test ICT security measures, tools and policies providing an appropriate level of security for the provision of services supporting critical or important functions.",
+      "expectedEvidenceTypes": ["iso_27001_certificate", "soc2_report", "security_policy", "pentest_report"],
+      "clauseMatchPatterns": ["ICT security measures", "appropriate level of security", "security standards", "ISO 27001", "SOC 2"],
+      "applicability": "cif_enhanced"
+    },
+    {
+      "id": "DORA-30.3e-AUDIT-RIGHTS",
+      "doraArticleRef": "Article 30(3)(e)",
+      "domain": "Audit and Inspection",
+      "title": "Access, inspection and audit rights",
+      "description": "The rights of the financial entity to monitor performance on an ongoing basis, including unrestricted rights of access, inspection and audit, and the ability to participate in pooled or third-party audits, for CIF-supporting services.",
+      "expectedEvidenceTypes": ["audit_rights_clause", "pooled_audit_terms", "prior_audit_report"],
+      "clauseMatchPatterns": ["right to audit", "access, inspection", "unrestricted rights of access", "pooled audits", "on-site inspection"],
+      "applicability": "cif_mandatory"
+    },
+    {
+      "id": "DORA-30.SUBCONTRACTING",
+      "doraArticleRef": "Article 30(2)(a), Article 30(3)",
+      "domain": "Subcontracting",
+      "title": "Subcontracting conditions and right to object",
+      "description": "Conditions under which subcontracting of ICT services supporting critical or important functions is permitted, including the requirement to notify material changes and the financial entity's right to object or terminate.",
+      "expectedEvidenceTypes": ["subcontractor_list", "subcontracting_clause", "change_notification_terms"],
+      "clauseMatchPatterns": ["subcontracting", "subprocessors", "prior notification of changes", "right to object"],
+      "applicability": "cif_mandatory"
+    }
+  ]
+}

@@ -23,6 +23,7 @@
     "qdrant:collections": "node utils/qdrantExplorer.js collections",
     "seed:compliance": "node scripts/seedComplianceKb.js",
     "seed:compliance:reset": "node scripts/seedComplianceKb.js --reset",
+    "seed:controls": "node --import tsx scripts/seedControlLibrary.js",
     "evaluate": "node scripts/evaluate.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node db/migrate.js",
