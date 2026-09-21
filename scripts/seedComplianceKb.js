@@ -5,24 +5,29 @@
  * Embeds DORA regulation articles + EBA/ESMA/EIOPA RTS entries into the
  * shared, read-only Qdrant collection: `compliance_kb`.
  *
+ * NON-DESTRUCTIVE (retrieva-backend#433): every entry gets a DETERMINISTIC point id
+ * (regulation+article+lang), so a re-seed UPSERTS in place and a slow/failed embed can
+ * never empty the collection (the June-2026 incident wiped compliance_kb because the old
+ * path did deleteCollection() before re-embedding). Entries are embedded + upserted one at
+ * a time; stale points (no longer in the JSON) are pruned AFTER the upsert.
+ *
  * Modes:
  *   node backend/scripts/seedComplianceKb.js
- *       Smart sync (default) — skips if Qdrant point count matches JSON article
- *       count. Re-seeds automatically when new articles are added. Suitable for
- *       automated CD pipeline execution.
+ *       Smart sync (default) — skips if Qdrant point count matches JSON article count,
+ *       otherwise upserts every entry in place. Creates the collection only if missing.
  *
  *   node backend/scripts/seedComplianceKb.js --reset
- *       Force full rebuild — deletes the collection and re-seeds from scratch.
- *       Use when article text has been updated (not just new articles added).
+ *       Force a full re-embed of every entry (also in place — no delete window). Use when
+ *       article text has been updated (not just new articles added).
  *
  * The collection is shared across all assessments (read-only reference data).
  */
 
 import 'dotenv/config';
 import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import path from 'path';
-import { randomUUID } from 'crypto';
+import { v5 as uuidv5 } from 'uuid';
 import { QdrantClient } from '@qdrant/js-client-rest';
 import { OllamaEmbeddings } from '@langchain/ollama';
 
@@ -148,33 +153,81 @@ async function createCollection(client) {
   console.log(`Created Qdrant collection: ${COMPLIANCE_KB_COLLECTION}`);
 }
 
+// Deterministic point id per article (regulation+article+lang) so a re-seed UPSERTS in
+// place instead of appending duplicates — this is what makes delete-first unnecessary (#433).
+const ID_NAMESPACE = '1b671a64-40d5-491e-99b0-da01ff1f3341';
+function pointId(article) {
+  return uuidv5(`${article.regulation}::${article.article}::${article.lang || 'en'}`, ID_NAMESPACE);
+}
+
+/**
+ * Non-destructive upsert (retrieva-backend#433): embed + upsert ONE entry at a time with a
+ * deterministic id, so the collection is NEVER emptied — a slow/failed embed leaves the
+ * previously-good points intact, and the count climbs incrementally. Returns the id set for
+ * pruning. (The old path did deleteCollection() first + a single batch embed, so any embed
+ * failure wiped compliance_kb; see the #433 incident.)
+ */
 async function embedAndUpsert(client, articles) {
   const embeddings = getEmbeddings();
-  const texts = articles.map(buildEmbedText);
+  const keepIds = new Set();
+  let done = 0;
 
-  console.log(`Embedding ${articles.length} entries (this may take 30–90 seconds)…`);
-  const vectors = await embeddings.embedDocuments(texts);
-  console.log(`Embedded ${vectors.length} entries.`);
+  console.log(`Upserting ${articles.length} entries in place (non-destructive)…`);
+  for (const article of articles) {
+    const text = buildEmbedText(article);
+    const id = pointId(article);
+    keepIds.add(id);
+    const [vector] = await embeddings.embedDocuments([text]);
+    await client.upsert(COMPLIANCE_KB_COLLECTION, {
+      wait: true,
+      points: [
+        {
+          id,
+          vector,
+          payload: {
+            pageContent: text,
+            metadata: {
+              regulation: article.regulation,
+              article: article.article,
+              title: article.title,
+              domain: article.domain,
+              obligations: article.obligations || [],
+              fullText: article.text,
+              lang: article.lang || 'en',
+              official: article.official !== false,
+            },
+          },
+        },
+      ],
+    });
+    done++;
+    if (done % 10 === 0 || done === articles.length) {
+      console.log(`  upserted ${done}/${articles.length}`);
+    }
+  }
+  return keepIds;
+}
 
-  const points = articles.map((article, i) => ({
-    id: randomUUID(),
-    vector: vectors[i],
-    payload: {
-      pageContent: texts[i],
-      metadata: {
-        regulation: article.regulation,
-        article: article.article,
-        title: article.title,
-        domain: article.domain,
-        obligations: article.obligations || [],
-        fullText: article.text,
-        lang: article.lang || 'en',
-        official: article.official !== false,
-      },
-    },
-  }));
+/** Delete points whose id is no longer in the current article set (handles removed/renamed
+ *  entries) — run AFTER the upsert so the KB is never smaller than it needs to be. */
+async function pruneStalePoints(client, keepIds) {
+  const stale = [];
+  let offset = undefined;
+  do {
+    const res = await client.scroll(COMPLIANCE_KB_COLLECTION, {
+      limit: 256,
+      offset,
+      with_payload: false,
+      with_vector: false,
+    });
+    for (const p of res.points) if (!keepIds.has(String(p.id))) stale.push(p.id);
+    offset = res.next_page_offset ?? undefined;
+  } while (offset);
 
-  await client.upsert(COMPLIANCE_KB_COLLECTION, { wait: true, points });
+  if (stale.length) {
+    await client.delete(COMPLIANCE_KB_COLLECTION, { wait: true, points: stale });
+    console.log(`Pruned ${stale.length} stale point(s).`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -194,30 +247,33 @@ async function seed() {
 
   const exists = await collectionExists(client);
 
-  if (exists && !forceReset) {
-    // ── Smart sync: compare point count to article count ──────────────────
+  // Create the collection only if it's missing — NEVER delete an existing one (#433: a
+  // delete-first re-seed that then failed to embed left compliance_kb empty in prod).
+  if (!exists) {
+    await createCollection(client);
+  } else if (!forceReset) {
+    // Smart sync: if the point count already matches, nothing to do.
     const currentCount = await getCollectionPointCount(client);
-
     if (currentCount === articles.length) {
       console.log(
         `✓ Collection "${COMPLIANCE_KB_COLLECTION}" is up to date (${currentCount} points = ${articles.length} entries). No action needed.`
       );
       process.exit(0);
     }
-
     console.log(
-      `Point count mismatch — Qdrant: ${currentCount}, JSON: ${articles.length}. Re-seeding…`
+      `Point count mismatch — Qdrant: ${currentCount}, JSON: ${articles.length}. Upserting in place…`
     );
-    await client.deleteCollection(COMPLIANCE_KB_COLLECTION);
-  } else if (exists && forceReset) {
-    console.log(`--reset flag: deleting existing collection "${COMPLIANCE_KB_COLLECTION}"…`);
-    await client.deleteCollection(COMPLIANCE_KB_COLLECTION);
+  } else {
+    // --reset forces a full re-embed of every entry, but still in place (no delete window).
+    console.log('--reset: forcing a full re-embed (in place, non-destructive)…');
   }
 
-  await createCollection(client);
-  await embedAndUpsert(client, articles);
+  // Upsert-in-place (deterministic ids), then prune anything no longer in the JSON. A failed
+  // embed here leaves the previously-good collection intact rather than empty.
+  const keepIds = await embedAndUpsert(client, articles);
+  await pruneStalePoints(client, keepIds);
 
-  console.log(`\n✓ Seeded ${articles.length} entries into "${COMPLIANCE_KB_COLLECTION}".`);
+  console.log(`\n✓ Synced ${articles.length} entries into "${COMPLIANCE_KB_COLLECTION}".`);
 
   // Print domain summary
   const byRegulation = articles.reduce((acc, a) => {
@@ -239,7 +295,13 @@ async function seed() {
   process.exit(0);
 }
 
-seed().catch((err) => {
-  console.error('Seed failed:', err.message);
-  process.exit(1);
-});
+// Exported for tests. Only auto-run when invoked directly (not when imported), so a test
+// can import the helpers without executing the seed.
+export { pointId, embedAndUpsert, pruneStalePoints, buildEmbedText };
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  seed().catch((err) => {
+    console.error('Seed failed:', err.message);
+    process.exit(1);
+  });
+}
