@@ -15,10 +15,11 @@ import { runMigrations } from './db/migrate.js';
 import { startupInitService } from './services/startupInit.js';
 import { ragService } from './services/rag.js';
 import { answerFormatter } from './services/answerFormatter.js';
-// Import workers to start them with the server
-import './workers/assessmentWorker.js';
-import './workers/questionnaireWorker.js';
-import './workers/monitoringWorker.js';
+// NOTE: the BullMQ worker PROCESSORS no longer run in-process with the API (retrieva-backend#437).
+// They run as a dedicated single-replica `retrieva-worker` Deployment (`npm run workers` /
+// workers/index.js) so CPU-heavy jobs (gap analysis, embedding) don't block the API event loop and
+// concurrency isn't multiplied by the API replica count. The API still SCHEDULES the repeatable jobs
+// below (idempotent in BullMQ); the dedicated worker consumes them.
 import { seedDefaultTemplate } from './seeds/questionnaireTemplate.seed.js';
 import { scheduleMonitoringJob, scheduleWeeklyDigestJob } from './config/queue.js';
 
