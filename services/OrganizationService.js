@@ -81,16 +81,12 @@ class OrganizationService {
   }
 
   async getMyOrganization(userId) {
-    const membership = await this.memberRepo.findOne(
-      { userId, status: 'active' },
-      { populate: 'organizationId' }
-    );
+    const membership = await this.memberRepo.findActiveByUserId(userId);
+    if (!membership) return { organization: null, role: null };
 
-    if (!membership || !membership.organizationId) {
-      return { organization: null, role: null };
-    }
+    const org = await this.organizationRepo.findById(membership.organizationId);
+    if (!org) return { organization: null, role: null };
 
-    const org = membership.organizationId;
     return { organization: org, role: membership.role };
   }
 
@@ -105,9 +101,7 @@ class OrganizationService {
 
     let inviterName = null;
     if (member.invitedBy) {
-      const inviter = await this.userRepo.findById(member.invitedBy, {
-        select: 'name email',
-      });
+      const inviter = await this.userRepo.findById(member.invitedBy);
       if (inviter) {
         inviterName = safeDecrypt(inviter.name) || inviter.email;
       }
@@ -133,11 +127,7 @@ class OrganizationService {
 
     const orgId = callerMembership.organizationId;
 
-    const existingActive = await this.memberRepo.findOne({
-      organizationId: orgId,
-      email: email.toLowerCase(),
-      status: 'active',
-    });
+    const existingActive = await this.memberRepo.findActiveByOrgAndEmail(orgId, email);
     if (existingActive) {
       throw new AppError('This user is already an active member', 409);
     }
@@ -145,7 +135,7 @@ class OrganizationService {
     const { member, rawToken } = await this.memberRepo.createInvite(orgId, email, role, inviterId);
 
     const org = await this.organizationRepo.findById(orgId);
-    const inviter = await this.userRepo.findById(inviterId, { select: 'name email' });
+    const inviter = await this.userRepo.findById(inviterId);
     const inviterName = safeDecrypt(inviter?.name) || inviter?.email || 'A team member';
 
     this.emailService
@@ -163,12 +153,10 @@ class OrganizationService {
         });
       });
 
-    // Mark checklist item — fire and forget, non-critical
+    // Mark checklist item — fire and forget, non-critical. updateOnboarding merges the
+    // JSONB checklist idempotently, so no "only if false" guard is needed.
     this.userRepo
-      .updateOne(
-        { _id: inviterId, 'onboardingChecklist.memberInvited': false },
-        { $set: { 'onboardingChecklist.memberInvited': true } }
-      )
+      .updateOnboarding(inviterId, { checklist: { memberInvited: true } })
       .catch(() => {});
 
     this.logger.info('Org invite sent', {
@@ -214,15 +202,7 @@ class OrganizationService {
     const callerMembership = await this.memberRepo.findActiveByUserId(userId);
     if (!callerMembership) throw new AppError('You do not belong to an organization', 403);
 
-    const members = await this.memberRepo.find(
-      {
-        organizationId: callerMembership.organizationId,
-        status: { $ne: 'revoked' },
-      },
-      { populate: { path: 'userId', select: 'name email' } }
-    );
-
-    return members;
+    return this.memberRepo.findByOrganizationWithUser(callerMembership.organizationId);
   }
 
   async removeMember(userId, memberId) {
@@ -239,12 +219,8 @@ class OrganizationService {
       throw new AppError('Member not found', 404);
     }
 
-    if (target.userId?.toString() === userId) {
-      const adminCount = await this.memberRepo.count({
-        organizationId: callerMembership.organizationId,
-        role: 'org_admin',
-        status: 'active',
-      });
+    if (target.userId && String(target.userId) === userId) {
+      const adminCount = await this.memberRepo.countAdmins(callerMembership.organizationId);
       if (adminCount <= 1) {
         throw new AppError('Cannot remove the only org admin', 400);
       }

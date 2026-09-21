@@ -57,7 +57,7 @@ const USER_OID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const MBR_OID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 
 const mockOrg = {
-  _id: ORG_OID,
+  id: ORG_OID,
   name: 'HDI Global SE',
   industry: 'insurance',
   country: 'Germany',
@@ -93,12 +93,12 @@ vi.mock('../../repositories/drizzle/OrganizationRepository.js', () => ({
 
 vi.mock('../../repositories/drizzle/OrganizationMemberRepository.js', () => ({
   organizationMemberRepository: {
-    findOne: vi.fn(),
-    find: vi.fn(),
     findById: vi.fn(),
     create: vi.fn(),
-    count: vi.fn(),
     findActiveByUserId: vi.fn(),
+    findActiveByOrgAndEmail: vi.fn(),
+    findByOrganizationWithUser: vi.fn(),
+    countAdmins: vi.fn(),
     revokeMembership: vi.fn(),
     findByToken: vi.fn(),
     createInvite: vi.fn(),
@@ -110,7 +110,7 @@ vi.mock('../../repositories/drizzle/UserRepository.js', () => ({
   userRepository: {
     findById: vi.fn(),
     updateById: vi.fn(),
-    updateOne: vi.fn().mockResolvedValue({ modifiedCount: 1 }),
+    updateOnboarding: vi.fn().mockResolvedValue({}),
   },
 }));
 
@@ -141,7 +141,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   safeDecrypt.mockImplementation((v) => v);
   emailService.sendOrganizationInvitation.mockResolvedValue({ success: true });
-  User.updateOne.mockResolvedValue({ modifiedCount: 1 });
+  User.updateOnboarding.mockResolvedValue({});
 });
 
 // ---------------------------------------------------------------------------
@@ -226,7 +226,7 @@ describe('createOrganization', () => {
 
 describe('getMyOrganization', () => {
   it('returns organization: null when user has no membership', async () => {
-    OrganizationMember.findOne.mockResolvedValue(null);
+    OrganizationMember.findActiveByUserId.mockResolvedValue(null);
     const { req, res, next } = makeCtx();
     await getMyOrganization(req, res, next);
     const body = res.json.mock.calls[0][0];
@@ -235,15 +235,13 @@ describe('getMyOrganization', () => {
   });
 
   it('returns org details and role when membership exists', async () => {
-    const populated = {
-      ...mockActiveMembership,
-      organizationId: { _id: ORG_OID, name: 'HDI', industry: 'insurance', country: 'DE' },
-    };
-    OrganizationMember.findOne.mockResolvedValue(populated);
+    OrganizationMember.findActiveByUserId.mockResolvedValue(mockActiveMembership);
+    Organization.findById.mockResolvedValue({ id: ORG_OID, name: 'HDI', industry: 'insurance' });
 
     const { req, res, next } = makeCtx();
     await getMyOrganization(req, res, next);
     const body = res.json.mock.calls[0][0];
+    expect(Organization.findById).toHaveBeenCalledWith(ORG_OID);
     expect(body.data.organization.name).toBe('HDI');
     expect(body.data.role).toBe('org_admin');
   });
@@ -285,7 +283,10 @@ describe('inviteMember', () => {
 
   it('returns 409 when email is already an active member', async () => {
     OrganizationMember.findActiveByUserId.mockResolvedValue(mockActiveMembership);
-    OrganizationMember.findOne.mockResolvedValue({ email: 'bob@hdi.de', status: 'active' });
+    OrganizationMember.findActiveByOrgAndEmail.mockResolvedValue({
+      email: 'bob@hdi.de',
+      status: 'active',
+    });
 
     const { req, res, next } = makeCtx({ email: 'bob@hdi.de', role: 'analyst' });
     await inviteMember(req, res, next);
@@ -293,10 +294,10 @@ describe('inviteMember', () => {
   });
 
   it('creates invite and returns 201', async () => {
-    const newMember = { _id: MBR_OID, email: 'bob@hdi.de', role: 'analyst', status: 'pending' };
+    const newMember = { id: MBR_OID, email: 'bob@hdi.de', role: 'analyst', status: 'pending' };
 
     OrganizationMember.findActiveByUserId.mockResolvedValue(mockActiveMembership);
-    OrganizationMember.findOne.mockResolvedValue(null);
+    OrganizationMember.findActiveByOrgAndEmail.mockResolvedValue(null);
 
     OrganizationMember.createInvite.mockResolvedValue({ member: newMember, rawToken: 'tok123' });
     Organization.findById.mockResolvedValue(mockOrg);
@@ -327,14 +328,14 @@ describe('getMembers', () => {
 
   it('returns member list with id, email, role, status', async () => {
     OrganizationMember.findActiveByUserId.mockResolvedValue(mockActiveMembership);
-    OrganizationMember.find.mockResolvedValue([
+    OrganizationMember.findByOrganizationWithUser.mockResolvedValue([
       {
-        _id: MBR_OID,
+        id: MBR_OID,
         email: 'alice@hdi.de',
         role: 'org_admin',
         status: 'active',
         joinedAt: new Date(),
-        userId: { _id: USER_OID, name: 'Alice', email: 'alice@hdi.de' },
+        user: { id: USER_OID, name: 'Alice', email: 'alice@hdi.de' },
       },
     ]);
 
@@ -379,7 +380,7 @@ describe('removeMember', () => {
       ...callerMembership,
       userId: USER_OID.toString(),
     });
-    OrganizationMember.count.mockResolvedValue(1); // only one admin
+    OrganizationMember.countAdmins.mockResolvedValue(1); // only one admin
 
     const { req, res, next } = makeCtx({}, { memberId: MBR_OID.toString() });
     await removeMember(req, res, next);

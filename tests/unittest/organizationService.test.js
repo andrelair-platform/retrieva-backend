@@ -1,7 +1,9 @@
 /**
- * OrganizationService.createOrganization regression — guards the RTV-49 Mongo-ism
- * (`org._id`) that inserted a NULL organization_id into organization_members (500).
- * The Drizzle org row exposes `.id`; the member + the user update must both receive it.
+ * OrganizationService regression — guards the RTV-49 Mongo-isms:
+ *  - createOrganization `org._id` → NULL organization_id (500);
+ *  - getMyOrganization / inviteMember / getMembers / removeMember passing Mongo query
+ *    objects / `$ne` / `$set` / `populate` to the Drizzle repos (retrieva-backend#10).
+ * Asserts each now calls the Drizzle-native repo methods.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OrganizationService } from '../../services/OrganizationService.js';
@@ -17,10 +19,17 @@ function makeService(overrides = {}) {
   const memberRepo = {
     findActiveByUserId: vi.fn().mockResolvedValue(null), // not already in an org
     create: vi.fn().mockResolvedValue({ id: 'member-1', organizationId: ORG_ID }),
+    findActiveByOrgAndEmail: vi.fn().mockResolvedValue(null),
+    findByOrganizationWithUser: vi.fn().mockResolvedValue([]),
+    createInvite: vi.fn().mockResolvedValue({ member: { id: 'member-2' }, rawToken: 'tok' }),
+    countAdmins: vi.fn().mockResolvedValue(2),
+    revokeMembership: vi.fn().mockResolvedValue({ id: 'member-x' }),
+    findById: vi.fn(),
   };
   const userRepo = {
-    findById: vi.fn().mockResolvedValue({ id: 'user-1', email: 'u@x.io' }),
+    findById: vi.fn().mockResolvedValue({ id: 'user-1', email: 'u@x.io', name: 'U' }),
     updateById: vi.fn().mockResolvedValue({ id: 'user-1' }),
+    updateOnboarding: vi.fn().mockResolvedValue({ id: 'user-1' }),
   };
   const setupOrgBilling = vi
     .fn()
@@ -30,7 +39,7 @@ function makeService(overrides = {}) {
     memberRepo,
     userRepo,
     setupOrgBilling,
-    emailService: { sendOrganizationInvitation: vi.fn() },
+    emailService: { sendOrganizationInvitation: vi.fn().mockResolvedValue(undefined) },
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     ...overrides,
   });
@@ -77,5 +86,103 @@ describe('OrganizationService.createOrganization', () => {
     await expect(svc.createOrganization('user-1', { name: 'Acme' })).rejects.toThrow(
       /already belong/i
     );
+  });
+});
+
+describe('OrganizationService — RTV-49 Mongo-ism fixes (retrieva-backend#10)', () => {
+  it('getMyOrganization uses findActiveByUserId + organizationRepo.findById (no populate)', async () => {
+    const svc = makeService();
+    svc.memberRepo.findActiveByUserId.mockResolvedValue({
+      organizationId: ORG_ID,
+      role: 'analyst',
+    });
+    svc.organizationRepo.findById.mockResolvedValue({ id: ORG_ID, name: 'Acme' });
+
+    const res = await svc.getMyOrganization('user-1');
+    expect(svc.memberRepo.findActiveByUserId).toHaveBeenCalledWith('user-1');
+    expect(svc.organizationRepo.findById).toHaveBeenCalledWith(ORG_ID);
+    expect(res).toEqual({ organization: { id: ORG_ID, name: 'Acme' }, role: 'analyst' });
+  });
+
+  it('getMyOrganization returns nulls when there is no active membership', async () => {
+    const svc = makeService();
+    svc.memberRepo.findActiveByUserId.mockResolvedValue(null);
+    expect(await svc.getMyOrganization('user-1')).toEqual({ organization: null, role: null });
+  });
+
+  it('getMembers delegates to findByOrganizationWithUser (no $ne/populate)', async () => {
+    const svc = makeService();
+    svc.memberRepo.findActiveByUserId.mockResolvedValue({
+      organizationId: ORG_ID,
+      role: 'org_admin',
+    });
+    svc.memberRepo.findByOrganizationWithUser.mockResolvedValue([{ id: 'm1', user: { id: 'u1' } }]);
+
+    const members = await svc.getMembers('user-1');
+    expect(svc.memberRepo.findByOrganizationWithUser).toHaveBeenCalledWith(ORG_ID);
+    expect(members).toEqual([{ id: 'm1', user: { id: 'u1' } }]);
+  });
+
+  it('inviteMember: dup-check via findActiveByOrgAndEmail + onboarding via updateOnboarding', async () => {
+    const svc = makeService();
+    svc.memberRepo.findActiveByUserId.mockResolvedValue({
+      organizationId: ORG_ID,
+      role: 'org_admin',
+    });
+    svc.organizationRepo.findById.mockResolvedValue({ id: ORG_ID, name: 'Acme' });
+
+    await svc.inviteMember('inviter-1', { email: 'New@X.io', role: 'analyst' });
+    expect(svc.memberRepo.findActiveByOrgAndEmail).toHaveBeenCalledWith(ORG_ID, 'New@X.io');
+    expect(svc.memberRepo.createInvite).toHaveBeenCalled();
+    // onboarding checklist merged idempotently (no Mongo $set / dotted path)
+    expect(svc.userRepo.updateOnboarding).toHaveBeenCalledWith('inviter-1', {
+      checklist: { memberInvited: true },
+    });
+  });
+
+  it('inviteMember rejects a duplicate active member (409)', async () => {
+    const svc = makeService();
+    svc.memberRepo.findActiveByUserId.mockResolvedValue({
+      organizationId: ORG_ID,
+      role: 'org_admin',
+    });
+    svc.memberRepo.findActiveByOrgAndEmail.mockResolvedValue({ id: 'dup' });
+    await expect(svc.inviteMember('inviter-1', { email: 'dup@x.io' })).rejects.toThrow(
+      /already an active member/i
+    );
+  });
+
+  it('removeMember guards the last admin via countAdmins (no Mongo count criteria)', async () => {
+    const svc = makeService();
+    svc.memberRepo.findActiveByUserId.mockResolvedValue({
+      organizationId: ORG_ID,
+      role: 'org_admin',
+    });
+    svc.memberRepo.findById.mockResolvedValue({
+      id: 'self',
+      organizationId: ORG_ID,
+      userId: 'user-1',
+    });
+    svc.memberRepo.countAdmins.mockResolvedValue(1); // only admin
+
+    await expect(svc.removeMember('user-1', 'self')).rejects.toThrow(/only org admin/i);
+    expect(svc.memberRepo.countAdmins).toHaveBeenCalledWith(ORG_ID);
+    expect(svc.memberRepo.revokeMembership).not.toHaveBeenCalled();
+  });
+
+  it('removeMember revokes a normal member', async () => {
+    const svc = makeService();
+    svc.memberRepo.findActiveByUserId.mockResolvedValue({
+      organizationId: ORG_ID,
+      role: 'org_admin',
+    });
+    svc.memberRepo.findById.mockResolvedValue({
+      id: 'other',
+      organizationId: ORG_ID,
+      userId: 'user-9',
+    });
+
+    await svc.removeMember('user-1', 'other');
+    expect(svc.memberRepo.revokeMembership).toHaveBeenCalledWith('other');
   });
 });

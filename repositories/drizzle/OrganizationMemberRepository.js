@@ -3,7 +3,7 @@
  * model's statics (invite-token create/find/activate) to repo methods. Not a
  * per-workspace tenant table (org-scoped), so plain base. Additive; not wired yet.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
 import { organizationMembers } from '../../db/schema/index.js';
 import { sha256, generateToken } from '../../utils/security/crypto.js';
@@ -28,6 +28,32 @@ export class OrganizationMemberRepository extends BaseDrizzleRepository {
         eq(organizationMembers.status, status)
       )
     );
+  }
+
+  /** An active member matching an org + email — the duplicate-invite guard. */
+  async findActiveByOrgAndEmail(organizationId, email) {
+    return this.findOne(
+      and(
+        eq(organizationMembers.organizationId, organizationId),
+        eq(organizationMembers.email, String(email).toLowerCase()),
+        eq(organizationMembers.status, 'active')
+      )
+    );
+  }
+
+  /**
+   * All non-revoked members of an org, each WITH its user (id, encrypted name, email) —
+   * the Drizzle relational replacement for the Mongoose `.populate('userId', 'name email')`.
+   * Decrypt `user.name` at the caller (it's stored encrypted).
+   */
+  async findByOrganizationWithUser(organizationId) {
+    return this.db.query.organizationMembers.findMany({
+      where: and(
+        eq(organizationMembers.organizationId, organizationId),
+        ne(organizationMembers.status, 'revoked')
+      ),
+      with: { user: { columns: { id: true, name: true, email: true } } },
+    });
   }
 
   async revokeMembership(memberId) {
