@@ -1,6 +1,12 @@
 /**
  * RoI Export Service
  *
+ * LEGACY (RTV-18 placeholder) — WORKSPACE/vendor-based Register. Superseded by the graph-based
+ * projection in services/registerProjectionService.js + services/registerExportService.js
+ * (RTV-38, `/api/v1/register`), which builds RT.02.01 from the arrangement graph. Kept working
+ * (endpoint GET /api/v1/workspaces/roi-export) until arrangement intake (RTV-34/39) populates the
+ * graph so the new register isn't empty; remove once the graph is the source of truth.
+ *
  * Generates an EBA-compliant DORA Article 28(3) Register of Information
  * workbook (XLSX) for all workspaces accessible by the requesting user.
  *

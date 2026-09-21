@@ -18,6 +18,7 @@ import healthRoutes from './routes/healthRoutes.js';
 import assessmentRoutes from './routes/assessmentRoutes.js';
 import complianceRoutes from './routes/complianceRoutes.js';
 import concentrationRoutes from './modules/concentration/concentration.routes.js';
+import registerRoutes from './modules/register/register.routes.js';
 import questionnaireRoutes from './routes/questionnaireRoutes.js';
 import questionnairePublicRoutes from './routes/questionnairePublicRoutes.js';
 import organizationRoutes from './routes/organizationRoutes.js';
@@ -281,6 +282,9 @@ app.use(
   setEntityContext,
   concentrationRoutes
 );
+// Register of Information (RT.02.01) — org-scoped projection of the arrangement graph (RTV-38);
+// setEntityContext applies RTV-54 row-level isolation to the graph reads.
+app.use('/api/v1/register', optionalAuth, requireActivePlan, setEntityContext, registerRoutes);
 app.use(
   '/api/v1/questionnaires',
   optionalAuth,

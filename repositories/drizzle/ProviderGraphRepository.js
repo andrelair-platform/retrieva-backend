@@ -43,6 +43,20 @@ export class ProviderGraphRepository extends BaseDrizzleRepository {
     return node;
   }
 
+  /** All provider nodes for the org (RTV-38 register B_05). Entity-scoped. */
+  async listNodesByOrg(organizationId) {
+    return this.db
+      .select()
+      .from(providerNodes)
+      .where(
+        and(
+          eq(providerNodes.organizationId, organizationId),
+          entityScopeCondition(providerNodes.organizationId, { action: 'provider:read' })
+        )
+      )
+      .orderBy(asc(providerNodes.displayName));
+  }
+
   // ── edges (with node objects rebuilt for computeConcentration) ──────────────
   async _loadEdges(organizationId, { confirmedOnly = false } = {}) {
     const parent = { ...providerNodes };
