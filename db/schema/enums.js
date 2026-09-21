@@ -80,6 +80,18 @@ export const criticalityEnum = pgEnum('criticality', ['critical', 'important']);
 export const providerNodeKindEnum = pgEnum('provider_node_kind', ['workspace', 'external']);
 export const providerSourceEnum = pgEnum('provider_source', ['manual', 'extracted']);
 
+// provider_type is a growable taxonomy (new provider categories don't need ALTER TYPE) —
+// text + CHECK on provider_nodes, like ORG_INDUSTRIES. Drives RTV-33 provider-type modules.
+export const PROVIDER_TYPES = ['cloud', 'ai_ml', 'software', 'data', 'network', 'other'];
+
+// ── Arrangement graph (RTV-36, domain-model ADR §1) ──────────────────────────
+// The ICT contractual arrangement is the DORA fact object. These are scalar domain
+// enums (DB-level integrity, cert evidence). criticality reuses tierEnum; data_residency
+// is free text (country/region); data_classes is JSONB.
+export const arrangementTypeEnum = pgEnum('arrangement_type', ['external', 'intra_group']);
+export const dependencyLevelEnum = pgEnum('dependency_level', ['low', 'medium', 'high']);
+export const exitDifficultyEnum = pgEnum('exit_difficulty', ['low', 'medium', 'high']);
+
 export const questionnaireStatusEnum = pgEnum('questionnaire_status', [
   'draft',
   'sent',

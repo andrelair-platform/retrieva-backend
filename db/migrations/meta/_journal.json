@@ -15,6 +15,13 @@
       "when": 1789924707417,
       "tag": "0001_fresh_wrecker",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790018002458,
+      "tag": "0002_amused_northstar",
+      "breakpoints": true
     }
   ]
 }

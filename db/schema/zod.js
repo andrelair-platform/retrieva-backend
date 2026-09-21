@@ -17,6 +17,10 @@ import {
   providerDependencies,
   questionnaireTemplates,
   vendorQuestionnaires,
+  legalEntities,
+  businessFunctions,
+  ictServices,
+  arrangements,
 } from './index.js';
 
 export const userInsertSchema = createInsertSchema(users);
@@ -55,3 +59,14 @@ export const questionnaireTemplateInsertSchema = createInsertSchema(questionnair
 export const questionnaireTemplateSelectSchema = createSelectSchema(questionnaireTemplates);
 export const vendorQuestionnaireInsertSchema = createInsertSchema(vendorQuestionnaires);
 export const vendorQuestionnaireSelectSchema = createSelectSchema(vendorQuestionnaires);
+
+// Arrangement graph (RTV-36). drizzle-zod derives the enum/CHECK value sets from the tables,
+// so an invalid arrangement_type / criticality / service_type is rejected before the DB.
+export const legalEntityInsertSchema = createInsertSchema(legalEntities);
+export const legalEntitySelectSchema = createSelectSchema(legalEntities);
+export const businessFunctionInsertSchema = createInsertSchema(businessFunctions);
+export const businessFunctionSelectSchema = createSelectSchema(businessFunctions);
+export const ictServiceInsertSchema = createInsertSchema(ictServices);
+export const ictServiceSelectSchema = createSelectSchema(ictServices);
+export const arrangementInsertSchema = createInsertSchema(arrangements);
+export const arrangementSelectSchema = createSelectSchema(arrangements);

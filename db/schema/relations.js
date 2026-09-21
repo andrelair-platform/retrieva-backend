@@ -11,6 +11,10 @@ import { assessments } from './assessments.js';
 import { criticalFunctions, criticalFunctionDependencies } from './criticalFunctions.js';
 import { providerNodes, providerDependencies } from './providerDependencies.js';
 import { questionnaireTemplates, vendorQuestionnaires } from './questionnaires.js';
+import { legalEntities } from './legalEntities.js';
+import { businessFunctions } from './businessFunctions.js';
+import { ictServices } from './ictServices.js';
+import { arrangements } from './arrangements.js';
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   // user.organizationId → organizations (the org the user belongs to)
@@ -43,6 +47,10 @@ export const organizationsRelations = relations(organizations, ({ one, many }) =
   criticalFunctions: many(criticalFunctions),
   providerNodes: many(providerNodes),
   providerDependencies: many(providerDependencies),
+  legalEntities: many(legalEntities),
+  businessFunctions: many(businessFunctions),
+  ictServices: many(ictServices),
+  arrangements: many(arrangements),
   // reciprocal of users.organization
   users: many(users, { relationName: 'org_membership' }),
 }));
@@ -137,6 +145,9 @@ export const providerNodesRelations = relations(providerNodes, ({ one, many }) =
   // edges where this node is the parent / child
   outgoingEdges: many(providerDependencies, { relationName: 'edge_parent' }),
   incomingEdges: many(providerDependencies, { relationName: 'edge_child' }),
+  // arrangement-graph reuse (RTV-36): a provider is the Provider dimension + offers services
+  ictServices: many(ictServices),
+  arrangements: many(arrangements),
 }));
 
 export const providerDependenciesRelations = relations(providerDependencies, ({ one }) => ({
@@ -168,5 +179,73 @@ export const vendorQuestionnairesRelations = relations(vendorQuestionnaires, ({ 
   template: one(questionnaireTemplates, {
     fields: [vendorQuestionnaires.templateId],
     references: [questionnaireTemplates.id],
+  }),
+}));
+
+// ── Arrangement graph (RTV-36) ─────────────────────────────────────────────────
+export const legalEntitiesRelations = relations(legalEntities, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [legalEntities.organizationId],
+    references: [organizations.id],
+  }),
+  // self-referencing group hierarchy
+  parent: one(legalEntities, {
+    fields: [legalEntities.parentEntityId],
+    references: [legalEntities.id],
+    relationName: 'entity_parent',
+  }),
+  children: many(legalEntities, { relationName: 'entity_parent' }),
+  businessFunctions: many(businessFunctions),
+  arrangements: many(arrangements),
+}));
+
+export const businessFunctionsRelations = relations(businessFunctions, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [businessFunctions.organizationId],
+    references: [organizations.id],
+  }),
+  legalEntity: one(legalEntities, {
+    fields: [businessFunctions.legalEntityId],
+    references: [legalEntities.id],
+  }),
+  arrangements: many(arrangements),
+}));
+
+export const ictServicesRelations = relations(ictServices, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [ictServices.organizationId],
+    references: [organizations.id],
+  }),
+  provider: one(providerNodes, {
+    fields: [ictServices.providerId],
+    references: [providerNodes.id],
+  }),
+  arrangements: many(arrangements),
+}));
+
+export const arrangementsRelations = relations(arrangements, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [arrangements.organizationId],
+    references: [organizations.id],
+  }),
+  legalEntity: one(legalEntities, {
+    fields: [arrangements.legalEntityId],
+    references: [legalEntities.id],
+  }),
+  businessFunction: one(businessFunctions, {
+    fields: [arrangements.businessFunctionId],
+    references: [businessFunctions.id],
+  }),
+  provider: one(providerNodes, {
+    fields: [arrangements.providerId],
+    references: [providerNodes.id],
+  }),
+  ictService: one(ictServices, {
+    fields: [arrangements.ictServiceId],
+    references: [ictServices.id],
+  }),
+  createdByUser: one(users, {
+    fields: [arrangements.createdBy],
+    references: [users.id],
   }),
 }));

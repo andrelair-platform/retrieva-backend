@@ -48,3 +48,12 @@ export {
   ProviderGraphRepository,
   providerGraphRepository,
 } from './drizzle/ProviderGraphRepository.js';
+
+// Arrangement graph (RTV-36)
+export { LegalEntityRepository, legalEntityRepository } from './drizzle/LegalEntityRepository.js';
+export {
+  BusinessFunctionRepository,
+  businessFunctionRepository,
+} from './drizzle/BusinessFunctionRepository.js';
+export { IctServiceRepository, ictServiceRepository } from './drizzle/IctServiceRepository.js';
+export { ArrangementRepository, arrangementRepository } from './drizzle/ArrangementRepository.js';
