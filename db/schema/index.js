@@ -15,4 +15,7 @@ export * from './legalEntities.js';
 export * from './businessFunctions.js';
 export * from './ictServices.js';
 export * from './arrangements.js';
+// Evidence + audit trail (RTV-37)
+export * from './evidence.js';
+export * from './auditLog.js';
 export * from './relations.js';

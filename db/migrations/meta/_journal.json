@@ -22,6 +22,13 @@
       "when": 1790018002458,
       "tag": "0002_amused_northstar",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790020069344,
+      "tag": "0003_closed_sentry",
+      "breakpoints": true
     }
   ]
 }

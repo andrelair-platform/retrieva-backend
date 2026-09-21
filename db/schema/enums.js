@@ -92,6 +92,10 @@ export const arrangementTypeEnum = pgEnum('arrangement_type', ['external', 'intr
 export const dependencyLevelEnum = pgEnum('dependency_level', ['low', 'medium', 'high']);
 export const exitDifficultyEnum = pgEnum('exit_difficulty', ['low', 'medium', 'high']);
 
+// Two-tier evidence (RTV-37, ADR §3): provider-global (shared/inherited across arrangements)
+// vs arrangement-local (entity-private).
+export const evidenceScopeEnum = pgEnum('evidence_scope', ['provider', 'arrangement']);
+
 export const questionnaireStatusEnum = pgEnum('questionnaire_status', [
   'draft',
   'sent',

@@ -57,3 +57,7 @@ export {
 } from './drizzle/BusinessFunctionRepository.js';
 export { IctServiceRepository, ictServiceRepository } from './drizzle/IctServiceRepository.js';
 export { ArrangementRepository, arrangementRepository } from './drizzle/ArrangementRepository.js';
+
+// Evidence + audit trail (RTV-37)
+export { EvidenceRepository, evidenceRepository } from './drizzle/EvidenceRepository.js';
+export { AuditLogRepository, auditLogRepository } from './drizzle/AuditLogRepository.js';

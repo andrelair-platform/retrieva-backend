@@ -15,6 +15,8 @@ import { legalEntities } from './legalEntities.js';
 import { businessFunctions } from './businessFunctions.js';
 import { ictServices } from './ictServices.js';
 import { arrangements } from './arrangements.js';
+import { evidence } from './evidence.js';
+import { auditLog } from './auditLog.js';
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   // user.organizationId → organizations (the org the user belongs to)
@@ -148,6 +150,7 @@ export const providerNodesRelations = relations(providerNodes, ({ one, many }) =
   // arrangement-graph reuse (RTV-36): a provider is the Provider dimension + offers services
   ictServices: many(ictServices),
   arrangements: many(arrangements),
+  evidence: many(evidence), // provider-global evidence (RTV-37)
 }));
 
 export const providerDependenciesRelations = relations(providerDependencies, ({ one }) => ({
@@ -223,7 +226,7 @@ export const ictServicesRelations = relations(ictServices, ({ one, many }) => ({
   arrangements: many(arrangements),
 }));
 
-export const arrangementsRelations = relations(arrangements, ({ one }) => ({
+export const arrangementsRelations = relations(arrangements, ({ one, many }) => ({
   organization: one(organizations, {
     fields: [arrangements.organizationId],
     references: [organizations.id],
@@ -246,6 +249,42 @@ export const arrangementsRelations = relations(arrangements, ({ one }) => ({
   }),
   createdByUser: one(users, {
     fields: [arrangements.createdBy],
+    references: [users.id],
+  }),
+  evidence: many(evidence), // arrangement-local evidence (RTV-37)
+}));
+
+// ── Evidence + audit trail (RTV-37) ─────────────────────────────────────────────
+export const evidenceRelations = relations(evidence, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [evidence.organizationId],
+    references: [organizations.id],
+  }),
+  provider: one(providerNodes, {
+    fields: [evidence.providerId],
+    references: [providerNodes.id],
+  }),
+  arrangement: one(arrangements, {
+    fields: [evidence.arrangementId],
+    references: [arrangements.id],
+  }),
+  service: one(ictServices, {
+    fields: [evidence.serviceId],
+    references: [ictServices.id],
+  }),
+  createdByUser: one(users, {
+    fields: [evidence.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const auditLogRelations = relations(auditLog, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [auditLog.organizationId],
+    references: [organizations.id],
+  }),
+  actorUser: one(users, {
+    fields: [auditLog.actor],
     references: [users.id],
   }),
 }));
