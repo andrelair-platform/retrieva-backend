@@ -1,0 +1,3 @@
+B_02.01.0010 Arrangement reference number,B_02.01.0020 Type of arrangement,B_02.01.0030 Legal entity (LEI),B_02.02.0010 Function supported,B_02.02.0020 Critical or important function,B_02.02.0030 ICT provider,B_02.02.0040 ICT service,B_02.03.0010 Criticality (CIF),B_02.03.0020 Data classes processed,B_02.03.0030 Data residency,B_02.03.0040 Dependency level,B_02.03.0050 Exit difficulty,B_07.01.0010 Latest assessment status
+a1,external,LEI-FR,Claims Handling,yes,Microsoft,Azure,critical,pii; claims,FR,high,high,
+a2,intra_group,LEI-FR,Claims Handling,yes,OpenAI,,important,pii,BE,medium,low,
