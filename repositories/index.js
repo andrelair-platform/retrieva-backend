@@ -61,3 +61,6 @@ export { ArrangementRepository, arrangementRepository } from './drizzle/Arrangem
 // Evidence + audit trail (RTV-37)
 export { EvidenceRepository, evidenceRepository } from './drizzle/EvidenceRepository.js';
 export { AuditLogRepository, auditLogRepository } from './drizzle/AuditLogRepository.js';
+
+// Assessment findings (RTV-41)
+export { FindingRepository, findingRepository } from './drizzle/FindingRepository.js';

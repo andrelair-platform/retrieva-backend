@@ -18,4 +18,6 @@ export * from './arrangements.js';
 // Evidence + audit trail (RTV-37)
 export * from './evidence.js';
 export * from './auditLog.js';
+// Assessment findings (RTV-41)
+export * from './findings.js';
 export * from './relations.js';
