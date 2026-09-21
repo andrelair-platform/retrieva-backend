@@ -26,8 +26,7 @@ vi.mock('../../repositories/drizzle/VendorQuestionnaireRepository.js', () => ({
   vendorQuestionnaireRepository: {
     create: vi.fn(),
     findById: vi.fn(),
-    find: vi.fn(),
-    count: vi.fn(),
+    listByWorkspaces: vi.fn(),
     findByToken: vi.fn(),
     updateById: vi.fn(),
   },
@@ -210,8 +209,12 @@ describe('listQuestionnaires', () => {
   beforeEach(() => {
     res = makeRes();
     next = vi.fn();
-    VendorQuestionnaire.find.mockResolvedValue([]);
-    VendorQuestionnaire.count.mockResolvedValue(0);
+    VendorQuestionnaire.listByWorkspaces.mockResolvedValue({
+      rows: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+    });
   });
 
   it('returns paginated empty list with defaults', async () => {
@@ -231,28 +234,30 @@ describe('listQuestionnaires', () => {
   it('applies status filter when provided', async () => {
     const req = makeReq({ query: { status: 'complete' } });
     await listQuestionnaires(req, res, next);
-    expect(VendorQuestionnaire.find).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'complete' }),
-      expect.any(Object)
+    expect(VendorQuestionnaire.listByWorkspaces).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'complete' })
     );
   });
 
   it('applies workspaceId filter when provided', async () => {
     const req = makeReq({ query: { workspaceId: WS_ID } });
     await listQuestionnaires(req, res, next);
-    expect(VendorQuestionnaire.find).toHaveBeenCalledWith(
-      expect.objectContaining({ workspaceId: WS_ID }),
-      expect.any(Object)
+    expect(VendorQuestionnaire.listByWorkspaces).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: WS_ID })
     );
   });
 
   it('respects custom page and limit', async () => {
+    VendorQuestionnaire.listByWorkspaces.mockResolvedValue({
+      rows: [],
+      total: 0,
+      page: 2,
+      limit: 5,
+    });
     const req = makeReq({ query: { page: '2', limit: '5' } });
     await listQuestionnaires(req, res, next);
-    // Repo.find is now called with (filter, options) where options carries skip+limit
-    expect(VendorQuestionnaire.find).toHaveBeenCalledWith(
-      expect.any(Object),
-      expect.objectContaining({ skip: 5, limit: 5 })
+    expect(VendorQuestionnaire.listByWorkspaces).toHaveBeenCalledWith(
+      expect.objectContaining({ page: '2', limit: '5' })
     );
   });
 });

@@ -60,31 +60,22 @@ class QuestionnaireService {
   }
 
   async listQuestionnaires({ authorizedWorkspaceIds, workspaceId, status, page, limit }) {
-    const filter = { workspaceId: { $in: authorizedWorkspaceIds } };
-    if (workspaceId) filter.workspaceId = workspaceId;
-    if (status) filter.status = status;
-
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
-    const [questionnaires, total] = await Promise.all([
-      this.questionnaireRepo.find(filter, {
-        select: '-questions.answer -questions.reasoning -results.summary',
-        sort: { createdAt: -1 },
-        skip,
-        limit: parseInt(limit),
-        lean: true,
-      }),
-      this.questionnaireRepo.count(filter),
-    ]);
+    const {
+      rows,
+      total,
+      page: p,
+      limit: l,
+    } = await this.questionnaireRepo.listByWorkspaces({
+      workspaceIds: authorizedWorkspaceIds,
+      workspaceId,
+      status,
+      page,
+      limit,
+    });
 
     return {
-      questionnaires,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / parseInt(limit)),
-      },
+      questionnaires: rows,
+      pagination: { page: p, limit: l, total, pages: Math.ceil(total / l) },
     };
   }
 
