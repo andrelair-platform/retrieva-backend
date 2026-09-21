@@ -38,9 +38,11 @@ class QuestionnaireService {
       hint: q.hint,
     }));
 
-    const questionnaire = await this.questionnaireRepo.create({
+    // Unscoped create with an EXPLICIT workspaceId (the scoped create would overwrite it from
+    // the request tenant + require a tenant context this service doesn't rely on).
+    const questionnaire = await this.questionnaireRepo.createUnscoped({
       workspaceId,
-      templateId: template._id,
+      templateId: template.id,
       vendorName: vendorName.trim(),
       vendorEmail: vendorEmail.trim().toLowerCase(),
       vendorContactName: vendorContactName?.trim() || '',
@@ -52,7 +54,7 @@ class QuestionnaireService {
 
     this.logger.info('VendorQuestionnaire created', {
       service: 'questionnaire-service',
-      questionnaireId: questionnaire._id,
+      questionnaireId: questionnaire.id,
       userId,
     });
 
@@ -80,25 +82,27 @@ class QuestionnaireService {
   }
 
   async getQuestionnaire(id, authorizedWorkspaceIds) {
-    const questionnaire = await this.questionnaireRepo.findById(id, { lean: true });
+    // Unscoped: this service does its own authz (authorizedWorkspaceIds) rather than the
+    // request tenant, so it reads across workspaces then gates below.
+    const questionnaire = await this.questionnaireRepo.findByIdUnscoped(id);
     if (!questionnaire) throw new AppError('Questionnaire not found', 404);
-    if (!authorizedWorkspaceIds.includes(questionnaire.workspaceId.toString())) {
+    if (!authorizedWorkspaceIds.includes(String(questionnaire.workspaceId))) {
       throw new AppError('Access denied', 403);
     }
     return questionnaire;
   }
 
   async deleteQuestionnaire(id, userId, authorizedWorkspaceIds) {
-    const questionnaire = await this.questionnaireRepo.findById(id);
+    const questionnaire = await this.questionnaireRepo.findByIdUnscoped(id);
     if (!questionnaire) throw new AppError('Questionnaire not found', 404);
-    if (!authorizedWorkspaceIds.includes(questionnaire.workspaceId.toString())) {
+    if (!authorizedWorkspaceIds.includes(String(questionnaire.workspaceId))) {
       throw new AppError('Access denied', 403);
     }
     if (questionnaire.createdBy !== userId) {
       throw new AppError('Only the creator can delete this questionnaire', 403);
     }
 
-    await questionnaire.deleteOne();
+    await this.questionnaireRepo.deleteByIdUnscoped(id);
 
     this.logger.info('VendorQuestionnaire deleted', {
       service: 'questionnaire-service',
@@ -108,10 +112,10 @@ class QuestionnaireService {
   }
 
   async sendQuestionnaire(id, { userName, userEmail }, authorizedWorkspaces) {
-    const authorizedWorkspaceIds = authorizedWorkspaces.map((w) => w._id.toString());
-    const questionnaire = await this.questionnaireRepo.findById(id);
+    const authorizedWorkspaceIds = authorizedWorkspaces.map((w) => String(w._id));
+    const questionnaire = await this.questionnaireRepo.findByIdUnscoped(id);
     if (!questionnaire) throw new AppError('Questionnaire not found', 404);
-    if (!authorizedWorkspaceIds.includes(questionnaire.workspaceId.toString())) {
+    if (!authorizedWorkspaceIds.includes(String(questionnaire.workspaceId))) {
       throw new AppError('Access denied', 403);
     }
     if (questionnaire.status === 'complete') {
@@ -121,39 +125,41 @@ class QuestionnaireService {
     const token = randomUUID();
     const tokenExpiresAt = new Date(Date.now() + TOKEN_EXPIRY_MS);
 
-    questionnaire.token = token;
-    questionnaire.tokenExpiresAt = tokenExpiresAt;
-    questionnaire.status = 'sent';
-    questionnaire.sentAt = new Date();
-    questionnaire.statusMessage = 'Invitation sent to vendor';
-    await questionnaire.save();
+    const updated = await this.questionnaireRepo.updateByIdUnscoped(questionnaire.id, {
+      token,
+      tokenExpiresAt,
+      status: 'sent',
+      sentAt: new Date(),
+      statusMessage: 'Invitation sent to vendor',
+    });
 
     const workspaceName =
-      authorizedWorkspaces.find((w) => w._id.toString() === questionnaire.workspaceId.toString())
-        ?.name || 'Your Assessment Team';
+      authorizedWorkspaces.find((w) => String(w._id) === String(questionnaire.workspaceId))?.name ||
+      'Your Assessment Team';
 
     await this.emailService.sendQuestionnaireInvitation({
       toEmail: questionnaire.vendorEmail,
       toName: questionnaire.vendorContactName || questionnaire.vendorName,
       senderName: userName || userEmail || 'Your assessment team',
       workspaceName,
-      questionnaireId: questionnaire._id.toString(),
+      questionnaireId: String(questionnaire.id),
       token,
       expiresAt: tokenExpiresAt,
     });
 
     this.logger.info('VendorQuestionnaire sent', {
       service: 'questionnaire-service',
-      questionnaireId: questionnaire._id,
+      questionnaireId: questionnaire.id,
       vendorEmail: questionnaire.vendorEmail,
       tokenExpires: tokenExpiresAt,
     });
 
-    return questionnaire;
+    return updated;
   }
 
   async getPublicForm(token) {
-    const questionnaire = await this.questionnaireRepo.findByToken(token, { lean: true });
+    // Public path — no auth/tenant context, so reads + writes are explicitly unscoped.
+    const questionnaire = await this.questionnaireRepo.findByToken(token);
     if (!questionnaire) throw new AppError('Questionnaire not found', 404);
 
     if (questionnaire.status === 'complete') {
@@ -161,7 +167,7 @@ class QuestionnaireService {
     }
 
     if (questionnaire.tokenExpiresAt && new Date() > new Date(questionnaire.tokenExpiresAt)) {
-      await this.questionnaireRepo.updateById(questionnaire._id, { status: 'expired' });
+      await this.questionnaireRepo.updateByIdUnscoped(questionnaire.id, { status: 'expired' });
       return { state: 'expired' };
     }
 
@@ -186,37 +192,38 @@ class QuestionnaireService {
 
     // Token expired during THIS request — flip status and signal a 410.
     if (questionnaire.tokenExpiresAt && new Date() > new Date(questionnaire.tokenExpiresAt)) {
-      questionnaire.status = 'expired';
-      await questionnaire.save();
+      await this.questionnaireRepo.updateByIdUnscoped(questionnaire.id, { status: 'expired' });
       return { state: 'justExpired' };
     }
 
-    // Merge answers into the questions array
+    // Merge answers into the questions array (in memory), then persist the whole array.
     const answerMap = new Map(answers.map((a) => [a.id, a.answer || '']));
-    for (const q of questionnaire.questions) {
-      if (answerMap.has(q.id)) {
-        q.answer = answerMap.get(q.id);
-      }
-    }
+    const mergedQuestions = questionnaire.questions.map((q) =>
+      answerMap.has(q.id) ? { ...q, answer: answerMap.get(q.id) } : q
+    );
 
     if (final) {
-      questionnaire.status = 'partial';
-      questionnaire.statusMessage = 'Response received — scoring in progress';
-      questionnaire.respondedAt = new Date();
-      await questionnaire.save();
+      await this.questionnaireRepo.updateByIdUnscoped(questionnaire.id, {
+        questions: mergedQuestions,
+        status: 'partial',
+        statusMessage: 'Response received — scoring in progress',
+        respondedAt: new Date(),
+      });
 
       await this.questionnaireQueue.add(
         'scoreQuestionnaire',
-        { questionnaireId: questionnaire._id.toString() },
-        { jobId: `scoreQuestionnaire-${questionnaire._id}` }
+        { questionnaireId: String(questionnaire.id) },
+        { jobId: `scoreQuestionnaire-${questionnaire.id}` }
       );
 
       this.logger.info('VendorQuestionnaire submitted — scoring enqueued', {
         service: 'questionnaire-service',
-        questionnaireId: questionnaire._id,
+        questionnaireId: questionnaire.id,
       });
     } else {
-      await questionnaire.save();
+      await this.questionnaireRepo.updateByIdUnscoped(questionnaire.id, {
+        questions: mergedQuestions,
+      });
     }
 
     return { state: 'saved', final: !!final };

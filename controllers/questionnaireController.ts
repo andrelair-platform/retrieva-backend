@@ -17,7 +17,7 @@ export const createQuestionnaire = catchAsync(async (req, res) => {
 
   sendSuccess(res, 201, 'Questionnaire created', {
     questionnaire: {
-      _id: questionnaire._id,
+      id: questionnaire.id,
       workspaceId: questionnaire.workspaceId,
       vendorName: questionnaire.vendorName,
       vendorEmail: questionnaire.vendorEmail,
@@ -93,7 +93,7 @@ export const sendQuestionnaire = catchAsync(async (req, res) => {
 
   sendSuccess(res, 200, 'Questionnaire invitation sent', {
     questionnaire: {
-      _id: questionnaire._id,
+      id: questionnaire.id,
       status: questionnaire.status,
       sentAt: questionnaire.sentAt,
       tokenExpiresAt: questionnaire.tokenExpiresAt,

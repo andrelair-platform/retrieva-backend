@@ -102,7 +102,7 @@ Write a 3-5 sentence executive summary of this vendor's DORA compliance posture.
   } catch (err) {
     logger.warn('LLM summary generation failed', {
       service: 'questionnaire-scorer',
-      questionnaireId: questionnaire._id,
+      questionnaireId: questionnaire.id,
       error: err.message,
     });
     return `Assessment completed for ${questionnaire.vendorName}. Overall score: ${questionnaire.overallScore}/100. Manual review recommended.`;
