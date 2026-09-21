@@ -1,22 +1,17 @@
 /**
- * Gap Analysis Agent — LangChain ReAct Loop
+ * Gap Analysis — deterministic retrieval → LLM pipeline.
  *
- * Uses LangChain's createToolCallingAgent + AgentExecutor to run a proper
- * ReAct (Reason + Act) loop:
+ * Two framework paths, each a direct 3-step pipeline (retrieve evidence from Qdrant →
+ * build context → single structured-JSON LLM call):
+ *   - runDoraPipeline: DORA gap analysis (vendor docs vs DORA obligations)
+ *   - runContractA30Pipeline: DORA Article 30 contract clause review
  *
- *  The agent autonomously decides:
- *   1. Which vendor document queries to run (search_vendor_documents tool)
- *   2. Which DORA domains to retrieve requirements for (search_dora_requirements tool)
- *   3. When it has enough evidence to call record_gap_analysis (final output tool)
- *
- * Falls back to a direct 3-step pipeline if the LLM does not support tool calling.
+ * A LangChain/LangGraph ReAct tool-calling agent used to front these, but the `analysis`
+ * LLM is an Ollama-provider model with no bindTools() support, so the agent always failed
+ * and fell back — it was removed (retrieva-backend#439). The pipeline is now the only path.
  */
 
-import { z } from 'zod';
 import { QdrantClient } from '@qdrant/js-client-rest';
-import { createReactAgent } from '@langchain/langgraph/prebuilt';
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
-import { tool } from '@langchain/core/tools';
 import { assessmentRepository } from '../repositories/index.js';
 import { embeddings } from '../config/embeddings.js';
 import { createLLM } from '../config/llmProvider.js';
@@ -25,7 +20,6 @@ import { getCallbacks } from '../config/tracing.js';
 import { CONTRACT_A30_CLAUSES } from '../prompts/gapAnalysisPrompts.js';
 // Agent system prompts are managed in Langfuse (label-routed) with the Git constants
 // as runtime fallback — resolved via the prompt manager. RTV-14 prompt-mgmt.
-import { resolveContractA30Prompt, resolveDoraPrompt } from '../config/promptManager.js';
 
 const QDRANT_URL = process.env.QDRANT_URL || 'http://localhost:6333';
 const QDRANT_API_KEY = process.env.QDRANT_API_KEY;
@@ -58,342 +52,11 @@ function getQdrantClient() {
   return new QdrantClient(opts);
 }
 
-// ---------------------------------------------------------------------------
-// Zod schemas for LangChain structured tool inputs
-// ---------------------------------------------------------------------------
-
-const gapItemSchema = z.object({
-  article: z.string().describe('DORA article reference, e.g. "Article 30(3)(e)"'),
-  rtsReference: z
-    .string()
-    .describe(
-      'Specific RTS/ITS reference where applicable, e.g. "JC 2023 86 (Subcontracting RTS)" or "Commission Delegated Regulation 2024/1774 (ICT Risk Management RTS)". Use empty string when no RTS/ITS applies.'
-    ),
-  domain: z
-    .enum([
-      'General Provisions',
-      'ICT Risk Management',
-      'Incident Reporting',
-      'Resilience Testing',
-      'Third-Party Risk',
-      'ICT Third-Party Oversight',
-      'Information Sharing',
-    ])
-    .describe('The DORA compliance domain'),
-  requirement: z.string().describe('The specific DORA obligation being assessed (1–2 sentences)'),
-  vendorCoverage: z
-    .string()
-    .describe(
-      'Quote or paraphrase from vendor documents showing coverage. Empty string if not addressed.'
-    ),
-  gapLevel: z
-    .enum(['covered', 'partial', 'missing'])
-    .describe(
-      'covered = fully satisfies the obligation; partial = partially addresses it; missing = no evidence'
-    ),
-  recommendation: z
-    .string()
-    .describe('Actionable contractual or procedural remediation. Empty string if covered.'),
-});
-
-const recordGapAnalysisSchema = z.object({
-  gaps: z
-    .array(gapItemSchema)
-    .describe(
-      'Complete list of gap assessments — at least 15 entries spanning all DORA chapters (Articles 5–49)'
-    ),
-  overallRisk: z
-    .enum(['High', 'Medium', 'Low'])
-    .describe(
-      'High = many missing obligations; Medium = several partial gaps; Low = mostly covered'
-    ),
-  summary: z
-    .string()
-    .describe('Executive summary (3–5 sentences) suitable for a compliance officer'),
-  domainsAnalyzed: z.array(z.string()).describe('List of DORA domains covered in this analysis'),
-});
-
-// ---------------------------------------------------------------------------
-// Build LangChain tools (closures capture assessmentId, client, embeddings)
-// ---------------------------------------------------------------------------
-
-function buildTools(assessmentId, client) {
-  const collectionName = `assessment_${assessmentId}`;
-
-  const searchVendorDocsTool = tool(
-    async ({ query }) => {
-      try {
-        const queryVector = await embeddings.embedQuery(query);
-        const results = await client.search(collectionName, {
-          vector: queryVector,
-          limit: 12,
-          with_payload: true,
-        });
-        if (results.length === 0) {
-          return 'No relevant content found in vendor documents for this query.';
-        }
-        return results
-          .map((h, i) => {
-            const content = h.payload?.pageContent || '';
-            const file = h.payload?.metadata?.fileName || 'unknown';
-            return `[${i + 1}] (${file}): ${content.slice(0, 500)}`;
-          })
-          .join('\n\n');
-      } catch (err) {
-        return `Search error: ${err.message}`;
-      }
-    },
-    {
-      name: 'search_vendor_documents',
-      description:
-        "Semantic search over the vendor's uploaded ICT documentation. Use targeted, domain-specific queries to find evidence of DORA compliance. Call multiple times with different queries.",
-      schema: z.object({
-        query: z.string().describe('Targeted search query about a specific DORA compliance area'),
-      }),
-    }
-  );
-
-  const searchDoraRequirementsTool = tool(
-    async ({ domain }) => {
-      try {
-        const queryVector = await embeddings.embedQuery(
-          `DORA obligations requirements ${domain} financial entity ICT third-party`
-        );
-        const results = await client.search(COMPLIANCE_KB_COLLECTION, {
-          vector: queryVector,
-          limit: 8,
-          with_payload: true,
-          filter: {
-            must: [{ key: 'metadata.domain', match: { value: domain } }],
-          },
-        });
-        if (results.length === 0) {
-          return `No DORA articles found for domain: ${domain}`;
-        }
-        return results
-          .map((h) => {
-            const article = h.payload?.metadata?.article || '';
-            const title = h.payload?.metadata?.title || '';
-            const obligations = (h.payload?.metadata?.obligations || []).slice(0, 6).join('; ');
-            return `${article} — ${title}\nKey obligations: ${obligations}`;
-          })
-          .join('\n\n');
-      } catch (err) {
-        return `Search error: ${err.message}`;
-      }
-    },
-    {
-      name: 'search_dora_requirements',
-      description:
-        'Retrieve DORA regulatory article obligations for a specific domain from the compliance knowledge base. Call once per domain.',
-      schema: z.object({
-        domain: z
-          .enum([
-            'General Provisions',
-            'ICT Risk Management',
-            'Incident Reporting',
-            'Resilience Testing',
-            'Third-Party Risk',
-            'ICT Third-Party Oversight',
-            'Information Sharing',
-          ])
-          .describe('The DORA domain to retrieve requirements for'),
-      }),
-    }
-  );
-
-  // Captures the structured result via closure — becomes the agent's final action
-  let capturedResult = null;
-
-  const recordGapAnalysisTool = tool(
-    async (input) => {
-      capturedResult = input;
-      return 'Gap analysis recorded successfully. Task complete.';
-    },
-    {
-      name: 'record_gap_analysis',
-      description:
-        'Call this ONCE when you have gathered sufficient evidence and are ready to submit the complete structured DORA gap analysis. This is your final action.',
-      schema: recordGapAnalysisSchema,
-    }
-  );
-
-  return {
-    tools: [searchVendorDocsTool, searchDoraRequirementsTool, recordGapAnalysisTool],
-    getResult: () => capturedResult,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// CONTRACT_A30: Zod schema + tools + agent
-// ---------------------------------------------------------------------------
-
-const contractClauseItemSchema = z.object({
-  article: z.string().describe('Article reference, e.g. "Art.30(2)(a)"'),
-  domain: z
-    .enum([
-      'Service Description',
-      'Data Governance',
-      'Security and Resilience',
-      'Business Continuity',
-      'Subcontracting',
-      'Audit and Inspection',
-      'Termination and Exit',
-      'Regulatory Compliance',
-    ])
-    .describe('The Article 30 clause category'),
-  requirement: z
-    .string()
-    .describe('The specific Article 30 obligation being assessed (1–2 sentences)'),
-  vendorCoverage: z
-    .string()
-    .describe(
-      'Quote or paraphrase from the contract showing coverage. Empty string if not addressed.'
-    ),
-  gapLevel: z
-    .enum(['covered', 'partial', 'missing'])
-    .describe(
-      'covered = contract explicitly satisfies the obligation; partial = partially addresses it; missing = no evidence'
-    ),
-  recommendation: z
-    .string()
-    .describe('Actionable renegotiation or drafting recommendation. Empty string if covered.'),
-});
-
-const recordClauseReviewSchema = z.object({
-  gaps: z
-    .array(contractClauseItemSchema)
-    .describe('Complete list of clause reviews — one entry per Article 30 clause (12 total)'),
-  overallRisk: z
-    .enum(['High', 'Medium', 'Low'])
-    .describe(
-      'High = multiple missing clauses; Medium = several partial clauses; Low = contract broadly satisfies Article 30'
-    ),
-  summary: z
-    .string()
-    .describe(
-      'Executive summary (3–5 sentences) suitable for a compliance officer or legal counsel'
-    ),
-  domainsAnalyzed: z
-    .array(z.string())
-    .describe('List of Article 30 clause categories covered in this review'),
-});
-
-function buildContractA30Tools(assessmentId, client) {
-  const collectionName = `assessment_${assessmentId}`;
-
-  const searchContractDocumentTool = tool(
-    async ({ query }) => {
-      try {
-        const queryVector = await embeddings.embedQuery(query);
-        const results = await client.search(collectionName, {
-          vector: queryVector,
-          limit: 12,
-          with_payload: true,
-        });
-        if (results.length === 0) {
-          return 'No relevant content found in the contract for this query.';
-        }
-        return results
-          .map((h, i) => {
-            const content = h.payload?.pageContent || '';
-            const file = h.payload?.metadata?.fileName || 'unknown';
-            return `[${i + 1}] (${file}): ${content.slice(0, 500)}`;
-          })
-          .join('\n\n');
-      } catch (err) {
-        return `Search error: ${err.message}`;
-      }
-    },
-    {
-      name: 'search_contract_document',
-      description:
-        'Semantic search over the uploaded ICT contract. Use targeted queries to find clause text relevant to each Article 30 obligation. Call multiple times with different queries.',
-      schema: z.object({
-        query: z.string().describe('Targeted search query about a specific Article 30 clause'),
-      }),
-    }
-  );
-
-  let capturedResult = null;
-
-  const recordClauseReviewTool = tool(
-    async (input) => {
-      capturedResult = input;
-      return 'Clause review recorded successfully. Task complete.';
-    },
-    {
-      name: 'record_clause_review',
-      description:
-        'Call this ONCE when you have searched the contract thoroughly and are ready to submit the complete structured Article 30 clause review.',
-      schema: recordClauseReviewSchema,
-    }
-  );
-
-  return {
-    tools: [searchContractDocumentTool, recordClauseReviewTool],
-    getResult: () => capturedResult,
-  };
-}
-
-async function runContractA30ReActAgent(assessment, emit) {
+async function runContractA30Pipeline(assessment, emit) {
   const client = getQdrantClient();
-  const { tools, getResult } = buildContractA30Tools(assessment._id.toString(), client);
+  const collectionName = `assessment_${assessment.id}`;
 
-  const llm = await createLLM({ temperature: 0, maxTokens: 4096 });
-
-  emit('Building Article 30 contract review agent…', 15);
-
-  const contractPrompt = await resolveContractA30Prompt();
-  const agent = createReactAgent({
-    llm,
-    tools,
-    stateModifier: new SystemMessage(contractPrompt.text),
-  });
-
-  emit('Agent reviewing contract against Article 30 clauses…', 25);
-
-  const userMessage = `Review the uploaded ICT contract for vendor '${assessment.vendorName}' against all 12 mandatory DORA Article 30 clauses. Search the contract thoroughly, then call record_clause_review with a complete clause-by-clause structured review covering all 12 obligations.`;
-
-  const contractCallbacks = getCallbacks({
-    runName: 'contract-a30-review',
-    feature: 'contract-review',
-    sessionId: assessment._id?.toString(),
-  });
-  try {
-    await agent.invoke(
-      { messages: [new HumanMessage(userMessage)] },
-      { recursionLimit: 40, callbacks: contractCallbacks }
-    );
-  } catch (err) {
-    if (!getResult()) {
-      throw err;
-    }
-    logger.warn('Contract A30 agent hit recursion limit but result was captured', {
-      service: 'gap-analysis',
-      error: err.message,
-    });
-  }
-
-  const result = getResult();
-  if (!result) {
-    throw new Error('Contract A30 agent did not call record_clause_review — no result produced');
-  }
-
-  logger.info('Contract A30 ReAct agent completed', {
-    service: 'gap-analysis',
-    assessmentId: assessment._id,
-    clauseCount: result.gaps?.length ?? 0,
-  });
-
-  return result;
-}
-
-async function runContractA30FallbackPipeline(assessment, emit) {
-  const client = getQdrantClient();
-  const collectionName = `assessment_${assessment._id}`;
-
-  emit('Extracting contract clauses (fallback pipeline)…', 15);
+  emit('Extracting contract clauses…', 15);
 
   // Step 1: search contract with clause-focused queries
   const queryPrompts = [
@@ -429,7 +92,7 @@ async function runContractA30FallbackPipeline(assessment, emit) {
   }
   const contractChunks = [...allChunks.values()].sort((a, b) => b.score - a.score);
 
-  emit('Analysing Article 30 clause gaps (fallback pipeline)…', 55);
+  emit('Analysing Article 30 clause gaps…', 55);
 
   const llm = await createLLM({ temperature: 0, maxTokens: 4096 });
 
@@ -464,7 +127,7 @@ Produce a clause-by-clause review covering all 12 Article 30 obligations.`;
 
   const a30FallbackCallbacks = getCallbacks({
     feature: 'contract-review-fallback',
-    sessionId: assessment._id?.toString(),
+    sessionId: assessment.id?.toString(),
   });
   const response = await llm.invoke(
     [
@@ -482,81 +145,11 @@ Produce a clause-by-clause review covering all 12 Article 30 obligations.`;
   return JSON.parse(jsonMatch[0]);
 }
 
-// ---------------------------------------------------------------------------
-// LangChain / LangGraph ReAct Agent runner
-// ---------------------------------------------------------------------------
-
-async function runReActAgent(assessment, emit) {
+async function runDoraPipeline(assessment, emit) {
   const client = getQdrantClient();
-  const { tools, getResult } = buildTools(assessment._id.toString(), client);
+  const collectionName = `assessment_${assessment.id}`;
 
-  // Temperature 0 for deterministic compliance analysis
-  const llm = await createLLM({ temperature: 0, maxTokens: 4096 });
-
-  emit('Building LangChain ReAct agent…', 15);
-
-  // createReactAgent from @langchain/langgraph/prebuilt — the canonical
-  // LangChain v1.x ReAct loop using tool calling under the hood
-  const doraPrompt = await resolveDoraPrompt();
-  const agent = createReactAgent({
-    llm,
-    tools,
-    // Inject system prompt via stateModifier (managed in Langfuse, Git fallback)
-    stateModifier: new SystemMessage(doraPrompt.text),
-    // Cap iterations to avoid runaway loops
-    // (each iteration = one LLM call + optional tool calls)
-  });
-
-  emit('Agent searching vendor documents and DORA requirements…', 25);
-
-  const userMessage = `Conduct a full DORA (Regulation EU 2022/2554) compliance gap analysis for the third-party ICT vendor: "${assessment.vendorName}".
-
-Search vendor documents thoroughly, retrieve DORA requirements for all seven domains (General Provisions, ICT Risk Management, Incident Reporting, Resilience Testing, Third-Party Risk, ICT Third-Party Oversight, Information Sharing), then call record_gap_analysis with your complete structured findings covering all applicable chapters.`;
-
-  const doraCallbacks = getCallbacks({
-    runName: 'dora-gap-analysis',
-    feature: 'gap-analysis',
-    sessionId: assessment._id?.toString(),
-  });
-  try {
-    await agent.invoke(
-      { messages: [new HumanMessage(userMessage)] },
-      { recursionLimit: 40, callbacks: doraCallbacks } // max graph steps (each tool call = 2 steps: invoke + result)
-    );
-  } catch (err) {
-    // Recursion limit hit but result may already be captured
-    if (!getResult()) {
-      throw err;
-    }
-    logger.warn('Agent hit recursion limit but result was captured', {
-      service: 'gap-analysis',
-      error: err.message,
-    });
-  }
-
-  const result = getResult();
-  if (!result) {
-    throw new Error('LangChain ReAct agent did not call record_gap_analysis — no result produced');
-  }
-
-  logger.info('LangChain ReAct agent completed', {
-    service: 'gap-analysis',
-    assessmentId: assessment._id,
-    gapCount: result.gaps?.length ?? 0,
-  });
-
-  return result;
-}
-
-// ---------------------------------------------------------------------------
-// Fallback: direct 3-step pipeline (for LLMs without tool-calling support)
-// ---------------------------------------------------------------------------
-
-async function runFallbackPipeline(assessment, emit) {
-  const client = getQdrantClient();
-  const collectionName = `assessment_${assessment._id}`;
-
-  emit('Extracting vendor claims (fallback pipeline)…', 15);
+  emit('Extracting vendor claims…', 15);
 
   // Step 1: extract vendor content
   const queryPrompts = [
@@ -590,7 +183,7 @@ async function runFallbackPipeline(assessment, emit) {
   }
   const vendorChunks = [...allChunks.values()].sort((a, b) => b.score - a.score);
 
-  emit('Retrieving DORA obligations (fallback pipeline)…', 35);
+  emit('Retrieving DORA obligations…', 35);
 
   // Step 2: retrieve DORA obligations
   const domainArticles = {};
@@ -612,7 +205,7 @@ async function runFallbackPipeline(assessment, emit) {
     }));
   }
 
-  emit('Analysing gaps (fallback pipeline)…', 55);
+  emit('Analysing gaps…', 55);
 
   // Step 3: direct LLM call with JSON output
   const llm = await createLLM({ temperature: 0, maxTokens: 4096 });
@@ -645,7 +238,7 @@ Respond ONLY with a valid JSON object:
 
   const doraFallbackCallbacks = getCallbacks({
     feature: 'gap-analysis-fallback',
-    sessionId: assessment._id?.toString(),
+    sessionId: assessment.id?.toString(),
   });
   const response = await llm.invoke(
     [
@@ -694,39 +287,14 @@ export async function runGapAnalysis({ assessmentId, userId: _userId, job }) {
     }
   }
 
-  // Branch on framework: CONTRACT_A30 uses its own agent/fallback
-  let result;
-  if (assessment.framework === 'CONTRACT_A30') {
-    try {
-      result = await runContractA30ReActAgent(assessment, emit);
-      logger.info('Gap analysis used Contract A30 ReAct agent', {
-        service: 'gap-analysis',
-        assessmentId,
-      });
-    } catch (agentErr) {
-      logger.warn('Contract A30 agent failed, using fallback', {
-        service: 'gap-analysis',
-        assessmentId,
-        error: agentErr.message,
-      });
-      result = await runContractA30FallbackPipeline(assessment, emit);
-    }
-  } else {
-    try {
-      result = await runReActAgent(assessment, emit);
-      logger.info('Gap analysis used LangChain ReAct agent', {
-        service: 'gap-analysis',
-        assessmentId,
-      });
-    } catch (agentErr) {
-      logger.warn('LangChain agent failed, using fallback pipeline', {
-        service: 'gap-analysis',
-        assessmentId,
-        error: agentErr.message,
-      });
-      result = await runFallbackPipeline(assessment, emit);
-    }
-  }
+  // Run the deterministic sequential pipeline directly (retrieva-backend#439). The former
+  // LangChain/LangGraph ReAct agent path was dead code in prod: the `analysis` LLM is an
+  // Ollama-provider model that doesn't implement bindTools(), so the agent always threw and
+  // fell back — logging a misleading "agent failed" warning on every run. Removed the agent.
+  const result =
+    assessment.framework === 'CONTRACT_A30'
+      ? await runContractA30Pipeline(assessment, emit)
+      : await runDoraPipeline(assessment, emit);
 
   emit('Finalising results…', 90);
 
