@@ -539,7 +539,7 @@ function buildMethodology(assessment) {
  * @returns {Promise<Buffer>} Word document buffer
  */
 export async function generateReport(assessmentId) {
-  const assessment = await assessmentRepository.findById(assessmentId, { lean: true });
+  const assessment = await assessmentRepository.findById(assessmentId);
   if (!assessment) throw new AppError('Assessment not found', 404);
   if (assessment.status !== 'complete') {
     throw new AppError('Assessment must be complete before generating a report', 400);

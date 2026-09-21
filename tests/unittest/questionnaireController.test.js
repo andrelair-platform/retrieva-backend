@@ -24,11 +24,12 @@ vi.mock('../../repositories/drizzle/QuestionnaireTemplateRepository.js', () => (
 
 vi.mock('../../repositories/drizzle/VendorQuestionnaireRepository.js', () => ({
   vendorQuestionnaireRepository: {
-    create: vi.fn(),
-    findById: vi.fn(),
+    createUnscoped: vi.fn(),
     listByWorkspaces: vi.fn(),
     findByToken: vi.fn(),
-    updateById: vi.fn(),
+    findByIdUnscoped: vi.fn(),
+    updateByIdUnscoped: vi.fn(),
+    deleteByIdUnscoped: vi.fn(),
   },
 }));
 
@@ -118,7 +119,7 @@ const MOCK_TEMPLATE = {
 
 function makeMockQ(overrides = {}) {
   return {
-    _id: Q_ID,
+    id: Q_ID,
     workspaceId: WS_ID,
     vendorName: 'Acme Corp',
     vendorEmail: 'vendor@acme.com',
@@ -129,8 +130,6 @@ function makeMockQ(overrides = {}) {
     tokenExpiresAt: null,
     createdBy: USER_ID,
     createdAt: new Date(),
-    deleteOne: vi.fn().mockResolvedValue({}),
-    save: vi.fn().mockResolvedValue({}),
     ...overrides,
   };
 }
@@ -175,7 +174,7 @@ describe('createQuestionnaire', () => {
   it('trims and lowercases fields, creates questionnaire, returns 201', async () => {
     QuestionnaireTemplate.findDefault.mockResolvedValue(MOCK_TEMPLATE);
     const created = makeMockQ();
-    VendorQuestionnaire.create.mockResolvedValue(created);
+    VendorQuestionnaire.createUnscoped.mockResolvedValue(created);
 
     const req = makeReq({
       body: {
@@ -187,7 +186,7 @@ describe('createQuestionnaire', () => {
     });
     await createQuestionnaire(req, res, next);
 
-    expect(VendorQuestionnaire.create).toHaveBeenCalledWith(
+    expect(VendorQuestionnaire.createUnscoped).toHaveBeenCalledWith(
       expect.objectContaining({
         vendorName: 'Acme Corp',
         vendorEmail: 'vendor@acme.com',
@@ -273,7 +272,7 @@ describe('getQuestionnaire', () => {
   });
 
   it('calls next with 404 AppError when not found', async () => {
-    VendorQuestionnaire.findById.mockResolvedValue(null);
+    VendorQuestionnaire.findByIdUnscoped.mockResolvedValue(null);
     const req = makeReq({ params: { id: Q_ID } });
     await getQuestionnaire(req, res, next);
     expect(next).toHaveBeenCalled();
@@ -282,7 +281,7 @@ describe('getQuestionnaire', () => {
 
   it('calls next with 403 AppError when workspace not authorized', async () => {
     const q = { workspaceId: { toString: () => 'other-ws' } };
-    VendorQuestionnaire.findById.mockResolvedValue(q);
+    VendorQuestionnaire.findByIdUnscoped.mockResolvedValue(q);
     const req = makeReq({ params: { id: Q_ID } });
     await getQuestionnaire(req, res, next);
     expect(next.mock.calls[0][0].statusCode).toBe(403);
@@ -290,7 +289,7 @@ describe('getQuestionnaire', () => {
 
   it('returns 200 with questionnaire when authorized', async () => {
     const q = { workspaceId: { toString: () => WS_ID }, data: 'ok' };
-    VendorQuestionnaire.findById.mockResolvedValue(q);
+    VendorQuestionnaire.findByIdUnscoped.mockResolvedValue(q);
     const req = makeReq({ params: { id: Q_ID } });
     await getQuestionnaire(req, res, next);
     expect(res.status).toHaveBeenCalledWith(200);
@@ -308,7 +307,7 @@ describe('deleteQuestionnaire', () => {
   beforeEach(() => {
     res = makeRes();
     next = vi.fn();
-    VendorQuestionnaire.findById.mockResolvedValue(null);
+    VendorQuestionnaire.findByIdUnscoped.mockResolvedValue(null);
   });
 
   it('calls next with 404 when not found', async () => {
@@ -319,7 +318,7 @@ describe('deleteQuestionnaire', () => {
 
   it('calls next with 403 when workspace not authorized', async () => {
     const q = makeMockQ({ workspaceId: { toString: () => 'other-ws' } });
-    VendorQuestionnaire.findById.mockResolvedValue(q);
+    VendorQuestionnaire.findByIdUnscoped.mockResolvedValue(q);
     const req = makeReq({ params: { id: Q_ID } });
     await deleteQuestionnaire(req, res, next);
     expect(next.mock.calls[0][0].statusCode).toBe(403);
@@ -327,7 +326,7 @@ describe('deleteQuestionnaire', () => {
 
   it('calls next with 403 when user is not the creator', async () => {
     const q = makeMockQ({ workspaceId: { toString: () => WS_ID }, createdBy: 'someone-else' });
-    VendorQuestionnaire.findById.mockResolvedValue(q);
+    VendorQuestionnaire.findByIdUnscoped.mockResolvedValue(q);
     const req = makeReq({ params: { id: Q_ID } });
     await deleteQuestionnaire(req, res, next);
     expect(next.mock.calls[0][0].statusCode).toBe(403);
@@ -335,10 +334,10 @@ describe('deleteQuestionnaire', () => {
 
   it('deletes questionnaire and returns 200 when authorized and creator', async () => {
     const q = makeMockQ({ workspaceId: { toString: () => WS_ID }, createdBy: USER_ID });
-    VendorQuestionnaire.findById.mockResolvedValue(q);
+    VendorQuestionnaire.findByIdUnscoped.mockResolvedValue(q);
     const req = makeReq({ params: { id: Q_ID } });
     await deleteQuestionnaire(req, res, next);
-    expect(q.deleteOne).toHaveBeenCalled();
+    expect(VendorQuestionnaire.deleteByIdUnscoped).toHaveBeenCalledWith(Q_ID);
     expect(res.status).toHaveBeenCalledWith(200);
   });
 });
@@ -352,10 +351,17 @@ describe('sendQuestionnaire', () => {
     res = makeRes();
     next = vi.fn();
     emailService.sendQuestionnaireInvitation.mockResolvedValue({});
+    // the service returns the row from updateByIdUnscoped; the controller reads id/status/…
+    VendorQuestionnaire.updateByIdUnscoped.mockResolvedValue({
+      id: Q_ID,
+      status: 'sent',
+      sentAt: new Date(),
+      tokenExpiresAt: new Date(),
+    });
   });
 
   it('calls next with 404 when not found', async () => {
-    VendorQuestionnaire.findById.mockResolvedValue(null);
+    VendorQuestionnaire.findByIdUnscoped.mockResolvedValue(null);
     const req = makeReq({ params: { id: Q_ID } });
     await sendQuestionnaire(req, res, next);
     expect(next.mock.calls[0][0].statusCode).toBe(404);
@@ -363,7 +369,7 @@ describe('sendQuestionnaire', () => {
 
   it('calls next with 403 when workspace not authorized', async () => {
     const q = makeMockQ({ workspaceId: { toString: () => 'other-ws' } });
-    VendorQuestionnaire.findById.mockResolvedValue(q);
+    VendorQuestionnaire.findByIdUnscoped.mockResolvedValue(q);
     const req = makeReq({ params: { id: Q_ID } });
     await sendQuestionnaire(req, res, next);
     expect(next.mock.calls[0][0].statusCode).toBe(403);
@@ -371,25 +377,22 @@ describe('sendQuestionnaire', () => {
 
   it('returns 400 when questionnaire is already complete', async () => {
     const q = makeMockQ({ workspaceId: { toString: () => WS_ID }, status: 'complete' });
-    VendorQuestionnaire.findById.mockResolvedValue(q);
+    VendorQuestionnaire.findByIdUnscoped.mockResolvedValue(q);
     const req = makeReq({ params: { id: Q_ID } });
     await sendQuestionnaire(req, res, next);
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
   });
 
-  it('sets token, saves, sends invitation email, returns 200', async () => {
-    const q = makeMockQ({
-      workspaceId: { toString: () => WS_ID },
-      status: 'draft',
-      _id: { toString: () => Q_ID },
-    });
-    VendorQuestionnaire.findById.mockResolvedValue(q);
+  it('sets token, persists via updateByIdUnscoped, sends invitation email, returns 200', async () => {
+    const q = makeMockQ({ workspaceId: { toString: () => WS_ID }, status: 'draft' });
+    VendorQuestionnaire.findByIdUnscoped.mockResolvedValue(q);
     const req = makeReq({ params: { id: Q_ID } });
     await sendQuestionnaire(req, res, next);
 
-    expect(q.token).toBeTruthy();
-    expect(q.status).toBe('sent');
-    expect(q.save).toHaveBeenCalled();
+    expect(VendorQuestionnaire.updateByIdUnscoped).toHaveBeenCalledWith(
+      Q_ID,
+      expect.objectContaining({ status: 'sent', token: expect.any(String) })
+    );
     expect(emailService.sendQuestionnaireInvitation).toHaveBeenCalledWith(
       expect.objectContaining({ toEmail: 'vendor@acme.com' })
     );
@@ -397,12 +400,8 @@ describe('sendQuestionnaire', () => {
   });
 
   it('uses workspace name from authorizedWorkspaces in email', async () => {
-    const q = makeMockQ({
-      workspaceId: { toString: () => WS_ID },
-      status: 'draft',
-      _id: { toString: () => Q_ID },
-    });
-    VendorQuestionnaire.findById.mockResolvedValue(q);
+    const q = makeMockQ({ workspaceId: { toString: () => WS_ID }, status: 'draft' });
+    VendorQuestionnaire.findByIdUnscoped.mockResolvedValue(q);
     const req = makeReq({ params: { id: Q_ID } });
     await sendQuestionnaire(req, res, next);
 
@@ -440,12 +439,12 @@ describe('getPublicForm', () => {
   it('returns 410 and marks expired when tokenExpiresAt is in the past', async () => {
     const q = makeMockQ({ status: 'sent', tokenExpiresAt: new Date(Date.now() - 1000) });
     VendorQuestionnaire.findByToken.mockResolvedValue(q);
-    VendorQuestionnaire.updateById.mockResolvedValue({});
+    VendorQuestionnaire.updateByIdUnscoped.mockResolvedValue({});
     const req = makeReq({ params: { token: TOKEN } });
     await getPublicForm(req, res, next);
     expect(res.status).toHaveBeenCalledWith(410);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ expired: true }));
-    expect(VendorQuestionnaire.updateById).toHaveBeenCalledWith(q._id, {
+    expect(VendorQuestionnaire.updateByIdUnscoped).toHaveBeenCalledWith(q.id, {
       status: 'expired',
     });
   });
@@ -518,8 +517,9 @@ describe('submitResponse', () => {
     VendorQuestionnaire.findByToken.mockResolvedValue(q);
     const req = makeReq({ params: { token: TOKEN }, body: { answers: [] } });
     await submitResponse(req, res, next);
-    expect(q.status).toBe('expired');
-    expect(q.save).toHaveBeenCalled();
+    expect(VendorQuestionnaire.updateByIdUnscoped).toHaveBeenCalledWith(q.id, {
+      status: 'expired',
+    });
     expect(res.status).toHaveBeenCalledWith(410);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ expired: true }));
   });
@@ -537,8 +537,13 @@ describe('submitResponse', () => {
     });
     await submitResponse(req, res, next);
 
-    expect(q.questions[0].answer).toBe('Yes');
-    expect(q.save).toHaveBeenCalled();
+    // merged answers persisted via updateByIdUnscoped (no scoring enqueue when not final)
+    expect(VendorQuestionnaire.updateByIdUnscoped).toHaveBeenCalledWith(
+      Q_ID,
+      expect.objectContaining({
+        questions: expect.arrayContaining([expect.objectContaining({ id: 'q1', answer: 'Yes' })]),
+      })
+    );
     expect(questionnaireQueue.add).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(
@@ -550,7 +555,6 @@ describe('submitResponse', () => {
     const q = makeMockQ({
       status: 'sent',
       tokenExpiresAt: new Date(Date.now() + 86400000),
-      _id: { toString: () => Q_ID },
       questions: [{ id: 'q1', answer: '' }],
     });
     VendorQuestionnaire.findByToken.mockResolvedValue(q);
@@ -560,8 +564,10 @@ describe('submitResponse', () => {
     });
     await submitResponse(req, res, next);
 
-    expect(q.status).toBe('partial');
-    expect(q.save).toHaveBeenCalled();
+    expect(VendorQuestionnaire.updateByIdUnscoped).toHaveBeenCalledWith(
+      Q_ID,
+      expect.objectContaining({ status: 'partial' })
+    );
     expect(questionnaireQueue.add).toHaveBeenCalledWith(
       'scoreQuestionnaire',
       expect.objectContaining({ questionnaireId: Q_ID }),
