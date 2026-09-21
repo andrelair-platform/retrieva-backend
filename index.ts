@@ -54,16 +54,10 @@ const startServer = async () => {
       })
     );
 
-    const indexConcurrency = parseInt(process.env.INDEX_WORKER_CONCURRENCY) || 3;
-    logger.info('='.repeat(60));
-    logger.info('BullMQ Workers Started', { service: 'rag-backend' });
-    logger.info(`  - Document Index Worker: Active (concurrency: ${indexConcurrency})`, {
-      service: 'rag-backend',
-    });
-    logger.info('  - Assessment Worker: Active', { service: 'rag-backend' });
-    logger.info('  - Questionnaire Worker: Active', { service: 'rag-backend' });
-    logger.info('  - Monitoring Worker: Active (24h schedule)', { service: 'rag-backend' });
-    logger.info('='.repeat(60));
+    // NOTE: the workers do NOT run here — they run in the dedicated `retrieva-worker`
+    // Deployment (workers/index.js). This process only SCHEDULES the repeatable jobs above
+    // (idempotent). A previous "BullMQ Workers Started" banner here falsely implied the API
+    // ran the workers; removed with retrieva-backend#437 to keep the API logs honest.
 
     httpServer.listen(port, () => {
       logger.info(`App listening at http://localhost:${port}`, { service: 'rag-backend' });
