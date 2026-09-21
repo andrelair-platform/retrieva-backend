@@ -30,26 +30,21 @@ export async function generateRoiWorkbook(userId) {
   // 1. Collect all workspaces the user has access to
   const memberships = await workspaceMemberRepository.findActiveByUserId(userId);
   const workspaceIds = memberships.map((m) => m.workspaceId);
-  const workspaces = await workspaceRepository.find({ _id: { $in: workspaceIds } });
+  const workspaces = await workspaceRepository.findByIds(workspaceIds);
 
-  // 2. Latest complete assessment per workspace
-  const latestAssessments = await assessmentRepository.aggregate([
-    { $match: { workspaceId: { $in: workspaceIds }, status: 'complete' } },
-    { $sort: { createdAt: -1 } },
-    { $group: { _id: '$workspaceId', doc: { $first: '$$ROOT' } } },
+  // 2/3. Latest complete assessment + questionnaire per workspace (Postgres DISTINCT ON —
+  // replaces the old Mongo $match→$sort→$group aggregation).
+  const [latestAssessments, latestQuestionnaires] = await Promise.all([
+    assessmentRepository.latestCompleteByWorkspaces(workspaceIds),
+    vendorQuestionnaireRepository.latestCompleteByWorkspaces(workspaceIds),
   ]);
 
-  // 3. Latest complete questionnaire per workspace
-  const latestQuestionnaires = await vendorQuestionnaireRepository.aggregate([
-    { $match: { workspaceId: { $in: workspaceIds }, status: 'complete' } },
-    { $sort: { createdAt: -1 } },
-    { $group: { _id: '$workspaceId', doc: { $first: '$$ROOT' } } },
-  ]);
-
-  // O(1) lookup maps
-  const assessmentMap = Object.fromEntries(latestAssessments.map((a) => [a._id.toString(), a.doc]));
+  // O(1) lookup maps, keyed by workspace id (each row is the latest for its workspace)
+  const assessmentMap = Object.fromEntries(
+    latestAssessments.map((a) => [String(a.workspaceId), a])
+  );
   const questionnaireMap = Object.fromEntries(
-    latestQuestionnaires.map((q) => [q._id.toString(), q.doc])
+    latestQuestionnaires.map((q) => [String(q.workspaceId), q])
   );
 
   // Concentration analysis (RTV-15) — org-scoped; map by workspace id for the register
@@ -110,7 +105,7 @@ export async function generateRoiWorkbook(userId) {
 
   const providersRows = [providersHeader];
   for (const ws of workspaces) {
-    const wsId = ws._id.toString();
+    const wsId = String(ws.id);
     const assessment = assessmentMap[wsId];
     const questionnaire = questionnaireMap[wsId];
 
@@ -166,7 +161,7 @@ export async function generateRoiWorkbook(userId) {
   ];
   const gapsRows = [gapsHeader];
   for (const ws of workspaces) {
-    const wsId = ws._id.toString();
+    const wsId = String(ws.id);
     const assessment = assessmentMap[wsId];
     const gaps = assessment?.results?.gaps;
 

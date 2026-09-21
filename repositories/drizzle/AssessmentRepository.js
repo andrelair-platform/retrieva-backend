@@ -64,6 +64,21 @@ export class AssessmentRepository extends TenantScopedRepository {
     return row ?? null;
   }
 
+  /**
+   * The latest COMPLETE assessment per workspace, for a set of workspaces — one row each.
+   * Postgres `DISTINCT ON (workspace_id) … ORDER BY workspace_id, created_at DESC` replaces
+   * the old Mongo `$match → $sort → $group($first)` aggregation. UNSCOPED (org-level) by design.
+   */
+  async latestCompleteByWorkspaces(workspaceIds) {
+    const ids = (workspaceIds || []).map(String);
+    if (!ids.length) return [];
+    return this.db
+      .selectDistinctOn([assessments.workspaceId])
+      .from(assessments)
+      .where(and(inArray(assessments.workspaceId, ids), eq(assessments.status, 'complete')))
+      .orderBy(assessments.workspaceId, desc(assessments.createdAt));
+  }
+
   async getComplianceScore(workspaceId) {
     const riskMap = { Low: 100, Medium: 50, High: 0 };
     const rows = await this.db
