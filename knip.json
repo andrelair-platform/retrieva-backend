@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "index.ts",
+    "workers/index.js",
+    "instrument.js",
+    "drizzle.config.js",
+    "scripts/**/*.js",
+    "tests/**/*.{js,ts}"
+  ],
+  "project": ["**/*.{js,ts}"],
+  "ignore": ["db/migrations/**", "coverage/**", "dist/**"],
+  "ignoreDependencies": []
+}

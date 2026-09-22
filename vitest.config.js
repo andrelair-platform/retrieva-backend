@@ -29,14 +29,7 @@ export default defineConfig({
         'services/**/*.js',
         'modules/**/*.controller.ts',
       ],
-      exclude: [
-        'node_modules',
-        'tests',
-        'utils/rag/qdrantExplorer.js',
-        '**/*.d.ts',
-        'types/**',
-        '**/*.types.ts',
-      ],
+      exclude: ['node_modules', 'tests', '**/*.d.ts', 'types/**', '**/*.types.ts'],
       thresholds: {
         // Recalibrated for Vitest 4: its v8 provider uses AST-aware branch
         // remapping, which counts branches/functions more accurately (and

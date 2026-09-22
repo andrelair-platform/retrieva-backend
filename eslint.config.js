@@ -89,13 +89,7 @@ export default [
     // console.* is the intended output mechanism in these files.
     // Patterns match both bare (eslint run from backend/) and prefixed
     // (lint-staged passing absolute paths from repo root) invocations.
-    files: [
-      '**/instrument.js',
-      '**/scripts/**',
-      '**/seeds/**',
-      '**/utils/rag/qdrantExplorer.js',
-      '**/tests/**',
-    ],
+    files: ['**/instrument.js', '**/scripts/**', '**/seeds/**', '**/tests/**'],
     rules: { 'no-console': 'off' },
   },
 ];
