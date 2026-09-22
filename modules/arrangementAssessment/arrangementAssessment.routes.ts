@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { runAssessment, getFindings } from './arrangementAssessment.controller.js';
+import { runAssessment, getFindings, decideFinding } from './arrangementAssessment.controller.js';
 import { authenticate } from '../../middleware/auth.js';
 
 // Assessment engine (RTV-41). ORG-scoped, arrangement-centric — resolve applicable controls
@@ -12,5 +12,8 @@ router.post('/:arrangementId/assessment', authenticate, runAssessment);
 
 // GET /api/v1/arrangements/:arrangementId/findings — per-control verdicts (draft)
 router.get('/:arrangementId/findings', authenticate, getFindings);
+
+// PATCH /api/v1/arrangements/:arrangementId/findings/:findingId — approve/reject a finding (checker)
+router.patch('/:arrangementId/findings/:findingId', authenticate, decideFinding);
 
 export default router;

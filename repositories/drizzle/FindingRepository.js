@@ -49,6 +49,32 @@ export class FindingRepository extends BaseDrizzleRepository {
       { orderBy: [asc(findings.controlId)] }
     );
   }
+
+  async findByIdInOrg(organizationId, id) {
+    return this.findOne(
+      and(
+        eq(findings.id, id),
+        eq(findings.organizationId, organizationId),
+        entityScopeCondition(findings.organizationId, { action: 'finding:read' })
+      )
+    );
+  }
+
+  /** Set a finding's status (draft|approved|rejected) — the human-in-the-loop decision (RTV-55). */
+  async setDecision(organizationId, id, status) {
+    const [row] = await this.db
+      .update(findings)
+      .set({ status, updatedAt: new Date() })
+      .where(
+        and(
+          eq(findings.id, id),
+          eq(findings.organizationId, organizationId),
+          entityScopeCondition(findings.organizationId, { action: 'finding:approve' })
+        )
+      )
+      .returning();
+    return row ?? null;
+  }
 }
 
 export const findingRepository = new FindingRepository();
