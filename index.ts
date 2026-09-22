@@ -21,7 +21,11 @@ import { answerFormatter } from './services/answerFormatter.js';
 // concurrency isn't multiplied by the API replica count. The API still SCHEDULES the repeatable jobs
 // below (idempotent in BullMQ); the dedicated worker consumes them.
 import { seedDefaultTemplate } from './seeds/questionnaireTemplate.seed.js';
-import { scheduleMonitoringJob, scheduleWeeklyDigestJob } from './config/queue.js';
+import {
+  scheduleMonitoringJob,
+  scheduleWeeklyDigestJob,
+  schedulePeriodicReassessmentJob,
+} from './config/queue.js';
 
 const port = process.env.PORT || 3000;
 
@@ -49,6 +53,14 @@ const startServer = async () => {
 
     await scheduleWeeklyDigestJob().catch((err) =>
       logger.error('Failed to schedule weekly digest job (non-critical)', {
+        service: 'rag-backend',
+        error: err.message,
+      })
+    );
+
+    // Schedule the periodic re-assessment scan (RTV-31 tail — DORA cadence trigger, every 24h)
+    await schedulePeriodicReassessmentJob().catch((err) =>
+      logger.error('Failed to schedule periodic re-assessment job (non-critical)', {
         service: 'rag-backend',
         error: err.message,
       })

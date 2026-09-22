@@ -7,9 +7,9 @@
  * arrangement graph inherits RTV-54 entity isolation for free (ADR §8) — a row in entity A is
  * invisible under an entity-B scope the moment ENTITY_ISOLATION_MODE=enforce (already prod).
  */
-import { and, eq, desc } from 'drizzle-orm';
+import { and, eq, desc, sql } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
-import { arrangements } from '../../db/schema/index.js';
+import { arrangements, findings } from '../../db/schema/index.js';
 import { entityScopeCondition } from '../../services/security/entityScope.js';
 
 export class ArrangementRepository extends BaseDrizzleRepository {
@@ -75,6 +75,34 @@ export class ArrangementRepository extends BaseDrizzleRepository {
       ),
       { orderBy: [desc(arrangements.createdAt)] }
     );
+  }
+
+  /**
+   * SYSTEM (cross-org, UNSCOPED) read for the periodic re-assessment scheduler (RTV-31 tail).
+   * Returns `active` arrangements whose LAST assessment (the newest finding, or — if never
+   * assessed — the arrangement's own creation time) is older than the applicable threshold: CIF
+   * arrangements (criticality critical/important) use `cifBefore`, the rest use `before`. It runs
+   * in the monitoring worker with NO request context, so entity isolation's background path
+   * applies (`entityScopeCondition` → undefined) — this read is deliberately cross-org, like the
+   * alertMonitorService checks.
+   * @param {{before:Date, cifBefore:Date, limit?:number}} args
+   */
+  async listActiveOverdueForReassessment({ before, cifBefore, limit = 100 }) {
+    const lastAssessed = sql`(select max(${findings.createdAt}) from ${findings} where ${findings.arrangementId} = ${arrangements.id})`;
+    // cast the bind params to timestamptz — inside a raw CASE they'd otherwise arrive as untyped
+    // text and Postgres can't compare `timestamptz < text`.
+    const threshold = sql`case when ${arrangements.criticality} in ('critical', 'important') then ${cifBefore}::timestamptz else ${before}::timestamptz end`;
+    return this.db
+      .select()
+      .from(arrangements)
+      .where(
+        and(
+          eq(arrangements.lifecycleStatus, 'active'),
+          sql`coalesce(${lastAssessed}, ${arrangements.createdAt}) < ${threshold}`
+        )
+      )
+      .orderBy(desc(arrangements.createdAt))
+      .limit(limit);
   }
 }
 

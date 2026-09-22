@@ -12,6 +12,7 @@ import {
   runWeeklyDigest,
   sendReviewReminderAlert,
 } from '../services/alertMonitorService.js';
+import { runPeriodicReassessment } from '../services/lifecycle/periodicReassessment.js';
 import logger from '../config/logger.js';
 
 const worker = new Worker(
@@ -33,6 +34,13 @@ const worker = new Worker(
       });
       await sendReviewReminderAlert(job.data.workspaceId);
       return { sent: true, workspaceId: job.data.workspaceId };
+    } else if (job.name === 'run-periodic-reassessment') {
+      logger.info('Running periodic re-assessment scan', {
+        service: 'monitoringWorker',
+        jobId: job.id,
+      });
+      const summary = await runPeriodicReassessment();
+      return { ...summary, timestamp: new Date().toISOString() };
     }
     logger.warn('Unknown monitoring job type', { jobName: job.name, jobId: job.id });
   },

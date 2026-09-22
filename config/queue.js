@@ -4,6 +4,8 @@ import { redisConnection } from './redis.js';
 import logger from './logger.js';
 
 const MONITORING_INTERVAL_HOURS = parseInt(process.env.MONITORING_INTERVAL_HOURS) || 24;
+const REASSESSMENT_SCAN_INTERVAL_HOURS =
+  parseInt(process.env.REASSESSMENT_SCAN_INTERVAL_HOURS) || 24;
 
 /**
  * Queue for assessment file indexing and gap analysis jobs
@@ -154,6 +156,39 @@ export async function scheduleMonitoringJob() {
   });
 }
 
+/**
+ * Schedule the periodic re-assessment scan (RTV-31 tail).
+ * Runs every REASSESSMENT_SCAN_INTERVAL_HOURS (default 24h); the scan itself decides which
+ * arrangements are overdue (per-CIF interval — see services/lifecycle/periodicReassessment.js).
+ */
+export async function schedulePeriodicReassessmentJob() {
+  const jobName = 'run-periodic-reassessment';
+
+  const existingJobs = await withTimeout(monitoringQueue.getRepeatableJobs(), QUEUE_OP_TIMEOUT);
+  for (const job of existingJobs) {
+    if (job.name === jobName) {
+      await withTimeout(monitoringQueue.removeRepeatableByKey(job.key), QUEUE_OP_TIMEOUT);
+    }
+  }
+
+  await withTimeout(
+    monitoringQueue.add(
+      jobName,
+      { scheduled: true },
+      {
+        repeat: { every: REASSESSMENT_SCAN_INTERVAL_HOURS * 60 * 60 * 1000 },
+        jobId: 'periodic-reassessment-scheduled',
+      }
+    ),
+    QUEUE_OP_TIMEOUT
+  );
+
+  logger.info('Periodic re-assessment job scheduled', {
+    service: 'queue',
+    intervalHours: REASSESSMENT_SCAN_INTERVAL_HOURS,
+  });
+}
+
 // ISSUE #34 FIX: Store event listener references for cleanup
 const queueEventListeners = {
   assessmentJobs: null,
@@ -214,5 +249,6 @@ export default {
   monitoringQueue,
   scheduleMonitoringJob,
   scheduleWeeklyDigestJob,
+  schedulePeriodicReassessmentJob,
   closeQueues,
 };
