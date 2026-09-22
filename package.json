@@ -30,6 +30,7 @@
     "db:studio": "drizzle-kit studio",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "lint:dead": "npx --yes knip@5 --no-progress",
     "format": "prettier --write \"**/*.js\"",
     "format:check": "prettier --check \"**/*.js\"",
     "typecheck": "tsc --noEmit",
