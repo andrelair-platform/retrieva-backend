@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/auth.js';
+import { contractUploadMiddleware } from '../../middleware/fileUpload.js';
 import {
   listArrangements,
   createArrangement,
   getArrangement,
   listArrangementEvidence,
   attachArrangementEvidence,
+  ingestArrangementEvidence,
   attachProviderEvidence,
   listLegalEntities,
   createLegalEntity,
@@ -26,6 +28,12 @@ arrangementsRouter.post('/', authenticate, createArrangement);
 arrangementsRouter.get('/:id', authenticate, getArrangement);
 arrangementsRouter.get('/:id/evidence', authenticate, listArrangementEvidence);
 arrangementsRouter.post('/:id/evidence', authenticate, attachArrangementEvidence);
+arrangementsRouter.post(
+  '/:id/evidence/ingest',
+  authenticate,
+  contractUploadMiddleware,
+  ingestArrangementEvidence
+);
 
 // Dimensions — mounted at /api/v1/arrangement-graph (populate + inline-create from the form).
 export const arrangementGraphRouter = Router();
