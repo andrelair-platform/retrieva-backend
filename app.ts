@@ -20,6 +20,10 @@ import complianceRoutes from './routes/complianceRoutes.js';
 import concentrationRoutes from './modules/concentration/concentration.routes.js';
 import registerRoutes from './modules/register/register.routes.js';
 import arrangementAssessmentRoutes from './modules/arrangementAssessment/arrangementAssessment.routes.js';
+import {
+  arrangementsRouter,
+  arrangementGraphRouter,
+} from './modules/arrangements/arrangements.routes.js';
 import questionnaireRoutes from './routes/questionnaireRoutes.js';
 import questionnairePublicRoutes from './routes/questionnairePublicRoutes.js';
 import organizationRoutes from './routes/organizationRoutes.js';
@@ -286,13 +290,29 @@ app.use(
 // Register of Information (RT.02.01) — org-scoped projection of the arrangement graph (RTV-38);
 // setEntityContext applies RTV-54 row-level isolation to the graph reads.
 app.use('/api/v1/register', optionalAuth, requireActivePlan, setEntityContext, registerRoutes);
-// Assessment engine (RTV-41) — org-scoped, arrangement-centric evidence-grounded verdicts.
+// Arrangement-graph CRUD (RTV-36/37) + the RTV-41 assessment engine — both org-scoped on
+// /api/v1/arrangements; setEntityContext applies RTV-54 isolation. Dimensions live at
+// /api/v1/arrangement-graph. CRUD is registered before the assessment router (literal paths first).
+app.use(
+  '/api/v1/arrangements',
+  optionalAuth,
+  requireActivePlan,
+  setEntityContext,
+  arrangementsRouter
+);
 app.use(
   '/api/v1/arrangements',
   optionalAuth,
   requireActivePlan,
   setEntityContext,
   arrangementAssessmentRoutes
+);
+app.use(
+  '/api/v1/arrangement-graph',
+  optionalAuth,
+  requireActivePlan,
+  setEntityContext,
+  arrangementGraphRouter
 );
 app.use(
   '/api/v1/questionnaires',
