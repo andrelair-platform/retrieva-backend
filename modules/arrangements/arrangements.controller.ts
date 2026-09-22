@@ -3,6 +3,15 @@ import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import { sha256 } from '../../utils/security/crypto.js';
 import { parseFile } from '../../services/fileIngestionService.js';
 import { indexArrangementText } from '../../services/assessment/arrangementRag.js';
+import { can } from '../../services/security/can.js';
+import { recordAudit } from '../../services/auditLogService.js';
+import {
+  canTransition,
+  nextState,
+  isApprovalTransition,
+  allowedTransitions,
+  initialStatusForTrigger,
+} from '../../services/lifecycle/arrangementLifecycle.js';
 import {
   arrangementRepository,
   legalEntityRepository,
@@ -82,6 +91,8 @@ export const createArrangement = catchAsync(async (req, res) => {
     criticality: req.body.criticality ?? null,
     dependency: req.body.dependency ?? null,
     exitDifficulty: req.body.exitDifficulty ?? null,
+    // RTV-31 trigger → initial lifecycle state (🟢 new → prospect; 🟡 existing/default → active).
+    lifecycleStatus: initialStatusForTrigger(req.body.trigger),
     createdBy: req.user.userId,
   });
   const maps = await loadDimensionMaps(organizationId);
@@ -95,6 +106,64 @@ export const getArrangement = catchAsync(async (req, res) => {
   if (!arrangement) return sendError(res, 404, 'Arrangement not found');
   const maps = await loadDimensionMaps(organizationId);
   sendSuccess(res, 200, 'Arrangement', { arrangement: enrichArrangement(arrangement, maps) });
+});
+
+// GET /api/v1/arrangements/:id/lifecycle — the current state + its allowed next transitions (UI).
+export const getLifecycle = catchAsync(async (req, res) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  const arrangement = await arrangementRepository.findByIdInOrg(organizationId, req.params.id);
+  if (!arrangement) return sendError(res, 404, 'Arrangement not found');
+  sendSuccess(res, 200, 'Arrangement lifecycle', {
+    status: arrangement.lifecycleStatus,
+    transitions: allowedTransitions(arrangement.lifecycleStatus),
+  });
+});
+
+// PATCH /api/v1/arrangements/:id/lifecycle — advance the state machine (RTV-31). Illegal transitions
+// are rejected; terminal/onboarding decisions (approval) require the CHECKER capability (risk:accept)
+// — the analyst who runs assessments can't self-approve onboarding/resolution/exit (SoD). The
+// decision is recorded in the immutable audit trail.
+export const transitionLifecycle = catchAsync(async (req, res) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  const { transition } = req.body ?? {};
+  const arrangement = await arrangementRepository.findByIdInOrg(organizationId, req.params.id);
+  if (!arrangement) return sendError(res, 404, 'Arrangement not found');
+
+  const from = arrangement.lifecycleStatus;
+  if (!canTransition(from, transition)) {
+    return sendError(
+      res,
+      400,
+      `Invalid transition '${transition}' from '${from}'. Allowed: ${allowedTransitions(from)
+        .map((t) => t.transition)
+        .join(', ') || '(none)'}`
+    );
+  }
+
+  const action = isApprovalTransition(transition) ? 'risk:accept' : 'arrangement:edit';
+  if (!(await can(req.user, action, { organizationId }))) {
+    return sendError(
+      res,
+      403,
+      isApprovalTransition(transition)
+        ? 'This is a management-body decision — a checker role is required'
+        : 'You do not have permission to change the arrangement lifecycle'
+    );
+  }
+
+  const to = nextState(from, transition);
+  const updated = await arrangementRepository.setLifecycle(organizationId, arrangement.id, to);
+  await recordAudit({
+    organizationId,
+    actor: req.user.userId,
+    action: 'arrangement.lifecycle',
+    targetType: 'arrangement',
+    targetId: arrangement.id,
+    metadata: { from, to, transition },
+  });
+  sendSuccess(res, 200, 'Lifecycle updated', { arrangement: updated });
 });
 
 // ── evidence (RTV-37) ─────────────────────────────────────────────────────────

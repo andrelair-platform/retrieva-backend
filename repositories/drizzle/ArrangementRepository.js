@@ -27,6 +27,22 @@ export class ArrangementRepository extends BaseDrizzleRepository {
     );
   }
 
+  /** Set the lifecycle state (RTV-31) — entity-scoped. */
+  async setLifecycle(organizationId, id, lifecycleStatus) {
+    const [row] = await this.db
+      .update(arrangements)
+      .set({ lifecycleStatus, updatedAt: new Date() })
+      .where(
+        and(
+          eq(arrangements.id, id),
+          eq(arrangements.organizationId, organizationId),
+          entityScopeCondition(arrangements.organizationId, { action: 'arrangement:edit' })
+        )
+      )
+      .returning();
+    return row ?? null;
+  }
+
   async listByOrg(organizationId) {
     return this.find(
       and(

@@ -5,6 +5,8 @@ import {
   listArrangements,
   createArrangement,
   getArrangement,
+  getLifecycle,
+  transitionLifecycle,
   listArrangementEvidence,
   attachArrangementEvidence,
   ingestArrangementEvidence,
@@ -26,6 +28,8 @@ export const arrangementsRouter = Router();
 arrangementsRouter.get('/', authenticate, listArrangements);
 arrangementsRouter.post('/', authenticate, createArrangement);
 arrangementsRouter.get('/:id', authenticate, getArrangement);
+arrangementsRouter.get('/:id/lifecycle', authenticate, getLifecycle);
+arrangementsRouter.patch('/:id/lifecycle', authenticate, transitionLifecycle);
 arrangementsRouter.get('/:id/evidence', authenticate, listArrangementEvidence);
 arrangementsRouter.post('/:id/evidence', authenticate, attachArrangementEvidence);
 arrangementsRouter.post(

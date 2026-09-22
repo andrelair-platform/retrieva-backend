@@ -144,6 +144,13 @@ export const RT0201_TEMPLATES = {
         required: false,
         source: (r) => val(r.exitDifficulty),
       },
+      // RTV-31 — the Register reflects the arrangement's current lifecycle state.
+      {
+        code: 'B_02.04.0010',
+        label: 'Lifecycle status',
+        required: false,
+        source: (r) => val(r.lifecycleStatus),
+      },
       // Supplied by the assessment engine (RTV-30/40) — a gap until then.
       {
         code: 'B_07.01.0010',
