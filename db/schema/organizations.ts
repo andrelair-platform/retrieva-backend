@@ -3,7 +3,16 @@
 // FK (users.organization_id points back) — resolved via Drizzle's lazy `() =>` refs.
 // industry + plan are growable business taxonomies → text + CHECK (not pgEnum), so a
 // new industry/plan doesn't need an ALTER TYPE migration.
-import { pgTable, uuid, text, timestamp, index, uniqueIndex, check } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  text,
+  timestamp,
+  index,
+  uniqueIndex,
+  check,
+  type AnyPgColumn,
+} from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { orgPlanStatusEnum, orgMemberRoleEnum, memberStatusEnum } from './enums.js';
 import { users } from './users.js';
@@ -17,7 +26,7 @@ export const organizations = pgTable(
     country: text('country').notNull().default(''),
     ownerId: uuid('owner_id')
       .notNull()
-      .references(() => users.id),
+      .references((): AnyPgColumn => users.id),
     stripeCustomerId: text('stripe_customer_id'),
     stripeSubscriptionId: text('stripe_subscription_id'),
     plan: text('plan').notNull().default('starter'),

@@ -6,7 +6,16 @@
 // (self-referencing → the group hierarchy) and be flagged `is_group_entity` (so an intra-group
 // arrangement can name a group company as its provider — RT.02.01 B_03, AC-5). v1 runs a single
 // entity per org; the columns exist so RTV-35 group consolidation needs no schema retrofit.
-import { pgTable, uuid, text, boolean, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  text,
+  boolean,
+  timestamp,
+  index,
+  uniqueIndex,
+  type AnyPgColumn,
+} from 'drizzle-orm/pg-core';
 import { organizations } from './organizations.js';
 
 export const legalEntities = pgTable(
@@ -21,7 +30,7 @@ export const legalEntities = pgTable(
     country: text('country').notNull().default(''),
     // self-referencing group hierarchy (nullable = top of the group / standalone entity).
     // The `() =>` ref is lazy, so the self-reference resolves after the const is initialised.
-    parentEntityId: uuid('parent_entity_id').references(() => legalEntities.id, {
+    parentEntityId: uuid('parent_entity_id').references((): AnyPgColumn => legalEntities.id, {
       onDelete: 'set null',
     }),
     isGroupEntity: boolean('is_group_entity').notNull().default(false),

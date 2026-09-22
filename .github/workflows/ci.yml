@@ -68,6 +68,9 @@ jobs:
       - name: Typecheck (allowJs baseline)
         run: npm run typecheck
 
+      - name: Typecheck (strict — converted dirs, RTV-22..25)
+        run: npm run typecheck:strict
+
       - name: Unit + integration tests
         run: npm run test:coverage
         env:

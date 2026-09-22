@@ -21,3 +21,5 @@ export * from './auditLog.js';
 // Assessment findings (RTV-41)
 export * from './findings.js';
 export * from './relations.js';
+// Canonical row types inferred from the tables above (RTV-22) — XRow / XInsert.
+export * from './rowTypes.js';

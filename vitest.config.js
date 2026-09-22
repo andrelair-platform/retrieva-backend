@@ -5,8 +5,8 @@ export default defineConfig({
     // Test environment
     environment: 'node',
 
-    // Test file patterns
-    include: ['tests/**/*.test.js'],
+    // Test file patterns (.ts tests land as the JS→TS migration progresses — RTV-22+)
+    include: ['tests/**/*.test.{js,ts}'],
 
     // Exclude patterns
     exclude: ['node_modules', 'dist'],
