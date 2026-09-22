@@ -1,6 +1,7 @@
 // drizzle-zod DTO schemas (RTV-48, AC-3). Each table relates to a Zod insert/select
 // schema so the app's DTO types derive from the tables (Zod stays the single source of
 // truth — no duplicate hand-written shapes). Consumed by validators/services at RTV-49.
+import { z } from 'zod';
 import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
 import {
   users,
@@ -83,3 +84,26 @@ export const auditLogSelectSchema = createSelectSchema(auditLog);
 // Assessment findings (RTV-41)
 export const findingInsertSchema = createInsertSchema(findings);
 export const findingSelectSchema = createSelectSchema(findings);
+
+// ── DTO types derived from the Zod schemas above (RTV-22, AC-3) ──────────────
+// z.infer is the single source of truth for the DORA-domain request/response shapes; there is no
+// hand-written duplicate of a Zod-validated shape. `*Dto` = the select (read) shape; `*CreateDto`
+// = the insert (write) shape.
+export type LegalEntityDto = z.infer<typeof legalEntitySelectSchema>;
+export type LegalEntityCreateDto = z.infer<typeof legalEntityInsertSchema>;
+export type BusinessFunctionDto = z.infer<typeof businessFunctionSelectSchema>;
+export type BusinessFunctionCreateDto = z.infer<typeof businessFunctionInsertSchema>;
+export type IctServiceDto = z.infer<typeof ictServiceSelectSchema>;
+export type IctServiceCreateDto = z.infer<typeof ictServiceInsertSchema>;
+export type ProviderNodeDto = z.infer<typeof providerNodeSelectSchema>;
+export type ProviderNodeCreateDto = z.infer<typeof providerNodeInsertSchema>;
+export type ProviderDependencyDto = z.infer<typeof providerDependencySelectSchema>;
+export type ProviderDependencyCreateDto = z.infer<typeof providerDependencyInsertSchema>;
+export type ArrangementDto = z.infer<typeof arrangementSelectSchema>;
+export type ArrangementCreateDto = z.infer<typeof arrangementInsertSchema>;
+export type EvidenceDto = z.infer<typeof evidenceSelectSchema>;
+export type EvidenceCreateDto = z.infer<typeof evidenceInsertSchema>;
+export type AuditLogDto = z.infer<typeof auditLogSelectSchema>;
+export type AuditLogCreateDto = z.infer<typeof auditLogInsertSchema>;
+export type FindingDto = z.infer<typeof findingSelectSchema>;
+export type FindingCreateDto = z.infer<typeof findingInsertSchema>;

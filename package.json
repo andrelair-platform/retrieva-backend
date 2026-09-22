@@ -34,6 +34,7 @@
     "format": "prettier --write \"**/*.js\"",
     "format:check": "prettier --check \"**/*.js\"",
     "typecheck": "tsc --noEmit",
+    "typecheck:strict": "tsc -p tsconfig.strict.json",
     "prepare": "husky || true"
   },
   "lint-staged": {

@@ -11,6 +11,7 @@ import {
   timestamp,
   jsonb,
   index,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { userRoleEnum } from './enums.js';
 import { organizations } from './organizations.js';
@@ -78,7 +79,7 @@ export const users = pgTable(
       .notNull()
       .default(NOTIFICATION_PREFERENCES_DEFAULT),
     // Circular ref with organizations.owner_id — nullable + set null on delete.
-    organizationId: uuid('organization_id').references(() => organizations.id, {
+    organizationId: uuid('organization_id').references((): AnyPgColumn => organizations.id, {
       onDelete: 'set null',
     }),
     onboardingCompleted: boolean('onboarding_completed').notNull().default(false),

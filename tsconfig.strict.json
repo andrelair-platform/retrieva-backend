@@ -1,0 +1,12 @@
+{
+  "// note": "Incremental strict gate (RTV-22..25). `strict:true` + `allowJs:false` are enforced ONLY on the directories converted so far — listed in `include`. Each conversion story adds its dirs here; RTV-25 folds this into the base tsconfig and deletes this file. `npm run typecheck:strict` runs it; CI blocks on it.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "allowJs": false,
+    "checkJs": false,
+    "noEmit": true
+  },
+  "include": ["db/schema/**/*.ts"],
+  "exclude": ["node_modules", "dist", "coverage", "tests", "website", "seeds", "data"]
+}
