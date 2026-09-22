@@ -24,6 +24,7 @@ import {
   arrangementsRouter,
   arrangementGraphRouter,
 } from './modules/arrangements/arrangements.routes.js';
+import intakeRoutes from './modules/intake/intake.routes.js';
 import questionnaireRoutes from './routes/questionnaireRoutes.js';
 import questionnairePublicRoutes from './routes/questionnairePublicRoutes.js';
 import organizationRoutes from './routes/organizationRoutes.js';
@@ -293,6 +294,14 @@ app.use('/api/v1/register', optionalAuth, requireActivePlan, setEntityContext, r
 // Arrangement-graph CRUD (RTV-36/37) + the RTV-41 assessment engine — both org-scoped on
 // /api/v1/arrangements; setEntityContext applies RTV-54 isolation. Dimensions live at
 // /api/v1/arrangement-graph. CRUD is registered before the assessment router (literal paths first).
+// AI-assisted intake (RTV-34) — registered before the CRUD router so /intake wins over /:id.
+app.use(
+  '/api/v1/arrangements/intake',
+  optionalAuth,
+  requireActivePlan,
+  setEntityContext,
+  intakeRoutes
+);
 app.use(
   '/api/v1/arrangements',
   optionalAuth,

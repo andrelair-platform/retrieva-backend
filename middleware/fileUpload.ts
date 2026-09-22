@@ -60,6 +60,27 @@ export const uploadAssessmentFiles = multer({
   },
 }).array('files', MAX_FILES_PER_UPLOAD);
 
+// Single-file upload for AI-assisted intake (RTV-34) — one contract, field `contract`.
+const uploadContract = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024, files: 1 },
+}).single('contract');
+
+/** Runs multer for a single `contract` file, converting MulterError → AppError. */
+export function contractUploadMiddleware(req, res, next) {
+  uploadContract(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return next(new AppError(`File too large. Max size is ${MAX_FILE_SIZE_MB}MB`, 400));
+      }
+      return next(new AppError(`Upload error: ${err.message}`, 400));
+    }
+    if (err) return next(err);
+    next();
+  });
+}
+
 /**
  * Express middleware that runs multer and converts MulterError to AppError.
  * Place this in the route chain before validateBody and the controller.
