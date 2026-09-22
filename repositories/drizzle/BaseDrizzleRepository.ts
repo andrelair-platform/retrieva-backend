@@ -5,50 +5,60 @@
  * criteria objects. Each repository subclass wraps one table and adds intent-named
  * methods (findByEmail, listByWorkspace, …) built on these primitives.
  */
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, type SQL } from 'drizzle-orm';
+import type { PgTable, PgColumn } from 'drizzle-orm/pg-core';
 import { getDb } from '../../config/db.js';
 
+// The Drizzle db handle + query-builder generics are `any` until config/db.js is typed (RTV-24);
+// getDb() is imported from JS today, so a precise type here would be fiction. The subclasses' OWN
+// logic is strict-checked; this boundary loosens in RTV-24.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- db is untyped until RTV-24 (config/db.js)
+type Db = any;
+type Row = Record<string, unknown>;
+type Where = SQL | undefined;
+type OrderBy = SQL | SQL[];
+interface FindOpts {
+  orderBy?: OrderBy;
+  limit?: number | null;
+  offset?: number | null;
+}
+
 export class BaseDrizzleRepository {
-  /**
-   * @param {import('drizzle-orm/pg-core').PgTable} table
-   * @param {{ db?: import('drizzle-orm/node-postgres').NodePgDatabase }} [opts] db is injectable for tests
-   */
-  constructor(table, { db } = {}) {
+  protected table: PgTable & { id: PgColumn };
+  protected _db: Db;
+
+  constructor(table: PgTable & { id: PgColumn }, { db }: { db?: Db } = {}) {
     if (!table) throw new Error('BaseDrizzleRepository requires a table');
     this.table = table;
     this._db = db;
   }
 
   /** The Drizzle db handle (injected in tests, else the app singleton). */
-  get db() {
+  get db(): Db {
     return this._db || getDb();
   }
 
-  async create(values) {
+  async create(values: Row) {
     const [row] = await this.db.insert(this.table).values(values).returning();
     return row;
   }
 
-  async createMany(values) {
+  async createMany(values: Row[]) {
     if (!Array.isArray(values) || values.length === 0) return [];
     return this.db.insert(this.table).values(values).returning();
   }
 
-  async findById(id) {
+  async findById(id: string) {
     const [row] = await this.db.select().from(this.table).where(eq(this.table.id, id)).limit(1);
     return row ?? null;
   }
 
-  async findOne(where) {
+  async findOne(where: Where) {
     const [row] = await this.db.select().from(this.table).where(where).limit(1);
     return row ?? null;
   }
 
-  /**
-   * @param {*} [where] Drizzle condition
-   * @param {{ orderBy?: *|Array, limit?: number, offset?: number }} [opts]
-   */
-  async find(where, { orderBy, limit, offset } = {}) {
+  async find(where?: Where, { orderBy, limit, offset }: FindOpts = {}) {
     let q = this.db.select().from(this.table);
     if (where) q = q.where(where);
     if (orderBy) q = q.orderBy(...(Array.isArray(orderBy) ? orderBy : [orderBy]));
@@ -57,7 +67,7 @@ export class BaseDrizzleRepository {
     return q;
   }
 
-  async updateById(id, values) {
+  async updateById(id: string, values: Row) {
     const [row] = await this.db
       .update(this.table)
       .set(values)
@@ -66,33 +76,36 @@ export class BaseDrizzleRepository {
     return row ?? null;
   }
 
-  async updateWhere(where, values) {
+  async updateWhere(where: Where, values: Row) {
     return this.db.update(this.table).set(values).where(where).returning();
   }
 
-  async deleteById(id) {
+  async deleteById(id: string) {
     const [row] = await this.db.delete(this.table).where(eq(this.table.id, id)).returning();
     return row ?? null;
   }
 
-  async deleteWhere(where) {
+  async deleteWhere(where: Where) {
     return this.db.delete(this.table).where(where).returning();
   }
 
-  async count(where) {
+  async count(where?: Where): Promise<number> {
     const [r] = await this.db
-      .select({ n: sql`count(*)::int` })
+      .select({ n: sql<number>`count(*)::int` })
       .from(this.table)
       .where(where ?? sql`true`);
     return r.n;
   }
 
-  async exists(where) {
+  async exists(where?: Where) {
     return (await this.count(where)) > 0;
   }
 
-  /** Paginated list + total. @returns {{data,total,page,limit,totalPages,hasMore}} */
-  async findPaginated(where, { page = 1, limit = 20, orderBy } = {}) {
+  /** Paginated list + total. */
+  async findPaginated(
+    where: Where,
+    { page = 1, limit = 20, orderBy }: { page?: number; limit?: number; orderBy?: OrderBy } = {}
+  ) {
     const offset = (page - 1) * limit;
     const [data, total] = await Promise.all([
       this.find(where, { orderBy, limit, offset }),
