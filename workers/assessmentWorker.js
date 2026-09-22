@@ -138,6 +138,20 @@ async function processGapAnalysis(job) {
   return runGapAnalysis({ assessmentId, userId, job });
 }
 
+// RTV-41: control-based assessment of an ARRANGEMENT (org-scoped, not workspace-scoped). Runs the
+// evidence-grounded verdict engine and persists findings. Uses organizationId/arrangementId from
+// the job (no assessmentId → the tenant-context wrapper no-ops, which is correct here).
+async function processArrangementAssessment(job) {
+  const { organizationId, arrangementId, userId } = job.data;
+  logger.info('Arrangement assessment job started', {
+    service: 'assessment-worker',
+    arrangementId,
+    jobId: job.id,
+  });
+  const { assessArrangement } = await import('../services/assessment/assessmentEngine.js');
+  return assessArrangement({ organizationId, arrangementId, userId });
+}
+
 // ---------------------------------------------------------------------------
 // Worker
 // ---------------------------------------------------------------------------
@@ -164,6 +178,8 @@ const worker = new Worker(
           return processFileIndex(job);
         case 'gapAnalysis':
           return processGapAnalysis(job);
+        case 'arrangementAssessment':
+          return processArrangementAssessment(job);
         default:
           logger.warn('Unknown assessment job type', { jobName: job.name, jobId: job.id });
           return undefined;

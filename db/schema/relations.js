@@ -17,6 +17,7 @@ import { ictServices } from './ictServices.js';
 import { arrangements } from './arrangements.js';
 import { evidence } from './evidence.js';
 import { auditLog } from './auditLog.js';
+import { findings } from './findings.js';
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   // user.organizationId → organizations (the org the user belongs to)
@@ -252,6 +253,22 @@ export const arrangementsRelations = relations(arrangements, ({ one, many }) => 
     references: [users.id],
   }),
   evidence: many(evidence), // arrangement-local evidence (RTV-37)
+  findings: many(findings), // assessment findings (RTV-41)
+}));
+
+export const findingsRelations = relations(findings, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [findings.organizationId],
+    references: [organizations.id],
+  }),
+  arrangement: one(arrangements, {
+    fields: [findings.arrangementId],
+    references: [arrangements.id],
+  }),
+  createdByUser: one(users, {
+    fields: [findings.createdBy],
+    references: [users.id],
+  }),
 }));
 
 // ── Evidence + audit trail (RTV-37) ─────────────────────────────────────────────

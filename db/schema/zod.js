@@ -23,6 +23,7 @@ import {
   arrangements,
   evidence,
   auditLog,
+  findings,
 } from './index.js';
 
 export const userInsertSchema = createInsertSchema(users);
@@ -78,3 +79,7 @@ export const evidenceInsertSchema = createInsertSchema(evidence);
 export const evidenceSelectSchema = createSelectSchema(evidence);
 export const auditLogInsertSchema = createInsertSchema(auditLog);
 export const auditLogSelectSchema = createSelectSchema(auditLog);
+
+// Assessment findings (RTV-41)
+export const findingInsertSchema = createInsertSchema(findings);
+export const findingSelectSchema = createSelectSchema(findings);

@@ -96,6 +96,18 @@ export const exitDifficultyEnum = pgEnum('exit_difficulty', ['low', 'medium', 'h
 // vs arrangement-local (entity-private).
 export const evidenceScopeEnum = pgEnum('evidence_scope', ['provider', 'arrangement']);
 
+// Assessment engine (RTV-41, ADR §5). The verdict enum's `insufficient_evidence` is the
+// guardrail: absence of expected evidence is NEVER auto non_compliant. Findings are AI-drafted
+// (status=draft) and human-approved later (RTV-55) — the management-body-accountability posture.
+export const verdictEnum = pgEnum('verdict', [
+  'compliant',
+  'partial',
+  'non_compliant',
+  'insufficient_evidence',
+  'not_applicable',
+]);
+export const findingStatusEnum = pgEnum('finding_status', ['draft', 'approved', 'rejected']);
+
 export const questionnaireStatusEnum = pgEnum('questionnaire_status', [
   'draft',
   'sent',

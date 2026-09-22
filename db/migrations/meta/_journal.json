@@ -29,6 +29,13 @@
       "when": 1790020069344,
       "tag": "0003_closed_sentry",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790022693111,
+      "tag": "0004_rainy_black_panther",
+      "breakpoints": true
     }
   ]
 }
