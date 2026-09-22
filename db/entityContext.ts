@@ -12,14 +12,20 @@
  */
 import { AsyncLocalStorage } from 'async_hooks';
 
-const entityContext = new AsyncLocalStorage();
+/** A user's resolved legal-entity access scope (RTV-54). */
+export interface EntityScope {
+  platformAdmin: boolean;
+  readAcross: boolean;
+  entityIds: string[];
+}
 
-/** @returns {{platformAdmin:boolean, readAcross:boolean, entityIds:string[]}|null} */
-export function getEntityScope() {
+const entityContext = new AsyncLocalStorage<{ scope: EntityScope | null }>();
+
+export function getEntityScope(): EntityScope | null {
   return entityContext.getStore()?.scope ?? null;
 }
 
 /** Run `fn` with the resolved entity scope in context (repo ops inside are auto-scoped). */
-export function runWithEntityScope(scope, fn) {
+export function runWithEntityScope<T>(scope: EntityScope | null, fn: () => T): T {
   return entityContext.run({ scope }, fn);
 }

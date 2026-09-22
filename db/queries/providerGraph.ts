@@ -13,19 +13,24 @@
  * cycle (A→B→A) terminates. A `maxDepth` cap (default 12, matching the legacy guard) is
  * the secondary bound. Edges are indexed on `parent_node_id` / `child_node_id`.
  */
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 
-/**
- * @typedef {Object} ReachedNode
- * @property {string}  id            provider_nodes.id
- * @property {'workspace'|'external'} kind
- * @property {string}  canonicalName normalised identity key
- * @property {string}  displayName   human name
- * @property {('critical'|'important'|'standard'|null)} tier
- * @property {number}  depth         shortest hop distance from the start (1-based for
- *                                   the subcontractor chain; 0 = the provider itself for
- *                                   the function closure)
- */
+/** One provider node reached by a graph traversal, with its shortest hop distance. */
+export interface ReachedNode {
+  id: string; // provider_nodes.id
+  kind: 'workspace' | 'external';
+  canonicalName: string; // normalised identity key
+  displayName: string; // human name
+  tier: 'critical' | 'important' | 'standard' | null;
+  // shortest hop distance from the start (1-based for the subcontractor chain; 0 = the
+  // provider itself for the function closure)
+  depth: number;
+}
+
+// The minimal db surface these queries use; the full Drizzle handle is typed in RTV-24.
+interface GraphExecutor {
+  execute(query: SQL): Promise<{ rows: ReachedNode[] }>;
+}
 
 const DEFAULT_MAX_DEPTH = 12;
 
@@ -43,9 +48,14 @@ const DEFAULT_MAX_DEPTH = 12;
  * @returns {Promise<ReachedNode[]>}
  */
 export async function providerSubcontractorChain(
-  db,
-  { organizationId, startNodeId, maxDepth = DEFAULT_MAX_DEPTH, confirmedOnly = true }
-) {
+  db: GraphExecutor,
+  {
+    organizationId,
+    startNodeId,
+    maxDepth = DEFAULT_MAX_DEPTH,
+    confirmedOnly = true,
+  }: { organizationId: string; startNodeId: string; maxDepth?: number; confirmedOnly?: boolean }
+): Promise<ReachedNode[]> {
   const confirmed = confirmedOnly ? sql`and e.confirmed` : sql``;
   const res = await db.execute(sql`
     with recursive chain as (
@@ -101,9 +111,14 @@ export async function providerSubcontractorChain(
  * @returns {Promise<ReachedNode[]>}
  */
 export async function functionDependencyClosure(
-  db,
-  { organizationId, functionId, maxDepth = DEFAULT_MAX_DEPTH, confirmedOnly = true }
-) {
+  db: GraphExecutor,
+  {
+    organizationId,
+    functionId,
+    maxDepth = DEFAULT_MAX_DEPTH,
+    confirmedOnly = true,
+  }: { organizationId: string; functionId: string; maxDepth?: number; confirmedOnly?: boolean }
+): Promise<ReachedNode[]> {
   const confirmed = confirmedOnly ? sql`and e.confirmed` : sql``;
   const res = await db.execute(sql`
     with recursive
