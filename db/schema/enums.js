@@ -96,6 +96,17 @@ export const exitDifficultyEnum = pgEnum('exit_difficulty', ['low', 'medium', 'h
 // vs arrangement-local (entity-private).
 export const evidenceScopeEnum = pgEnum('evidence_scope', ['provider', 'arrangement']);
 
+// Arrangement lifecycle (RTV-31, ADR §6) — one state machine entered by three triggers.
+export const arrangementLifecycleEnum = pgEnum('arrangement_lifecycle', [
+  'prospect',
+  'due_diligence',
+  'active',
+  'under_review',
+  'remediation',
+  'exiting',
+  'exited',
+]);
+
 // Assessment engine (RTV-41, ADR §5). The verdict enum's `insufficient_evidence` is the
 // guardrail: absence of expected evidence is NEVER auto non_compliant. Findings are AI-drafted
 // (status=draft) and human-approved later (RTV-55) — the management-body-accountability posture.

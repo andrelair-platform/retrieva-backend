@@ -70,6 +70,7 @@ export const confirmIntake = catchAsync(async (req, res) => {
     userId: req.user.userId,
     proposal: p,
     sourceFileName: req.body?.sourceFileName || 'Ingested contract',
+    trigger: req.body?.trigger,
   });
 
   sendSuccess(res, 201, 'Arrangement created from contract', { arrangement });

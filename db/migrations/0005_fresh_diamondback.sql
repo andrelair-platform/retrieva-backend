@@ -1,0 +1,3 @@
+CREATE TYPE "public"."arrangement_lifecycle" AS ENUM('prospect', 'due_diligence', 'active', 'under_review', 'remediation', 'exiting', 'exited');--> statement-breakpoint
+ALTER TABLE "arrangements" ADD COLUMN "lifecycle_status" "arrangement_lifecycle" DEFAULT 'active' NOT NULL;--> statement-breakpoint
+CREATE INDEX "arrangements_lifecycle_idx" ON "arrangements" USING btree ("organization_id","lifecycle_status");

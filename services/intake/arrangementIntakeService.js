@@ -6,6 +6,7 @@
  */
 import { sha256 } from '../../utils/security/crypto.js';
 import { recordAudit } from '../auditLogService.js';
+import { initialStatusForTrigger } from '../lifecycle/arrangementLifecycle.js';
 import {
   legalEntityRepository,
   businessFunctionRepository,
@@ -22,7 +23,7 @@ const norm = (s) =>
 
 /**
  * @param {{organizationId:string, userId?:string, proposal:object, sourceFileName?:string,
- *          repos?:object}} args  repos is injectable for tests (defaults to the singletons)
+ *          trigger?:string, repos?:object}} args  repos is injectable for tests (defaults to the singletons)
  * @returns {Promise<object>} the created arrangement row
  */
 export async function confirmProposal({
@@ -30,6 +31,7 @@ export async function confirmProposal({
   userId = null,
   proposal: p,
   sourceFileName = 'Ingested contract',
+  trigger,
   repos = {},
 }) {
   const legalEntities = repos.legalEntityRepository || legalEntityRepository;
@@ -106,6 +108,7 @@ export async function confirmProposal({
     criticality: ['critical', 'important', 'standard'].includes(p.criticality)
       ? p.criticality
       : null,
+    lifecycleStatus: initialStatusForTrigger(trigger), // RTV-31 (🟢 new → prospect; else active)
     createdBy: userId,
   });
 

@@ -10,7 +10,13 @@
 // multi-tenant `entity_id` (every arrangement carries it even in single-entity v1). `legal_entity_id`
 // is the ADR dimension FK (AC-1). Both present by design.
 import { pgTable, uuid, text, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
-import { arrangementTypeEnum, dependencyLevelEnum, exitDifficultyEnum, tierEnum } from './enums.js';
+import {
+  arrangementTypeEnum,
+  dependencyLevelEnum,
+  exitDifficultyEnum,
+  tierEnum,
+  arrangementLifecycleEnum,
+} from './enums.js';
 import { organizations } from './organizations.js';
 import { legalEntities } from './legalEntities.js';
 import { businessFunctions } from './businessFunctions.js';
@@ -47,6 +53,8 @@ export const arrangements = pgTable(
     criticality: tierEnum('criticality'), // CIF: critical/important/standard — nullable
     dependency: dependencyLevelEnum('dependency'), // low/medium/high — nullable
     exitDifficulty: exitDifficultyEnum('exit_difficulty'), // low/medium/high — nullable
+    // RTV-31 lifecycle state (default active — existing rows are real, contracted arrangements).
+    lifecycleStatus: arrangementLifecycleEnum('lifecycle_status').notNull().default('active'),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -61,5 +69,6 @@ export const arrangements = pgTable(
     index('arrangements_entity_idx').on(t.legalEntityId),
     index('arrangements_org_idx').on(t.organizationId),
     index('arrangements_service_idx').on(t.ictServiceId),
+    index('arrangements_lifecycle_idx').on(t.organizationId, t.lifecycleStatus),
   ]
 );

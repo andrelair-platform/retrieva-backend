@@ -73,6 +73,7 @@ export function assembleRegister(graph) {
       dataResidency: a.dataResidency ?? null,
       dependency: a.dependency ?? null,
       exitDifficulty: a.exitDifficulty ?? null,
+      lifecycleStatus: a.lifecycleStatus ?? null, // RTV-31 — the register reflects current state
       assessmentStatus: assessmentStatusFor(provider),
       _ref: String(a.id),
       _isIntraGroup: a.arrangementType === 'intra_group',
