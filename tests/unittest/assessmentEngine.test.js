@@ -3,7 +3,12 @@
  * whole point: absence of evidence must NEVER become auto non-compliant.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { assessControl, coverageConfidence, VERDICTS } from '../../services/assessment/verdict.js';
+import {
+  assessControl,
+  coverageConfidence,
+  markFindingStaleness,
+  VERDICTS,
+} from '../../services/assessment/verdict.js';
 
 const control = {
   id: 'DORA-30.3d-ICT-SECURITY',
@@ -84,5 +89,33 @@ describe('RTV-41 assessControl — §5 guardrails', () => {
       judge
     );
     expect(VERDICTS).toContain(r.verdict);
+  });
+});
+
+describe('RTV-32 markFindingStaleness — the change signal', () => {
+  const t0 = '2026-01-01T00:00:00.000Z';
+  const t1 = '2026-02-01T00:00:00.000Z';
+
+  it('flags a finding stale when evidence changed after it was last assessed', () => {
+    const { findings, staleCount } = markFindingStaleness(
+      [{ id: 'a', updatedAt: t0 }],
+      [{ updatedAt: t1 }]
+    );
+    expect(findings[0].stale).toBe(true);
+    expect(staleCount).toBe(1);
+  });
+
+  it('is not stale when the finding was assessed after the latest evidence (re-assessed)', () => {
+    const { findings, staleCount } = markFindingStaleness(
+      [{ id: 'a', updatedAt: t1 }],
+      [{ updatedAt: t0 }]
+    );
+    expect(findings[0].stale).toBe(false);
+    expect(staleCount).toBe(0);
+  });
+
+  it('no evidence → nothing stale', () => {
+    const { staleCount } = markFindingStaleness([{ id: 'a', updatedAt: t1 }], []);
+    expect(staleCount).toBe(0);
   });
 });

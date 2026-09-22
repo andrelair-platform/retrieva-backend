@@ -19,6 +19,24 @@ export const VERDICTS = [
 // Verdicts a judge may return when evidence is present (insufficient_evidence is engine-only).
 const JUDGE_VERDICTS = ['compliant', 'partial', 'non_compliant', 'not_applicable'];
 
+/**
+ * RTV-32 change signal — flag each finding `stale` when the arrangement's evidence changed AFTER the
+ * finding was last assessed (its verdict is out of date). Pure. `updatedAt` on a finding is its last
+ * assessment time (upsert bumps it); on evidence it's the last change time.
+ * @returns {{findings: object[], staleCount: number}}
+ */
+export function markFindingStaleness(findings = [], evidence = []) {
+  const latestEvidence = evidence.reduce(
+    (max, e) => Math.max(max, new Date(e.updatedAt || e.createdAt).getTime()),
+    0
+  );
+  const list = findings.map((f) => ({
+    ...f,
+    stale: latestEvidence > new Date(f.updatedAt).getTime(),
+  }));
+  return { findings: list, staleCount: list.filter((f) => f.stale).length };
+}
+
 /** Coverage-derived confidence (§5: not the LLM's self-report). covered / expected, clamped 0..1. */
 export function coverageConfidence(control, coveredEvidenceTypes = []) {
   const expected = control.expectedEvidenceTypes?.length || 0;
