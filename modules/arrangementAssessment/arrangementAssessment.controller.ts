@@ -1,8 +1,9 @@
 import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import { assessmentQueue } from '../../config/queue.js';
-import { findingRepository } from '../../repositories/index.js';
+import { findingRepository, evidenceRepository } from '../../repositories/index.js';
 import { can } from '../../services/security/can.js';
 import { recordAudit } from '../../services/auditLogService.js';
+import { markFindingStaleness } from '../../services/assessment/verdict.js';
 
 // The assessment engine is ORG-scoped and arrangement-centric (RTV-41). Every handler keys off
 // req.user.organizationId — never a caller-supplied org — so tenants can't cross. Row-level
@@ -29,12 +30,19 @@ export const runAssessment = catchAsync(async (req, res) => {
   sendSuccess(res, 202, 'Assessment queued', { jobId: job.id, arrangementId });
 });
 
-// GET /api/v1/arrangements/:arrangementId/findings — the per-control verdicts (drafts).
+// GET /api/v1/arrangements/:arrangementId/findings — the per-control verdicts (drafts), each flagged
+// `stale` (RTV-32 change signal) when the arrangement's evidence changed AFTER the finding was last
+// assessed — i.e. the verdict is out of date and a re-assessment is due. No scheduler here (the full
+// change engine is the RTV-32 epic); this is the freshness signal + re-assess prompt.
 export const getFindings = catchAsync(async (req, res) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
-  const findings = await findingRepository.listByArrangement(organizationId, req.params.arrangementId);
-  sendSuccess(res, 200, 'Assessment findings', { findings });
+  const [findings, evidence] = await Promise.all([
+    findingRepository.listByArrangement(organizationId, req.params.arrangementId),
+    evidenceRepository.resolveForArrangement(organizationId, req.params.arrangementId),
+  ]);
+  const { findings: withStaleness, staleCount } = markFindingStaleness(findings, evidence);
+  sendSuccess(res, 200, 'Assessment findings', { findings: withStaleness, staleCount });
 });
 
 // PATCH /api/v1/arrangements/:arrangementId/findings/:findingId — the human-in-the-loop decision
