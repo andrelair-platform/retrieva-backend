@@ -1,5 +1,8 @@
+import path from 'path';
 import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import { sha256 } from '../../utils/security/crypto.js';
+import { parseFile } from '../../services/fileIngestionService.js';
+import { indexArrangementText } from '../../services/assessment/arrangementRag.js';
 import {
   arrangementRepository,
   legalEntityRepository,
@@ -122,6 +125,32 @@ export const attachArrangementEvidence = catchAsync(async (req, res) => {
     createdBy: req.user.userId,
   });
   sendSuccess(res, 201, 'Evidence attached', { evidence });
+});
+
+// POST /api/v1/arrangements/:id/evidence/ingest — upload a document: index its TEXT into the
+// arrangement's RAG collection (so assessments cite real passages) + create an evidence record.
+export const ingestArrangementEvidence = catchAsync(async (req, res) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  if (!req.file) return sendError(res, 400, 'A document file is required (field: contract)');
+
+  const ext = path.extname(req.file.originalname).replace('.', '').toLowerCase();
+  const text = await parseFile(req.file.buffer, ext, req.file.originalname);
+  if (!text || text.trim().length < 20) {
+    return sendError(res, 422, 'Could not extract readable text from the document');
+  }
+
+  const chunks = await indexArrangementText(req.params.id, req.file.originalname, text);
+  const evidence = await evidenceRepository.createDeduped({
+    organizationId,
+    scope: 'arrangement',
+    arrangementId: req.params.id,
+    document: req.file.originalname,
+    source: 'uploaded document',
+    hash: sha256(text),
+    createdBy: req.user.userId,
+  });
+  sendSuccess(res, 201, 'Document ingested', { evidence, chunks });
 });
 
 export const attachProviderEvidence = catchAsync(async (req, res) => {

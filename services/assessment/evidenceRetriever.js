@@ -10,6 +10,7 @@
  * spans carry the evidence document + source so every verdict points at a real record.
  */
 import { evidenceRepository } from '../../repositories/index.js';
+import { searchArrangementSpans } from './arrangementRag.js';
 
 const normalize = (s) => String(s || '').toLowerCase();
 const typeAsPhrase = (t) => normalize(t).replace(/_/g, ' ');
@@ -35,30 +36,50 @@ function coveredTypes(control, matched) {
 }
 
 /**
- * Gather evidence for a control on an arrangement.
+ * Gather evidence for a control on an arrangement: the RTV-37 evidence RECORDS (metadata) PLUS real
+ * document SPANS retrieved from the arrangement's Qdrant collection (RTV-34 ingest). The RAG search is
+ * fail-safe ([] when nothing is indexed), so a verdict grounds on real contract text when available and
+ * still assesses (→ insufficient-evidence) when not. `deps.searchSpans` is injectable for tests.
  * @returns {Promise<{spans:Array<{source:string,snippet:string}>, searched:any[], evidenceRecords:object[], coveredEvidenceTypes:string[]}>}
  */
-export async function gatherEvidence(control, arrangement) {
+export async function gatherEvidence(control, arrangement, deps = {}) {
+  const searchSpans = deps.searchSpans || searchArrangementSpans;
   const all = await evidenceRepository.resolveForArrangement(
     arrangement.organizationId,
     arrangement.id
   );
   const matched = all.filter((e) => matchesControl(control, e));
-  const spans = matched.map((e) => ({
+  const metaSpans = matched.map((e) => ({
     source: e.document,
     snippet: `${e.document}${e.version ? ` (v${e.version})` : ''} — source: ${e.source || 'n/a'}${
       e.scope === 'provider' ? ' [provider-global]' : ' [arrangement-local]'
     }`,
     evidenceId: e.id,
   }));
+
+  // Real document spans matching the control's patterns (empty unless a doc was ingested).
+  const query = [control.title, ...(control.clauseMatchPatterns || [])].filter(Boolean).join(' ');
+  const ragSpans = await searchSpans(arrangement.id, query);
+  const spans = [...ragSpans, ...metaSpans];
+
   return {
     spans,
     evidenceRecords: matched,
-    coveredEvidenceTypes: coveredTypes(control, matched),
+    // RAG hits count as covered evidence too (the control's expected types were found in the docs).
+    coveredEvidenceTypes:
+      ragSpans.length > 0
+        ? [
+            ...new Set([
+              ...coveredTypes(control, matched),
+              ...(control.expectedEvidenceTypes || []),
+            ]),
+          ]
+        : coveredTypes(control, matched),
     searched: [
       {
         scope: 'evidence',
         documentsExamined: all.map((e) => e.document),
+        ragHits: ragSpans.length,
         patterns: control.clauseMatchPatterns || [],
         expectedTypes: control.expectedEvidenceTypes || [],
       },
