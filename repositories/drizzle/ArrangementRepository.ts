@@ -17,7 +17,7 @@ export class ArrangementRepository extends BaseDrizzleRepository {
     super(arrangements, opts);
   }
 
-  async findByIdInOrg(organizationId, id) {
+  async findByIdInOrg(organizationId: string, id: string) {
     return this.findOne(
       and(
         eq(arrangements.id, id),
@@ -28,7 +28,7 @@ export class ArrangementRepository extends BaseDrizzleRepository {
   }
 
   /** Set the lifecycle state (RTV-31) — entity-scoped. */
-  async setLifecycle(organizationId, id, lifecycleStatus) {
+  async setLifecycle(organizationId: string, id: string, lifecycleStatus: string) {
     const [row] = await this.db
       .update(arrangements)
       .set({ lifecycleStatus, updatedAt: new Date() })
@@ -43,7 +43,7 @@ export class ArrangementRepository extends BaseDrizzleRepository {
     return row ?? null;
   }
 
-  async listByOrg(organizationId) {
+  async listByOrg(organizationId: string) {
     return this.find(
       and(
         eq(arrangements.organizationId, organizationId),
@@ -54,7 +54,7 @@ export class ArrangementRepository extends BaseDrizzleRepository {
   }
 
   /** AC-6 — graph traversal: every arrangement served by a given provider (provider→arrangements). */
-  async listByProvider(organizationId, providerId) {
+  async listByProvider(organizationId: string, providerId: string) {
     return this.find(
       and(
         eq(arrangements.organizationId, organizationId),
@@ -66,7 +66,7 @@ export class ArrangementRepository extends BaseDrizzleRepository {
   }
 
   /** AC-6 — graph traversal: every arrangement supporting a business function (function→arrangements). */
-  async listByBusinessFunction(organizationId, businessFunctionId) {
+  async listByBusinessFunction(organizationId: string, businessFunctionId: string) {
     return this.find(
       and(
         eq(arrangements.organizationId, organizationId),
@@ -87,7 +87,15 @@ export class ArrangementRepository extends BaseDrizzleRepository {
    * alertMonitorService checks.
    * @param {{before:Date, cifBefore:Date, limit?:number}} args
    */
-  async listActiveOverdueForReassessment({ before, cifBefore, limit = 100 }) {
+  async listActiveOverdueForReassessment({
+    before,
+    cifBefore,
+    limit = 100,
+  }: {
+    before: Date;
+    cifBefore: Date;
+    limit?: number;
+  }) {
     const lastAssessed = sql`(select max(${findings.createdAt}) from ${findings} where ${findings.arrangementId} = ${arrangements.id})`;
     // cast the bind params to timestamptz — inside a raw CASE they'd otherwise arrive as untyped
     // text and Postgres can't compare `timestamptz < text`.

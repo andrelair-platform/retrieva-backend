@@ -9,13 +9,15 @@ import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
 import { criticalFunctions, criticalFunctionDependencies } from '../../db/schema/index.js';
 import { entityScopeCondition } from '../../services/security/entityScope.js';
 
+type CfRow = { id: string; [k: string]: unknown };
+
 export class CriticalFunctionRepository extends BaseDrizzleRepository {
-  constructor(opts = {}) {
+  constructor(opts: { db?: unknown } = {}) {
     super(criticalFunctions, opts);
   }
 
   /** Attach dependsOn (workspace id array) to a plain cf row. */
-  async _withDependsOn(rows) {
+  async _withDependsOn(rows: CfRow | CfRow[]) {
     const list = Array.isArray(rows) ? rows : [rows];
     if (list.length === 0) return list;
     const ids = list.map((c) => c.id);
@@ -23,15 +25,15 @@ export class CriticalFunctionRepository extends BaseDrizzleRepository {
       .select()
       .from(criticalFunctionDependencies)
       .where(inArray(criticalFunctionDependencies.criticalFunctionId, ids));
-    const byCf = new Map();
-    for (const d of deps) {
+    const byCf = new Map<string, string[]>();
+    for (const d of deps as Array<{ criticalFunctionId: string; workspaceId: string }>) {
       if (!byCf.has(d.criticalFunctionId)) byCf.set(d.criticalFunctionId, []);
-      byCf.get(d.criticalFunctionId).push(String(d.workspaceId));
+      byCf.get(d.criticalFunctionId)!.push(String(d.workspaceId));
     }
     return list.map((c) => ({ ...c, dependsOn: byCf.get(c.id) || [] }));
   }
 
-  async listByOrg(organizationId) {
+  async listByOrg(organizationId: string) {
     const rows = await this.find(
       and(
         eq(criticalFunctions.organizationId, organizationId),
@@ -42,7 +44,7 @@ export class CriticalFunctionRepository extends BaseDrizzleRepository {
     return this._withDependsOn(rows);
   }
 
-  async _setDependsOn(criticalFunctionId, dependsOn) {
+  async _setDependsOn(criticalFunctionId: string, dependsOn?: string[]) {
     await this.db
       .delete(criticalFunctionDependencies)
       .where(eq(criticalFunctionDependencies.criticalFunctionId, criticalFunctionId));
@@ -55,7 +57,24 @@ export class CriticalFunctionRepository extends BaseDrizzleRepository {
   }
 
   /** Create or update (by id within the org) a critical function + its dependsOn set. */
-  async upsert(organizationId, { id, name, criticality, description, dependsOn, userId }) {
+  async upsert(
+    organizationId: string,
+    {
+      id,
+      name,
+      criticality,
+      description,
+      dependsOn,
+      userId,
+    }: {
+      id?: string;
+      name?: string;
+      criticality?: string;
+      description?: string;
+      dependsOn?: string[];
+      userId?: string;
+    }
+  ) {
     let row;
     if (id) {
       [row] = await this.db
@@ -86,7 +105,7 @@ export class CriticalFunctionRepository extends BaseDrizzleRepository {
     return withDeps;
   }
 
-  async deleteByIdAndOrg(organizationId, id) {
+  async deleteByIdAndOrg(organizationId: string, id: string) {
     const [row] = await this.db
       .delete(criticalFunctions)
       .where(

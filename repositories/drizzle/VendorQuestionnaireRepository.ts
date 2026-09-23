@@ -5,7 +5,7 @@
  */
 import { and, eq, inArray, desc, sql } from 'drizzle-orm';
 import { TenantScopedRepository } from './TenantScopedRepository.js';
-import { vendorQuestionnaires } from '../../db/schema/index.js';
+import { vendorQuestionnaires, type VendorQuestionnaireRow } from '../../db/schema/index.js';
 
 // List-view columns — everything EXCEPT the heavy `questions` / `results` JSONB (parity with
 // the old Mongo `-questions.answer -questions.reasoning -results.summary` projection).
@@ -32,7 +32,7 @@ export class VendorQuestionnaireRepository extends TenantScopedRepository {
   }
 
   /** Public response-link lookup — NO tenant scoping (no auth context on this path). */
-  async findByToken(token) {
+  async findByToken(token: string) {
     const [row] = await this.db
       .select()
       .from(vendorQuestionnaires)
@@ -47,14 +47,26 @@ export class VendorQuestionnaireRepository extends TenantScopedRepository {
    * limit,lean})`. UNSCOPED (explicit multi-workspace) — parity with AssessmentRepository.
    * @returns {{rows: object[], total: number, page: number, limit: number}}
    */
-  async listByWorkspaces({ workspaceIds, workspaceId, status, page = 1, limit = 20 } = {}) {
+  async listByWorkspaces({
+    workspaceIds,
+    workspaceId,
+    status,
+    page = 1,
+    limit = 20,
+  }: {
+    workspaceIds?: string[];
+    workspaceId?: string;
+    status?: VendorQuestionnaireRow['status'];
+    page?: number | string;
+    limit?: number | string;
+  } = {}) {
     const ids = (workspaceIds || []).map(String);
     const conds = [inArray(vendorQuestionnaires.workspaceId, ids)];
     if (workspaceId) conds.push(eq(vendorQuestionnaires.workspaceId, String(workspaceId)));
     if (status) conds.push(eq(vendorQuestionnaires.status, status));
     const where = and(...conds);
-    const p = parseInt(page) || 1;
-    const l = parseInt(limit) || 20;
+    const p = parseInt(String(page)) || 1;
+    const l = parseInt(String(limit)) || 20;
     const [rows, [{ total }]] = await Promise.all([
       this.db
         .select(LIST_COLUMNS)
@@ -76,7 +88,7 @@ export class VendorQuestionnaireRepository extends TenantScopedRepository {
    * `DISTINCT ON (workspace_id) … ORDER BY workspace_id, created_at DESC` replaces the old
    * Mongo `$match → $sort → $group($first)` aggregation. UNSCOPED (org-level) by design.
    */
-  async latestCompleteByWorkspaces(workspaceIds) {
+  async latestCompleteByWorkspaces(workspaceIds: string[]) {
     const ids = (workspaceIds || []).map(String);
     if (!ids.length) return [];
     return this.db

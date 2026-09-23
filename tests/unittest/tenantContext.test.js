@@ -4,11 +4,7 @@ vi.mock('../../config/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import {
-  setTenantContext,
-  getCurrentTenantId,
-  getCurrentUserId,
-} from '../../db/tenantContext.js';
+import { setTenantContext, getCurrentTenantId, getCurrentUserId } from '../../db/tenantContext.js';
 
 describe('setTenantContext (B2)', () => {
   it('reads the active workspace from the X-Workspace-Id header', () => {
@@ -36,7 +32,9 @@ describe('setTenantContext (B2)', () => {
 
   it('prefers a loaded req.workspace over the header', () => {
     const req = {
-      workspace: { _id: { toString: () => 'ws-loaded' } },
+      // Post-RTV-49 (Postgres): req.workspace is a Drizzle row with a string `id`
+      // (the old Mongo `_id` ObjectId is gone).
+      workspace: { id: 'ws-loaded' },
       headers: { 'x-workspace-id': 'ws-h' },
     };
     let ws;

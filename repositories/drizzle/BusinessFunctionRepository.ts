@@ -15,7 +15,7 @@ export class BusinessFunctionRepository extends BaseDrizzleRepository {
     super(businessFunctions, opts);
   }
 
-  async listByOrg(organizationId) {
+  async listByOrg(organizationId: string) {
     return this.find(
       and(
         eq(businessFunctions.organizationId, organizationId),
@@ -25,7 +25,7 @@ export class BusinessFunctionRepository extends BaseDrizzleRepository {
     );
   }
 
-  async listByEntity(organizationId, legalEntityId) {
+  async listByEntity(organizationId: string, legalEntityId: string) {
     return this.find(
       and(
         eq(businessFunctions.organizationId, organizationId),

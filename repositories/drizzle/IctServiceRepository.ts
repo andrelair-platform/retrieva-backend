@@ -13,7 +13,7 @@ export class IctServiceRepository extends BaseDrizzleRepository {
     super(ictServices, opts);
   }
 
-  async listByOrg(organizationId) {
+  async listByOrg(organizationId: string) {
     return this.find(
       and(
         eq(ictServices.organizationId, organizationId),
@@ -23,7 +23,7 @@ export class IctServiceRepository extends BaseDrizzleRepository {
     );
   }
 
-  async listByProvider(organizationId, providerId) {
+  async listByProvider(organizationId: string, providerId: string) {
     return this.find(
       and(
         eq(ictServices.organizationId, organizationId),

@@ -38,8 +38,8 @@ export const getFindings = catchAsync(async (req, res) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   const [findings, evidence] = await Promise.all([
-    findingRepository.listByArrangement(organizationId, req.params.arrangementId),
-    evidenceRepository.resolveForArrangement(organizationId, req.params.arrangementId),
+    findingRepository.listByArrangement(organizationId, String(req.params.arrangementId)),
+    evidenceRepository.resolveForArrangement(organizationId, String(req.params.arrangementId)),
   ]);
   const { findings: withStaleness, staleCount } = markFindingStaleness(findings, evidence);
   sendSuccess(res, 200, 'Assessment findings', { findings: withStaleness, staleCount });
@@ -59,7 +59,10 @@ export const decideFinding = catchAsync(async (req, res) => {
     return sendError(res, 403, 'You do not have permission to decide findings (checker role required)');
   }
 
-  const finding = await findingRepository.findByIdInOrg(organizationId, req.params.findingId);
+  const finding = await findingRepository.findByIdInOrg(
+    organizationId,
+    String(req.params.findingId)
+  );
   if (!finding || finding.arrangementId !== req.params.arrangementId) {
     return sendError(res, 404, 'Finding not found');
   }

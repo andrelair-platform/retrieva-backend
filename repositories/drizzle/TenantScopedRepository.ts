@@ -9,26 +9,30 @@
  * conversation / assessment / vendor-questionnaire repositories (the tables that had
  * the plugin). Non-tenant tables (users, organizations, workspaces) use the plain base.
  */
-import { and, eq } from 'drizzle-orm';
-import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
+import { and, eq, type SQL } from 'drizzle-orm';
+import type { PgTable, PgColumn } from 'drizzle-orm/pg-core';
+import { BaseDrizzleRepository, type Row, type Where, type FindOpts } from './BaseDrizzleRepository.js';
 import { getCurrentTenantId } from '../../db/tenantContext.js';
 
 export class TenantScopedRepository extends BaseDrizzleRepository {
-  /**
-   * @param {import('drizzle-orm/pg-core').PgTable} table
-   * @param {{ tenantKey?: string, db?: * }} [opts] tenantKey = the JS column key (default 'workspaceId')
-   */
-  constructor(table, { tenantKey = 'workspaceId', db } = {}) {
+  protected tenantKey: string;
+  protected tenantColumn: PgColumn;
+
+  /** tenantKey = the JS column key (default 'workspaceId'). */
+  constructor(
+    table: PgTable & { id: PgColumn },
+    { tenantKey = 'workspaceId', db }: { tenantKey?: string; db?: unknown } = {}
+  ) {
     super(table, { db });
     this.tenantKey = tenantKey;
-    this.tenantColumn = table[tenantKey];
+    this.tenantColumn = (table as unknown as Record<string, PgColumn>)[tenantKey];
     if (!this.tenantColumn) {
       throw new Error(`TenantScopedRepository: table has no '${tenantKey}' column`);
     }
   }
 
   /** Resolve the active tenant; throw (fail-closed) when required and absent. */
-  _tenant(required = true) {
+  protected _tenant(required = true): string | null {
     const id = getCurrentTenantId();
     if (!id && required) {
       throw new Error('Tenant context required for this operation');
@@ -37,21 +41,21 @@ export class TenantScopedRepository extends BaseDrizzleRepository {
   }
 
   /** AND the caller's condition with the tenant filter. */
-  _scoped(where) {
+  protected _scoped(where?: Where): SQL {
     const tenantFilter = eq(this.tenantColumn, this._tenant());
-    return where ? and(tenantFilter, where) : tenantFilter;
+    return where ? and(tenantFilter, where)! : tenantFilter;
   }
 
-  async create(values) {
+  async create(values: Row) {
     return super.create({ ...values, [this.tenantKey]: this._tenant() });
   }
 
-  async createMany(values) {
+  async createMany(values: Row[]) {
     const tenant = this._tenant();
     return super.createMany((values || []).map((v) => ({ ...v, [this.tenantKey]: tenant })));
   }
 
-  async findById(id) {
+  async findById(id: string) {
     const [row] = await this.db
       .select()
       .from(this.table)
@@ -66,14 +70,14 @@ export class TenantScopedRepository extends BaseDrizzleRepository {
    * context (the old Mongoose plugin didn't filter when no context was set). Named so the
    * bypass is auditable; never use it on a request path.
    */
-  async findByIdUnscoped(id) {
+  async findByIdUnscoped(id: string) {
     const [row] = await this.db.select().from(this.table).where(eq(this.table.id, id)).limit(1);
     return row ?? null;
   }
 
   /** EXPLICIT unscoped update/delete by id — same bypass contract as findByIdUnscoped
    *  (trusted worker/manual-authz paths). Never use on an unauthenticated request path. */
-  async updateByIdUnscoped(id, values) {
+  async updateByIdUnscoped(id: string, values: Row) {
     const [row] = await this.db
       .update(this.table)
       .set(values)
@@ -82,38 +86,35 @@ export class TenantScopedRepository extends BaseDrizzleRepository {
     return row ?? null;
   }
 
-  async deleteByIdUnscoped(id) {
-    const [row] = await this.db
-      .delete(this.table)
-      .where(eq(this.table.id, id))
-      .returning();
+  async deleteByIdUnscoped(id: string) {
+    const [row] = await this.db.delete(this.table).where(eq(this.table.id, id)).returning();
     return row ?? null;
   }
 
   /** Unscoped create with an EXPLICIT tenant value in `values` (bypasses context
    *  stamping) — for services that resolve the workspace themselves + do their own authz. */
-  async createUnscoped(values) {
+  async createUnscoped(values: Row) {
     const [row] = await this.db.insert(this.table).values(values).returning();
     return row;
   }
 
-  async findUnscoped(where, opts) {
+  async findUnscoped(where?: Where, opts?: FindOpts) {
     return super.find(where, opts);
   }
 
-  async countUnscoped(where) {
+  async countUnscoped(where?: Where) {
     return super.count(where);
   }
 
-  async findOne(where) {
+  async findOne(where: Where) {
     return super.findOne(this._scoped(where));
   }
 
-  async find(where, opts) {
+  async find(where?: Where, opts?: FindOpts) {
     return super.find(this._scoped(where), opts);
   }
 
-  async updateById(id, values) {
+  async updateById(id: string, values: Row) {
     const [row] = await this.db
       .update(this.table)
       .set(values)
@@ -122,11 +123,11 @@ export class TenantScopedRepository extends BaseDrizzleRepository {
     return row ?? null;
   }
 
-  async updateWhere(where, values) {
+  async updateWhere(where: Where, values: Row) {
     return super.updateWhere(this._scoped(where), values);
   }
 
-  async deleteById(id) {
+  async deleteById(id: string) {
     const [row] = await this.db
       .delete(this.table)
       .where(this._scoped(eq(this.table.id, id)))
@@ -134,15 +135,15 @@ export class TenantScopedRepository extends BaseDrizzleRepository {
     return row ?? null;
   }
 
-  async deleteWhere(where) {
+  async deleteWhere(where: Where) {
     return super.deleteWhere(this._scoped(where));
   }
 
-  async count(where) {
+  async count(where?: Where) {
     return super.count(this._scoped(where));
   }
 
-  async findPaginated(where, opts) {
+  async findPaginated(where: Where, opts?: { page?: number; limit?: number; orderBy?: FindOpts['orderBy'] }) {
     return super.findPaginated(this._scoped(where), opts);
   }
 }

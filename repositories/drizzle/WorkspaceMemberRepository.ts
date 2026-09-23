@@ -6,14 +6,14 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
-import { workspaceMembers } from '../../db/schema/index.js';
+import { workspaceMembers, type WorkspaceMemberRow } from '../../db/schema/index.js';
 
 export class WorkspaceMemberRepository extends BaseDrizzleRepository {
   constructor(opts = {}) {
     super(workspaceMembers, opts);
   }
 
-  async findMembership(workspaceId, userId) {
+  async findMembership(workspaceId: string, userId: string) {
     return this.findOne(
       and(
         eq(workspaceMembers.workspaceId, workspaceId),
@@ -23,7 +23,7 @@ export class WorkspaceMemberRepository extends BaseDrizzleRepository {
     );
   }
 
-  async findOwnerMembership(workspaceId, userId) {
+  async findOwnerMembership(workspaceId: string, userId: string) {
     return this.findOne(
       and(
         eq(workspaceMembers.workspaceId, workspaceId),
@@ -39,7 +39,7 @@ export class WorkspaceMemberRepository extends BaseDrizzleRepository {
    * (id, name, syncStatus) — replaces the Mongoose `.populate('workspaceId', …)`
    * used by workspaceAuth. `permissions.canQuery` is a JSONB boolean.
    */
-  async findActiveQueryableWithWorkspace(userId) {
+  async findActiveQueryableWithWorkspace(userId: string) {
     return this.db.query.workspaceMembers.findMany({
       where: and(
         eq(workspaceMembers.userId, userId),
@@ -50,24 +50,24 @@ export class WorkspaceMemberRepository extends BaseDrizzleRepository {
     });
   }
 
-  async findActiveByUserId(userId) {
+  async findActiveByUserId(userId: string) {
     return this.find(
       and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.status, 'active'))
     );
   }
 
-  async findByWorkspace(workspaceId, status = 'active') {
+  async findByWorkspace(workspaceId: string, status: WorkspaceMemberRow['status'] = 'active') {
     return this.find(
       and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.status, status))
     );
   }
 
-  async deleteByWorkspace(workspaceId) {
+  async deleteByWorkspace(workspaceId: string) {
     return this.deleteWhere(eq(workspaceMembers.workspaceId, workspaceId));
   }
 
   /** Add the creating user as owner (ported from the model static). */
-  async addOwner(workspaceId, userId) {
+  async addOwner(workspaceId: string, userId: string) {
     return this.create({
       workspaceId,
       userId,
@@ -81,7 +81,7 @@ export class WorkspaceMemberRepository extends BaseDrizzleRepository {
    * Invite a user: reactivate a revoked membership, reject an already-active one,
    * else create. Ported from the WorkspaceMember.inviteMember static.
    */
-  async inviteMember(workspaceId, userId, invitedBy, role = 'member') {
+  async inviteMember(workspaceId: string, userId: string, invitedBy: string, role = 'member') {
     const existing = await this.findOne(
       and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, userId))
     );
@@ -107,7 +107,7 @@ export class WorkspaceMemberRepository extends BaseDrizzleRepository {
   }
 
   /** All active memberships for a user WITH their workspace (replaces getUserWorkspaces). */
-  async findActiveWithWorkspace(userId) {
+  async findActiveWithWorkspace(userId: string) {
     return this.db.query.workspaceMembers.findMany({
       where: and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.status, 'active')),
       with: { workspace: true },
@@ -115,7 +115,7 @@ export class WorkspaceMemberRepository extends BaseDrizzleRepository {
   }
 
   /** Non-revoked members of a workspace WITH the user (replaces getWorkspaceMembers). */
-  async findByWorkspaceWithUser(workspaceId) {
+  async findByWorkspaceWithUser(workspaceId: string) {
     return this.db.query.workspaceMembers.findMany({
       where: and(
         eq(workspaceMembers.workspaceId, workspaceId),
@@ -126,7 +126,7 @@ export class WorkspaceMemberRepository extends BaseDrizzleRepository {
   }
 
   /** Active owners of a workspace WITH the user (email/name/notificationPreferences). */
-  async findOwnersWithUser(workspaceId) {
+  async findOwnersWithUser(workspaceId: string) {
     return this.db.query.workspaceMembers.findMany({
       where: and(
         eq(workspaceMembers.workspaceId, workspaceId),
@@ -152,7 +152,10 @@ export class WorkspaceMemberRepository extends BaseDrizzleRepository {
       .from(workspaceMembers)
       .where(and(eq(workspaceMembers.role, 'owner'), eq(workspaceMembers.status, 'active')))
       .groupBy(workspaceMembers.userId);
-    return rows.map((r) => ({ userId: r.userId, workspaceIds: r.workspaceIds || [] }));
+    return rows.map((r: { userId: string; workspaceIds: string[] | null }) => ({
+      userId: r.userId,
+      workspaceIds: r.workspaceIds || [],
+    }));
   }
 }
 

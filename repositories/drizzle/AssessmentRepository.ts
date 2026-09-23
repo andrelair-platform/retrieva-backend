@@ -7,22 +7,44 @@
  */
 import { and, eq, inArray, gte, sql, desc } from 'drizzle-orm';
 import { TenantScopedRepository } from './TenantScopedRepository.js';
-import { assessments } from '../../db/schema/index.js';
+import { type Row } from './BaseDrizzleRepository.js';
+import { assessments, type AssessmentRow } from '../../db/schema/index.js';
+
+// The JSONB `results` shape this repo reads/writes (the assessment engine's output).
+interface AssessmentResults {
+  gaps?: unknown;
+  overallRisk?: string;
+  summary?: string;
+  domainsAnalyzed?: unknown[];
+  generatedAt?: string;
+}
+interface ComplianceRow {
+  results: AssessmentResults | null;
+  createdAt: string | Date;
+}
 
 export class AssessmentRepository extends TenantScopedRepository {
-  constructor(opts = {}) {
+  constructor(opts: { db?: unknown } = {}) {
     super(assessments, { tenantKey: 'workspaceId', ...opts });
   }
 
   // ── explicit cross-workspace / org-level queries (UNSCOPED by design) ────────
   /** Paginated assessments across several workspaces (org view). Excludes results.gaps. */
-  async findByWorkspaces(workspaceIds, options = {}) {
+  async findByWorkspaces(
+    workspaceIds: string[],
+    options: {
+      status?: AssessmentRow['status'];
+      workspaceId?: string;
+      page?: number | string;
+      limit?: number | string;
+    } = {}
+  ) {
     const ids = (workspaceIds || []).map(String);
     const conds = [inArray(assessments.workspaceId, ids)];
     if (options.status) conds.push(eq(assessments.status, options.status));
     if (options.workspaceId) conds.push(eq(assessments.workspaceId, options.workspaceId));
-    const page = parseInt(options.page) || 1;
-    const limit = parseInt(options.limit) || 20;
+    const page = parseInt(String(options.page)) || 1;
+    const limit = parseInt(String(options.limit)) || 20;
     const where = and(...conds);
     const [rows, [{ total }]] = await Promise.all([
       this.db
@@ -32,15 +54,12 @@ export class AssessmentRepository extends TenantScopedRepository {
         .orderBy(desc(assessments.createdAt))
         .limit(limit)
         .offset((page - 1) * limit),
-      this.db
-        .select({ total: sql`count(*)::int` })
-        .from(assessments)
-        .where(where),
+      this.db.select({ total: sql<number>`count(*)::int` }).from(assessments).where(where),
     ]);
     // strip results.gaps (parity with the old .select('-results.gaps'))
-    const stripped = rows.map((r) => {
+    const stripped = (rows as Array<Record<string, unknown>>).map((r) => {
       if (r.results && typeof r.results === 'object') {
-        const { gaps, ...rest } = r.results;
+        const { gaps, ...rest } = r.results as Record<string, unknown>;
         void gaps;
         return { ...r, results: rest };
       }
@@ -52,7 +71,7 @@ export class AssessmentRepository extends TenantScopedRepository {
     };
   }
 
-  async findLatestByWorkspace(workspaceId, withinMs) {
+  async findLatestByWorkspace(workspaceId: string, withinMs?: number) {
     const conds = [eq(assessments.workspaceId, workspaceId), eq(assessments.status, 'complete')];
     if (withinMs) conds.push(gte(assessments.createdAt, new Date(Date.now() - withinMs)));
     const [row] = await this.db
@@ -69,7 +88,7 @@ export class AssessmentRepository extends TenantScopedRepository {
    * Postgres `DISTINCT ON (workspace_id) … ORDER BY workspace_id, created_at DESC` replaces
    * the old Mongo `$match → $sort → $group($first)` aggregation. UNSCOPED (org-level) by design.
    */
-  async latestCompleteByWorkspaces(workspaceIds) {
+  async latestCompleteByWorkspaces(workspaceIds: string[]) {
     const ids = (workspaceIds || []).map(String);
     if (!ids.length) return [];
     return this.db
@@ -79,9 +98,9 @@ export class AssessmentRepository extends TenantScopedRepository {
       .orderBy(assessments.workspaceId, desc(assessments.createdAt));
   }
 
-  async getComplianceScore(workspaceId) {
-    const riskMap = { Low: 100, Medium: 50, High: 0 };
-    const rows = await this.db
+  async getComplianceScore(workspaceId: string) {
+    const riskMap: Record<string, number> = { Low: 100, Medium: 50, High: 0 };
+    const rows: ComplianceRow[] = await this.db
       .select({ results: assessments.results, createdAt: assessments.createdAt })
       .from(assessments)
       .where(
@@ -94,14 +113,14 @@ export class AssessmentRepository extends TenantScopedRepository {
       .orderBy(desc(assessments.createdAt));
     if (!rows.length) return null;
 
-    const scoreOf = (a) => riskMap[a.results?.overallRisk] ?? 50;
-    const score = Math.round(rows.reduce((s, a) => s + scoreOf(a), 0) / rows.length);
+    const scoreOf = (a: ComplianceRow) => riskMap[a.results?.overallRisk ?? ''] ?? 50;
+    const score = Math.round(rows.reduce((s: number, a) => s + scoreOf(a), 0) / rows.length);
 
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const older = rows.filter((a) => new Date(a.createdAt) < cutoff);
     let trend = 0;
     if (older.length) {
-      const oldScore = Math.round(older.reduce((s, a) => s + scoreOf(a), 0) / older.length);
+      const oldScore = Math.round(older.reduce((s: number, a) => s + scoreOf(a), 0) / older.length);
       trend = score - oldScore;
     }
     return {
@@ -114,7 +133,7 @@ export class AssessmentRepository extends TenantScopedRepository {
 
   // ── per-assessment mutations (tenant+id scoped) ──────────────────────────────
   /** Set documents[docIndex].status (+ optional extra top-level fields). */
-  async markDocumentStatus(id, docIndex, status, extra = {}) {
+  async markDocumentStatus(id: string, docIndex: number | string, status: string, extra: Row = {}) {
     const [row] = await this.updateWhere(eq(assessments.id, id), {
       documents: sql`jsonb_set(${assessments.documents}, array[${String(docIndex)}, 'status'], to_jsonb(${status}::text))`,
       ...extra,
@@ -123,7 +142,7 @@ export class AssessmentRepository extends TenantScopedRepository {
   }
 
   /** Set documents[docIndex].status = 'indexed' + .qdrantCollectionId = collectionName. */
-  async markDocumentIndexed(id, docIndex, collectionName) {
+  async markDocumentIndexed(id: string, docIndex: number | string, collectionName: string) {
     const idx = String(docIndex);
     const [row] = await this.updateWhere(eq(assessments.id, id), {
       documents: sql`jsonb_set(
@@ -134,7 +153,7 @@ export class AssessmentRepository extends TenantScopedRepository {
     return row ?? null;
   }
 
-  async completeAnalysis(id, results) {
+  async completeAnalysis(id: string, results: AssessmentResults) {
     const [row] = await this.updateWhere(eq(assessments.id, id), {
       status: 'complete',
       statusMessage: 'Analysis complete',

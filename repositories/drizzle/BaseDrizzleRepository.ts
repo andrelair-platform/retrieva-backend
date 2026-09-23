@@ -13,11 +13,11 @@ import { getDb } from '../../config/db.js';
 // getDb() is imported from JS today, so a precise type here would be fiction. The subclasses' OWN
 // logic is strict-checked; this boundary loosens in RTV-24.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- db is untyped until RTV-24 (config/db.js)
-type Db = any;
-type Row = Record<string, unknown>;
-type Where = SQL | undefined;
-type OrderBy = SQL | SQL[];
-interface FindOpts {
+export type Db = any;
+export type Row = Record<string, unknown>;
+export type Where = SQL | undefined;
+export type OrderBy = SQL | SQL[];
+export interface FindOpts {
   orderBy?: OrderBy;
   limit?: number | null;
   offset?: number | null;

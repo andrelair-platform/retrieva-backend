@@ -6,23 +6,44 @@
  * computeConcentration keeps working; the recursive traversal lives in db/queries/providerGraph.js.
  */
 import { and, eq, asc, desc } from 'drizzle-orm';
-import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
+import { BaseDrizzleRepository, type Row } from './BaseDrizzleRepository.js';
 import { providerNodes, providerDependencies } from '../../db/schema/index.js';
 import { entityScopeCondition } from '../../services/security/entityScope.js';
 
-const norm = (s) =>
+const norm = (s: unknown) =>
   String(s || '')
     .trim()
     .toLowerCase();
 
+// Local shapes over the (db-`any`) result rows so ids stay `string` (Drizzle needs it).
+interface EdgeRow {
+  id: string;
+  parentNodeId: string;
+  childNodeId: string;
+  relationship: unknown;
+  source: unknown;
+  confidence: unknown;
+  confirmed: unknown;
+  createdAt: unknown;
+}
+type NodeRow = Record<string, unknown>;
+
 export class ProviderGraphRepository extends BaseDrizzleRepository {
-  constructor(opts = {}) {
+  constructor(opts: { db?: unknown } = {}) {
     super(providerDependencies, opts);
   }
 
   // ── nodes ────────────────────────────────────────────────────────────────
   /** Find (by org + canonical name) or create a provider node. */
-  async findOrCreateNode(organizationId, { kind, workspaceId = null, name, tier = null }) {
+  async findOrCreateNode(
+    organizationId: string,
+    {
+      kind,
+      workspaceId = null,
+      name,
+      tier = null,
+    }: { kind: string; workspaceId?: string | null; name: string; tier?: string | null }
+  ) {
     const canonicalName = norm(name);
     const existing = await this.db
       .select()
@@ -44,7 +65,7 @@ export class ProviderGraphRepository extends BaseDrizzleRepository {
   }
 
   /** All provider nodes for the org (RTV-38 register B_05). Entity-scoped. */
-  async listNodesByOrg(organizationId) {
+  async listNodesByOrg(organizationId: string) {
     return this.db
       .select()
       .from(providerNodes)
@@ -58,24 +79,21 @@ export class ProviderGraphRepository extends BaseDrizzleRepository {
   }
 
   // ── edges (with node objects rebuilt for computeConcentration) ──────────────
-  async _loadEdges(organizationId, { confirmedOnly = false } = {}) {
-    const parent = { ...providerNodes };
-    // Two joins against provider_nodes (parent + child) via aliased sub-selects.
+  async _loadEdges(organizationId: string, { confirmedOnly = false }: { confirmedOnly?: boolean } = {}) {
     const conds = [
       eq(providerDependencies.organizationId, organizationId),
       entityScopeCondition(providerDependencies.organizationId, { action: 'dependency:read' }),
     ];
     if (confirmedOnly) conds.push(eq(providerDependencies.confirmed, true));
-    const edges = await this.db
+    const edges: EdgeRow[] = await this.db
       .select()
       .from(providerDependencies)
       .where(and(...conds))
       .orderBy(asc(providerDependencies.confirmed), desc(providerDependencies.createdAt));
-    void parent;
 
     // Resolve node objects (small graphs; a per-edge lookup map keeps it simple).
     const nodeIds = [...new Set(edges.flatMap((e) => [e.parentNodeId, e.childNodeId]))];
-    const nodeMap = new Map();
+    const nodeMap = new Map<string, NodeRow>();
     for (const id of nodeIds) {
       const [n] = await this.db
         .select()
@@ -84,7 +102,7 @@ export class ProviderGraphRepository extends BaseDrizzleRepository {
         .limit(1);
       if (n) nodeMap.set(id, n);
     }
-    const toNode = (n) =>
+    const toNode = (n: NodeRow | undefined) =>
       n
         ? { kind: n.kind, workspaceId: n.workspaceId, name: n.displayName, tier: n.tier }
         : { kind: 'external', workspaceId: null, name: '', tier: null };
@@ -102,17 +120,17 @@ export class ProviderGraphRepository extends BaseDrizzleRepository {
   }
 
   /** Confirmed edges for concentration analysis. */
-  async loadConfirmedEdges(organizationId) {
+  async loadConfirmedEdges(organizationId: string) {
     return this._loadEdges(organizationId, { confirmedOnly: true });
   }
 
   /** All edges (confirmed + unconfirmed) for the graph view / dependency list. */
-  async listDependencies(organizationId) {
+  async listDependencies(organizationId: string) {
     return this._loadEdges(organizationId, { confirmedOnly: false });
   }
 
   /** Confirm (true) or reject+delete (false) an extracted edge. */
-  async setConfirmed(organizationId, id, confirmed) {
+  async setConfirmed(organizationId: string, id: string, confirmed: boolean) {
     if (confirmed === false) {
       const [row] = await this.db
         .delete(providerDependencies)
@@ -141,7 +159,7 @@ export class ProviderGraphRepository extends BaseDrizzleRepository {
   }
 
   /** True if a parent→child edge already exists (idempotent extraction guard). */
-  async edgeExists(organizationId, parentNodeId, childNodeId) {
+  async edgeExists(organizationId: string, parentNodeId: string, childNodeId: string) {
     const [row] = await this.db
       .select({ id: providerDependencies.id })
       .from(providerDependencies)
@@ -157,7 +175,7 @@ export class ProviderGraphRepository extends BaseDrizzleRepository {
     return !!row;
   }
 
-  async createEdge(values) {
+  async createEdge(values: Row) {
     const [row] = await this.db.insert(providerDependencies).values(values).returning();
     return row;
   }
