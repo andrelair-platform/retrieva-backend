@@ -10,7 +10,7 @@ import logger from '../config/logger.js';
 
 /**
  * Append one audit entry.
- * @param {{organizationId:string, actor?:string, action:string, targetType:string,
+ * @param {{organizationId:string, actor?:string|null, action:string, targetType:string,
  *          targetId?:string, evidenceRefs?:string[], metadata?:object}} entry
  * @returns {Promise<object|null>} the appended row (null if it could not be written — non-fatal).
  */

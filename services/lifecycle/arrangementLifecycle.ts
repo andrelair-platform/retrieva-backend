@@ -16,10 +16,18 @@ export const LIFECYCLE_STATES = [
   'remediation',
   'exiting',
   'exited',
-];
+] as const;
+
+export type LifecycleState = (typeof LIFECYCLE_STATES)[number];
+
+interface TransitionDef {
+  from: LifecycleState[];
+  to: LifecycleState;
+  approval?: boolean;
+}
 
 // transition name → { from: [states], to: state, approval?: true }
-export const TRANSITIONS = {
+export const TRANSITIONS: Record<string, TransitionDef> = {
   start_due_diligence: { from: ['prospect'], to: 'due_diligence' },
   approve_onboarding: { from: ['due_diligence'], to: 'active', approval: true },
   reject: { from: ['prospect', 'due_diligence'], to: 'exited', approval: true },
@@ -31,25 +39,27 @@ export const TRANSITIONS = {
 };
 
 /** Is `transition` legal from `from`? */
-export function canTransition(from, transition) {
+export function canTransition(from: string, transition: string): boolean {
   const t = TRANSITIONS[transition];
-  return !!t && t.from.includes(from);
+  return !!t && (t.from as string[]).includes(from);
 }
 
 /** The resulting state for a legal transition, else null. */
-export function nextState(from, transition) {
+export function nextState(from: string, transition: string): LifecycleState | null {
   return canTransition(from, transition) ? TRANSITIONS[transition].to : null;
 }
 
 /** Does this transition require a human/checker approval (a terminal DORA decision)? */
-export function isApprovalTransition(transition) {
+export function isApprovalTransition(transition: string): boolean {
   return TRANSITIONS[transition]?.approval === true;
 }
 
 /** The transitions available from a given state (for the UI + a GET). */
-export function allowedTransitions(from) {
+export function allowedTransitions(
+  from: string
+): Array<{ transition: string; to: LifecycleState; approval: boolean }> {
   return Object.entries(TRANSITIONS)
-    .filter(([, t]) => t.from.includes(from))
+    .filter(([, t]) => (t.from as string[]).includes(from))
     .map(([name, t]) => ({ transition: name, to: t.to, approval: !!t.approval }));
 }
 
@@ -57,6 +67,6 @@ export function allowedTransitions(from) {
  * Initial state for a trigger (ADR §6): 🟢 new provider → prospect (pre-contract due diligence);
  * 🟡 existing arrangement / default → active (already contracted, in the Register).
  */
-export function initialStatusForTrigger(trigger) {
+export function initialStatusForTrigger(trigger?: string): LifecycleState {
   return trigger === 'new' ? 'prospect' : 'active';
 }

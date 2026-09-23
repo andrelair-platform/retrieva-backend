@@ -29,8 +29,8 @@ const READ_ALL = {
   workspace: ['read'],
 };
 
-/** @type {Record<string, Record<string, string[]>>} role -> resource -> [actions] */
-export const CAPABILITIES = {
+// role -> resource -> [actions]
+export const CAPABILITIES: Record<string, Record<string, string[]>> = {
   // ── group scope (read-across is enforced by isolation in RTV-54) ─────────────
   group_admin: {
     ...READ_ALL,
@@ -112,13 +112,8 @@ export const CAPABILITIES = {
   },
 };
 
-/**
- * Does a single role grant `resource:action`?
- * @param {string} role
- * @param {string} action  e.g. 'finding:approve'
- * @returns {boolean}
- */
-export function roleGrants(role, action) {
+/** Does a single role grant `resource:action` (e.g. 'finding:approve')? */
+export function roleGrants(role: string, action: string): boolean {
   const [resource, verb] = String(action).split(':');
   const perms = CAPABILITIES[role]?.[resource];
   return Array.isArray(perms) && perms.includes(verb);

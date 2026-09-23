@@ -10,11 +10,30 @@
 
 import logger from '../../config/logger.js';
 
+interface FilterMatch {
+  value?: unknown;
+}
+interface FilterCondition {
+  key?: string;
+  match?: FilterMatch;
+}
+interface QdrantFilter {
+  must?: FilterCondition[];
+  key?: string;
+  match?: FilterMatch;
+}
+// A LangChain vector store — an external SDK object this module monkeypatches; typed `any`
+// (its generics don't survive the method wrapping) until RTV-24 revisits the RAG layer.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain store, wrapped
+type VectorStore = any;
+
 /**
  * Error thrown when a search is attempted without workspace isolation
  */
 export class TenantIsolationError extends Error {
-  constructor(message) {
+  statusCode: number;
+  isSecurityError: boolean;
+  constructor(message: string) {
     super(message);
     this.name = 'TenantIsolationError';
     this.statusCode = 403;
@@ -22,12 +41,10 @@ export class TenantIsolationError extends Error {
   }
 }
 
-/**
- * Validate that a Qdrant filter includes workspaceId
- * @param {Object} filter - Qdrant filter object
- * @returns {{ valid: boolean, workspaceId: string|null }} Validation result
- */
-export function validateWorkspaceFilter(filter) {
+/** Validate that a Qdrant filter includes workspaceId. */
+export function validateWorkspaceFilter(
+  filter: QdrantFilter | null | undefined
+): { valid: boolean; workspaceId: string | null } {
   if (!filter) {
     return { valid: false, workspaceId: null };
   }
@@ -63,7 +80,7 @@ export function validateWorkspaceFilter(filter) {
  * @param {Object} vectorStore - LangChain vector store instance
  * @returns {Object} Wrapped vector store with enforced isolation
  */
-export function wrapWithTenantIsolation(vectorStore) {
+export function wrapWithTenantIsolation(vectorStore: VectorStore): VectorStore {
   if (!vectorStore) {
     throw new Error('Vector store is required for tenant isolation wrapper');
   }
@@ -82,7 +99,7 @@ export function wrapWithTenantIsolation(vectorStore) {
    * @param {string} methodName - Name of the search method
    * @param {Object} filter - The filter being used
    */
-  function enforceIsolation(methodName, filter) {
+  function enforceIsolation(methodName: string, filter: QdrantFilter | null | undefined) {
     const validation = validateWorkspaceFilter(filter);
 
     if (!validation.valid) {
@@ -107,14 +124,18 @@ export function wrapWithTenantIsolation(vectorStore) {
   }
 
   // Wrap similaritySearch
-  vectorStore.similaritySearch = async function (query, k, filter) {
+  vectorStore.similaritySearch = async function (query: string, k: number, filter?: QdrantFilter) {
     enforceIsolation('similaritySearch', filter);
     return originalSimilaritySearch(query, k, filter);
   };
 
   // Wrap similaritySearchWithScore if it exists
   if (originalSimilaritySearchWithScore) {
-    vectorStore.similaritySearchWithScore = async function (query, k, filter) {
+    vectorStore.similaritySearchWithScore = async function (
+      query: string,
+      k: number,
+      filter?: QdrantFilter
+    ) {
       enforceIsolation('similaritySearchWithScore', filter);
       return originalSimilaritySearchWithScore(query, k, filter);
     };
@@ -122,7 +143,10 @@ export function wrapWithTenantIsolation(vectorStore) {
 
   // Wrap maxMarginalRelevanceSearch if it exists
   if (originalMaxMarginalRelevanceSearch) {
-    vectorStore.maxMarginalRelevanceSearch = async function (query, options) {
+    vectorStore.maxMarginalRelevanceSearch = async function (
+      query: string,
+      options?: { filter?: QdrantFilter }
+    ) {
       enforceIsolation('maxMarginalRelevanceSearch', options?.filter);
       return originalMaxMarginalRelevanceSearch(query, options);
     };
@@ -130,7 +154,7 @@ export function wrapWithTenantIsolation(vectorStore) {
 
   // Wrap asRetriever to return an isolated retriever
   const originalAsRetriever = vectorStore.asRetriever.bind(vectorStore);
-  vectorStore.asRetriever = function (options = {}) {
+  vectorStore.asRetriever = function (options: { filter?: QdrantFilter } = {}) {
     // If no filter is provided, the retriever CANNOT be used safely
     // Log a warning - actual enforcement happens at search time
     if (!options.filter) {
@@ -144,7 +168,7 @@ export function wrapWithTenantIsolation(vectorStore) {
     // Wrap the retriever's invoke method
     const originalInvoke = retriever.invoke?.bind(retriever);
     if (originalInvoke) {
-      retriever.invoke = async function (query) {
+      retriever.invoke = async function (query: string) {
         // Check if retriever has a filter set
         if (!options.filter) {
           throw new TenantIsolationError(
@@ -159,7 +183,7 @@ export function wrapWithTenantIsolation(vectorStore) {
     // Also wrap _getRelevantDocuments for LangChain compatibility
     const originalGetRelevantDocs = retriever._getRelevantDocuments?.bind(retriever);
     if (originalGetRelevantDocs) {
-      retriever._getRelevantDocuments = async function (query, runManager) {
+      retriever._getRelevantDocuments = async function (query: string, runManager?: unknown) {
         if (!options.filter) {
           throw new TenantIsolationError(
             'Retriever invoked without workspace filter. Use vectorStore.similaritySearch with explicit filter instead.'
@@ -189,7 +213,7 @@ export function wrapWithTenantIsolation(vectorStore) {
  * @param {Object} vectorStore - Vector store to check
  * @returns {boolean} True if isolation is enabled
  */
-export function hasTenantIsolation(vectorStore) {
+export function hasTenantIsolation(vectorStore: VectorStore): boolean {
   return vectorStore?._tenantIsolationEnabled === true;
 }
 
@@ -199,12 +223,15 @@ export function hasTenantIsolation(vectorStore) {
  * @param {Object} additionalFilters - Optional additional filter conditions
  * @returns {Object} Qdrant filter object
  */
-export function createWorkspaceScopedFilter(workspaceId, additionalFilters = {}) {
+export function createWorkspaceScopedFilter(
+  workspaceId: string,
+  additionalFilters: QdrantFilter = {}
+): QdrantFilter {
   if (!workspaceId || typeof workspaceId !== 'string') {
     throw new TenantIsolationError('workspaceId is required to create workspace-scoped filter');
   }
 
-  const filter = {
+  const filter: { must: FilterCondition[] } = {
     must: [
       {
         key: 'metadata.workspaceId',

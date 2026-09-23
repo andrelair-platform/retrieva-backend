@@ -26,7 +26,8 @@ export default defineConfig({
         'utils/**/*.js',
         'controllers/**/*.{js,ts}',
         'middleware/**/*.{js,ts}',
-        'services/**/*.js',
+        // `{js,ts}` — the domain services convert to .ts through RTV-22..24; keep them counted.
+        'services/**/*.{js,ts}',
         'modules/**/*.controller.ts',
       ],
       // RTV-21 AC-3: the 70% gate is on BUSINESS-LOGIC files (testing.md). The
