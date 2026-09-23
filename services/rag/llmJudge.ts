@@ -11,12 +11,14 @@
  */
 
 import { ChatPromptTemplate } from '@langchain/core/prompts';
+/* eslint-disable @typescript-eslint/no-explicit-any -- the LLM-judge works over untyped model JSON
+   (evaluations, sources); typing every heterogeneous field adds noise without safety here. */
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { getJudgeLLM } from '../../config/llm.js';
 import logger from '../../config/logger.js';
 
 // Cached judge LLM instance
-let cachedJudgeLLM = null;
+let cachedJudgeLLM: any = null;
 
 async function getJudgeLLMInstance() {
   if (!cachedJudgeLLM) {
@@ -91,9 +93,9 @@ Evaluate this answer and respond with JSON only.`,
  * @param {string} context - The context string with source content
  * @returns {string} Formatted sources string
  */
-function formatSourcesForJudge(sources, _context) {
+function formatSourcesForJudge(sources: any[], _context?: string) {
   return sources
-    .map((source, index) => {
+    .map((source: any, index: number) => {
       return `[Source ${source.sourceNumber || index + 1}]: ${source.title}${source.section ? ` - ${source.section}` : ''}`;
     })
     .join('\n');
@@ -104,7 +106,7 @@ function formatSourcesForJudge(sources, _context) {
  * @param {string} response - Raw response from judge LLM
  * @returns {Object} Parsed evaluation object
  */
-function parseJudgeResponse(response) {
+function parseJudgeResponse(response: string) {
   try {
     // Try direct parse first
     return JSON.parse(response);
@@ -141,7 +143,7 @@ function parseJudgeResponse(response) {
  * @param {Object} evaluation - Raw evaluation from judge
  * @returns {JudgeEvaluation} Normalized evaluation
  */
-function normalizeEvaluation(evaluation) {
+function normalizeEvaluation(evaluation: any) {
   return {
     isGrounded: Boolean(evaluation.isGrounded),
     isRelevant: Boolean(evaluation.isRelevant),
@@ -151,7 +153,7 @@ function normalizeEvaluation(evaluation) {
     issues: Array.isArray(evaluation.issues) ? evaluation.issues : [],
     reasoning: String(evaluation.reasoning || ''),
     citedSourceNumbers: Array.isArray(evaluation.citedSourceNumbers)
-      ? evaluation.citedSourceNumbers.filter((n) => typeof n === 'number')
+      ? evaluation.citedSourceNumbers.filter((n: unknown) => typeof n === 'number')
       : [],
   };
 }
@@ -165,7 +167,12 @@ function normalizeEvaluation(evaluation) {
  * @param {string} [context=''] - The formatted context string
  * @returns {Promise<JudgeEvaluation>} Evaluation results
  */
-export async function evaluateAnswer(question, answer, sources, context = '') {
+export async function evaluateAnswer(
+  question: string,
+  answer: string,
+  sources: any[],
+  context = ''
+) {
   const startTime = Date.now();
 
   try {
@@ -199,9 +206,10 @@ export async function evaluateAnswer(question, answer, sources, context = '') {
 
     return evaluation;
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     logger.error('LLM Judge evaluation failed', {
       service: 'llm-judge',
-      error: error.message,
+      error: message,
       latencyMs: Date.now() - startTime,
     });
 
@@ -212,7 +220,7 @@ export async function evaluateAnswer(question, answer, sources, context = '') {
       isComplete: false,
       confidence: 0.3,
       hasHallucinations: false, // Can't determine without evaluation
-      issues: [`Judge evaluation failed: ${error.message}`],
+      issues: [`Judge evaluation failed: ${message}`],
       reasoning: 'Evaluation could not be completed due to error',
       citedSourceNumbers: [],
     };
@@ -227,7 +235,7 @@ export async function evaluateAnswer(question, answer, sources, context = '') {
  * @param {number} [minConfidence=0.4] - Minimum confidence threshold
  * @returns {boolean} True if answer quality is too low
  */
-export function shouldRetry(evaluation, minConfidence = 0.4) {
+export function shouldRetry(evaluation: any, minConfidence = 0.4) {
   // Retry if:
   // 1. Confidence is below threshold
   // 2. Hallucinations detected
@@ -245,14 +253,14 @@ export function shouldRetry(evaluation, minConfidence = 0.4) {
  * @param {Source[]} sources - All available sources
  * @returns {Source[]} Sources that were actually cited
  */
-export function extractCitedSources(evaluation, sources) {
+export function extractCitedSources(evaluation: any, sources: any[]) {
   if (!evaluation.citedSourceNumbers || evaluation.citedSourceNumbers.length === 0) {
     // Fallback: return all sources if judge didn't identify specific ones
     return sources;
   }
 
   return evaluation.citedSourceNumbers
-    .map((num) => sources.find((s) => s.id === String(num) || s.sourceNumber === num))
+    .map((num: number) => sources.find((s: any) => s.id === String(num) || s.sourceNumber === num))
     .filter(Boolean);
 }
 
@@ -263,7 +271,7 @@ export function extractCitedSources(evaluation, sources) {
  * @param {JudgeEvaluation} evaluation - Judge evaluation
  * @returns {Object} Validation result in legacy format
  */
-export function toValidationResult(evaluation) {
+export function toValidationResult(evaluation: any) {
   return {
     isLowQuality: shouldRetry(evaluation),
     confidence: evaluation.confidence,
@@ -280,9 +288,9 @@ export function toValidationResult(evaluation) {
   };
 }
 
-export function extractCitedSourcesFromText(answer = '', sources = []) {
+export function extractCitedSourcesFromText(answer = '', sources: any[] = []) {
   if (!answer || sources.length === 0) return [];
-  const found = new Set();
+  const found = new Set<number>();
   const regex = /\[Source\s+(\d+)\]/g;
   let match;
   while ((match = regex.exec(answer)) !== null) {

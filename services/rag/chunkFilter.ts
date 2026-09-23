@@ -10,6 +10,13 @@
 
 import logger from '../../config/logger.js';
 
+interface DocLike {
+  pageContent?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous RAG doc metadata
+  metadata?: Record<string, any>;
+  rrfScore?: number;
+}
+
 /**
  * Minimum token threshold for a chunk to be considered valid
  * Chunks below this are dropped unless they're the sole representative of their section
@@ -97,7 +104,7 @@ const PROGRAMMING_KEYWORDS = new Set([
  * @param {string} query - User query
  * @returns {boolean} True if query is programming-related
  */
-function isProgrammingQuery(query) {
+function isProgrammingQuery(query: string) {
   if (!query || typeof query !== 'string') {
     return false;
   }
@@ -131,7 +138,7 @@ function isProgrammingQuery(query) {
  * @param {Object} doc - Document with pageContent and metadata
  * @returns {number} Estimated token count
  */
-function estimateTokens(doc) {
+function estimateTokens(doc: DocLike) {
   if (doc.metadata?.estimatedTokens) {
     return doc.metadata.estimatedTokens;
   }
@@ -144,7 +151,7 @@ function estimateTokens(doc) {
  * @param {string} content - Document content
  * @returns {boolean} True if content matches a junk pattern
  */
-function isJunkContent(content) {
+function isJunkContent(content: string | undefined) {
   if (!content) return false;
   const trimmed = content.trim();
   return JUNK_PATTERNS.some((pattern) => pattern.test(trimmed));
@@ -156,7 +163,7 @@ function isJunkContent(content) {
  * @param {Object} doc - Document with metadata
  * @returns {string|null} Top-level heading or null
  */
-function getTopLevelHeading(doc) {
+function getTopLevelHeading(doc: DocLike): string | null {
   const headingPath = doc.metadata?.heading_path;
   if (Array.isArray(headingPath) && headingPath.length > 0) {
     return headingPath[0];
@@ -170,8 +177,8 @@ function getTopLevelHeading(doc) {
  * @param {Array} docs - Array of documents
  * @returns {Map<string, number>} Heading to count map
  */
-function buildHeadingCountMap(docs) {
-  const countMap = new Map();
+function buildHeadingCountMap(docs: DocLike[]) {
+  const countMap = new Map<string, number>();
   for (const doc of docs) {
     const heading = getTopLevelHeading(doc);
     if (heading) {
@@ -199,7 +206,7 @@ function buildHeadingCountMap(docs) {
  * @param {string} [options.query] - The user query (for code filtering)
  * @returns {Array} Filtered documents (minimum 1 returned)
  */
-export function filterLowQualityChunks(docs, options = {}) {
+export function filterLowQualityChunks(docs: DocLike[], options: { query?: string } = {}) {
   // Kill-switch: return docs unchanged if filtering is disabled
   if (process.env.ENABLE_CHUNK_FILTER === 'false') {
     logger.debug('Chunk filter disabled via ENABLE_CHUNK_FILTER=false', {
@@ -222,8 +229,8 @@ export function filterLowQualityChunks(docs, options = {}) {
   const headingCounts = buildHeadingCountMap(docs);
 
   // Track filtered docs and reasons
-  const filtered = [];
-  const dropped = [];
+  const filtered: DocLike[] = [];
+  const dropped: Array<{ doc: DocLike; reason: string | null; tokens: number; heading: string | null }> = [];
 
   for (const doc of docs) {
     const tokens = estimateTokens(doc);
@@ -235,7 +242,7 @@ export function filterLowQualityChunks(docs, options = {}) {
 
     // Determine if this doc should be kept
     let keep = true;
-    let reason = null;
+    let reason: string | null = null;
 
     // Junk content is always dropped (navigation, breadcrumbs, separators have no value)
     if (isJunk) {
@@ -261,7 +268,7 @@ export function filterLowQualityChunks(docs, options = {}) {
   // Minimum output guarantee: always return at least 1 doc
   if (filtered.length === 0 && docs.length > 0) {
     // Return the best-scoring doc from original input
-    const bestDoc = docs.reduce((best, current) => {
+    const bestDoc = docs.reduce((best: DocLike, current: DocLike) => {
       const bestScore = best.metadata?.score || best.rrfScore || 0;
       const currentScore = current.metadata?.score || current.rrfScore || 0;
       return currentScore > bestScore ? current : best;
@@ -282,10 +289,10 @@ export function filterLowQualityChunks(docs, options = {}) {
       inputCount: docs.length,
       outputCount: filtered.length,
       droppedCount: dropped.length,
-      droppedReasons: dropped.reduce((acc, d) => {
-        acc[d.reason] = (acc[d.reason] || 0) + 1;
+      droppedReasons: dropped.reduce((acc: Record<string, number>, d) => {
+        if (d.reason) acc[d.reason] = (acc[d.reason] || 0) + 1;
         return acc;
-      }, {}),
+      }, {} as Record<string, number>),
     });
   }
 

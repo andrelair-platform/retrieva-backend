@@ -18,11 +18,15 @@ const QDRANT_API_KEY = process.env.QDRANT_API_KEY;
 // NOTE: call getVectorSize() lazily (at ingest time), NOT at module load — calling it here would
 // execute a mocked fileIngestionService in any test that mocks it while loading the app.
 
-export const arrangementCollectionName = (arrangementId) => `arrangement_${arrangementId}`;
+export const arrangementCollectionName = (arrangementId: string) => `arrangement_${arrangementId}`;
 
 function getClient() {
   // Short timeout so a down/absent Qdrant fails fast (assessments must not hang on the RAG path).
-  const opts = { url: QDRANT_URL, checkCompatibility: false, timeout: 3000 };
+  const opts: { url: string; checkCompatibility: boolean; timeout: number; apiKey?: string } = {
+    url: QDRANT_URL,
+    checkCompatibility: false,
+    timeout: 3000,
+  };
   if (QDRANT_API_KEY) opts.apiKey = QDRANT_API_KEY;
   return new QdrantClient(opts);
 }
@@ -32,7 +36,7 @@ function getClient() {
 let ragDisabledUntil = 0;
 const RAG_COOLDOWN_MS = 60_000;
 
-async function ensureCollection(client, name) {
+async function ensureCollection(client: QdrantClient, name: string) {
   try {
     await client.getCollection(name);
   } catch {
@@ -40,13 +44,13 @@ async function ensureCollection(client, name) {
   }
 }
 
-const pointId = (seed) => {
+const pointId = (seed: string) => {
   const h = contentHash(seed);
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
 };
 
 /** Chunk + embed + upsert a document's text into the arrangement's collection. Returns chunk count. */
-export async function indexArrangementText(arrangementId, fileName, text) {
+export async function indexArrangementText(arrangementId: string, fileName: string, text: string) {
   const chunks = chunkText(text || '');
   if (!chunks.length) return 0;
   const client = getClient();
@@ -72,7 +76,11 @@ export async function indexArrangementText(arrangementId, fileName, text) {
  * Retrieve the top document spans matching a query for an arrangement. FAIL-SAFE → [] on any error.
  * @returns {Promise<Array<{source:string, snippet:string, score:number}>>}
  */
-export async function searchArrangementSpans(arrangementId, queryText, topK = 5) {
+export async function searchArrangementSpans(
+  arrangementId: string,
+  queryText: string,
+  topK = 5
+) {
   // Skip the network call under vitest — no arrangement collection is indexed in tests, so RAG
   // would only pay a Qdrant timeout. The retriever's merge logic is covered by a unit test that
   // injects searchSpans directly; the real path is exercised on dev.
@@ -86,8 +94,9 @@ export async function searchArrangementSpans(arrangementId, queryText, topK = 5)
       limit: topK,
       with_payload: true,
     });
-    return hits
-      .filter((h) => (h.payload?.pageContent || '').length > 20)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Qdrant hit payloads are untyped
+    return (hits as any[])
+      .filter((h) => String(h.payload?.pageContent || '').length > 20)
       .map((h) => ({
         source: h.payload?.metadata?.fileName || 'document',
         snippet: String(h.payload?.pageContent || '').slice(0, 400),

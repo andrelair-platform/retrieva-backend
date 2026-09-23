@@ -212,7 +212,7 @@ export const ingestArrangementEvidence = catchAsync(async (req, res) => {
     return sendError(res, 422, 'Could not extract readable text from the document');
   }
 
-  const chunks = await indexArrangementText(req.params.id, req.file.originalname, text);
+  const chunks = await indexArrangementText(String(req.params.id), req.file.originalname, text);
   const evidence = await evidenceRepository.createDeduped({
     organizationId,
     scope: 'arrangement',

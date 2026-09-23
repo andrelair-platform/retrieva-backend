@@ -73,6 +73,24 @@
  * @param {BuildRAGResultParams} params - Result parameters
  * @returns {RAGResult} Formatted result object for API response
  */
+interface BuildRAGResultParams {
+  answer?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous RAG payloads
+  formattedAnswer?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous RAG payloads
+  sources?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- validation result shape
+  validation: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous RAG payloads
+  citedSources?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous RAG payloads
+  retrievalMetrics?: any;
+  conversationId?: string | null;
+  retriedWithMoreContext?: boolean;
+  totalTime?: number;
+  llmMeta?: { provider?: string; model?: string; purpose?: string } | null;
+}
+
 export function buildRAGResult({
   answer,
   formattedAnswer,
@@ -84,8 +102,8 @@ export function buildRAGResult({
   retriedWithMoreContext = false,
   totalTime,
   llmMeta = null,
-}) {
-  const result = {
+}: BuildRAGResultParams) {
+  const result: { answer: string; formatted: unknown; sources: unknown; metadata: Record<string, unknown> } = {
     answer: answer || '',
     formatted: formattedAnswer,
     sources: sources,
@@ -95,11 +113,13 @@ export function buildRAGResult({
       citedSources: citedSources,
       qualityIssues: validation.issues,
       totalTime: totalTime,
-      ...(llmMeta && {
-        llmProvider: llmMeta.provider,
-        llmModel: llmMeta.model,
-        llmPurpose: llmMeta.purpose,
-      }),
+      ...(llmMeta
+        ? {
+            llmProvider: llmMeta.provider,
+            llmModel: llmMeta.model,
+            llmPurpose: llmMeta.purpose,
+          }
+        : {}),
     },
   };
 
