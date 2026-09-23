@@ -7,7 +7,7 @@
  * @param {string} email - Email to validate
  * @returns {boolean}
  */
-export const isValidEmail = (email) => {
+export const isValidEmail = (email: string) => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 };
@@ -17,7 +17,7 @@ export const isValidEmail = (email) => {
  * @param {string} str - String to validate
  * @returns {boolean}
  */
-export const isNotEmpty = (str) => {
+export const isNotEmpty = (str: unknown) => {
   return typeof str === 'string' && str.trim().length > 0;
 };
 
@@ -26,7 +26,7 @@ export const isNotEmpty = (str) => {
  * @param {string} question - Question to validate
  * @returns {{valid: boolean, error?: string}}
  */
-export const validateQuestion = (question) => {
+export const validateQuestion = (question: unknown) => {
   if (!question) {
     return { valid: false, error: 'Question is required' };
   }
@@ -51,7 +51,7 @@ export const validateQuestion = (question) => {
  * @param {Array} chatHistory - Chat history to validate
  * @returns {{valid: boolean, error?: string}}
  */
-export const validateChatHistory = (chatHistory) => {
+export const validateChatHistory = (chatHistory: unknown) => {
   if (!chatHistory) {
     return { valid: true }; // Optional field
   }
@@ -81,7 +81,7 @@ export const validateChatHistory = (chatHistory) => {
  * @param {string} input - Input to sanitize
  * @returns {string}
  */
-export const sanitizeInput = (input) => {
+export const sanitizeInput = (input: unknown) => {
   if (typeof input !== 'string') return input;
 
   // Remove potential NoSQL injection patterns

@@ -6,6 +6,6 @@
  * @param {string} input
  * @returns {string} regex-safe literal
  */
-export function escapeRegExp(input) {
+export function escapeRegExp(input: unknown): string {
   return String(input ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

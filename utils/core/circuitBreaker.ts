@@ -9,8 +9,25 @@ import logger from '../../config/logger.js';
  * - OPEN: Too many failures, requests are blocked
  * - HALF_OPEN: Testing if service recovered
  */
+interface CircuitBreakerOptions {
+  failureThreshold?: number;
+  successThreshold?: number;
+  timeout?: number;
+  windowSize?: number;
+}
+
 class CircuitBreaker {
-  constructor(options = {}) {
+  failureThreshold: number;
+  successThreshold: number;
+  timeout: number;
+  windowSize: number;
+  state: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+  failures: number;
+  successes: number;
+  nextAttempt: number;
+  recentResults: boolean[];
+
+  constructor(options: CircuitBreakerOptions = {}) {
     this.failureThreshold = options.failureThreshold || 5; // Open after N failures
     this.successThreshold = options.successThreshold || 2; // Close after N successes in half-open
     this.timeout = options.timeout || 60000; // Time to wait before half-open (60s)
@@ -29,13 +46,15 @@ class CircuitBreaker {
    * @param {string} context - Context for logging (e.g., "External API")
    * @returns {Promise<*>}
    */
-  async execute(fn, context = 'API') {
+  async execute<T>(fn: () => Promise<T>, context = 'API'): Promise<T> {
     // Check if circuit is open
     if (this.state === 'OPEN') {
       // Check if enough time has passed to try half-open
       if (Date.now() < this.nextAttempt) {
         const waitTime = Math.ceil((this.nextAttempt - Date.now()) / 1000);
-        const error = new Error(`Circuit breaker is OPEN for ${context}. Retry in ${waitTime}s`);
+        const error: Error & { circuitBreakerOpen?: boolean } = new Error(
+          `Circuit breaker is OPEN for ${context}. Retry in ${waitTime}s`
+        );
         error.circuitBreakerOpen = true;
         throw error;
       }
@@ -69,7 +88,7 @@ class CircuitBreaker {
    * Record a successful execution
    * @param {string} context - Context for logging
    */
-  onSuccess(context) {
+  onSuccess(context: string) {
     this.failures = 0;
     this.recentResults.push(true);
 
@@ -98,7 +117,7 @@ class CircuitBreaker {
    * @param {string} context - Context for logging
    * @param {Error} error - Error that occurred
    */
-  onFailure(context, error) {
+  onFailure(context: string, error: unknown) {
     this.failures++;
     this.recentResults.push(false);
 
@@ -116,7 +135,7 @@ class CircuitBreaker {
       consecutiveFailures: this.failures,
       errorRate: `${(errorRate * 100).toFixed(1)}%`,
       state: this.state,
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     });
 
     if (this.state === 'HALF_OPEN') {
@@ -132,7 +151,7 @@ class CircuitBreaker {
    * Open the circuit
    * @param {string} context - Context for logging
    */
-  openCircuit(context) {
+  openCircuit(context: string) {
     this.state = 'OPEN';
     this.nextAttempt = Date.now() + this.timeout;
 
@@ -154,7 +173,7 @@ class CircuitBreaker {
   getErrorRate() {
     if (this.recentResults.length === 0) return 0;
 
-    const failures = this.recentResults.filter((r) => !r).length;
+    const failures = this.recentResults.filter((r: boolean) => !r).length;
     return failures / this.recentResults.length;
   }
 

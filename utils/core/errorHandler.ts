@@ -1,29 +1,28 @@
+import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import logger from '../../config/logger.js';
 
+/** An error that may carry HTTP metadata (set by AppError or the global handler). */
+type HttpError = Error & { statusCode?: number; status?: string; isOperational?: boolean };
+
 /**
- * Async handler wrapper to catch errors in async route handlers
- * Eliminates the need for try-catch blocks in controllers
- *
- * @param {import('express').RequestHandler} fn - Async handler to wrap
- * @returns {import('express').RequestHandler} Express middleware function
- *
- * @example
- * router.get('/users', catchAsync(async (req, res) => {
- *   const users = await User.find();
- *   res.json(users);
- * }));
+ * Async handler wrapper to catch errors in async route handlers — eliminates the need for
+ * try-catch blocks in controllers.
  */
-export const catchAsync = (fn) => {
-  return (req, res, next) => {
+export const catchAsync =
+  (fn: RequestHandler): RequestHandler =>
+  (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
-};
 
 /**
  * Custom error class for operational errors
  */
 export class AppError extends Error {
-  constructor(message, statusCode) {
+  statusCode: number;
+  status: string;
+  isOperational: boolean;
+
+  constructor(message: string, statusCode: number) {
     super(message);
     this.statusCode = statusCode;
     this.status = `${statusCode}`.startsWith('4') ? 'fail' : 'error';
@@ -36,8 +35,8 @@ export class AppError extends Error {
 /**
  * Send error response in development
  */
-const sendErrorDev = (err, res) => {
-  res.status(err.statusCode).json({
+const sendErrorDev = (err: HttpError, res: Response) => {
+  res.status(err.statusCode || 500).json({
     status: err.status,
     error: err,
     message: err.message,
@@ -48,17 +47,17 @@ const sendErrorDev = (err, res) => {
 /**
  * Send error response in production
  */
-const sendErrorProd = (err, res) => {
+const sendErrorProd = (err: HttpError, res: Response) => {
   // Operational, trusted error: send message to client
   if (err.isOperational) {
-    res.status(err.statusCode).json({
+    res.status(err.statusCode || 500).json({
       status: err.status,
       message: err.message,
     });
   }
   // Programming or other unknown error: don't leak error details
   else {
-    logger.error('ERROR 💥', err);
+    logger.error('ERROR 💥', { error: err.message, stack: err.stack });
     res.status(500).json({
       status: 'error',
       message: 'Something went wrong!',
@@ -69,7 +68,12 @@ const sendErrorProd = (err, res) => {
 /**
  * Global error handling middleware
  */
-export const globalErrorHandler = (err, req, res, _next) => {
+export const globalErrorHandler = (
+  err: HttpError,
+  req: Request,
+  res: Response,
+  _next: NextFunction
+) => {
   err.statusCode = err.statusCode || 500;
   err.status = err.status || 'error';
 

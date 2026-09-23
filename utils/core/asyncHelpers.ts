@@ -2,16 +2,15 @@
  * Async utilities for handling promises and delays
  */
 
-/**
- * Sleep/delay function
- * @param {number} ms - Milliseconds to sleep
- * @returns {Promise<void>}
- *
- * @example
- * await sleep(1000); // Wait 1 second
- */
-export const sleep = (ms) => {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+// Minimal LangChain chain surface used here (the full generics arrive with the RAG layer).
+interface Chain {
+  invoke(input: unknown, options?: unknown): Promise<unknown>;
+  stream(input: unknown, options?: unknown): Promise<AsyncIterable<unknown>>;
+}
+
+/** Sleep/delay function. */
+export const sleep = (ms: number) => {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 };
 
 /**
@@ -21,8 +20,12 @@ export const sleep = (ms) => {
  * @param {number} delay - Initial delay in ms
  * @returns {Promise<any>}
  */
-export const retryWithBackoff = async (fn, maxRetries = 3, delay = 1000) => {
-  let lastError;
+export const retryWithBackoff = async <T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  delay = 1000
+): Promise<T> => {
+  let lastError: unknown;
 
   for (let i = 0; i < maxRetries; i++) {
     try {
@@ -46,8 +49,12 @@ export const retryWithBackoff = async (fn, maxRetries = 3, delay = 1000) => {
  * @param {number} batchSize - Batch size
  * @returns {Promise<Array>}
  */
-export const batchProcess = async (items, fn, batchSize = 10) => {
-  const results = [];
+export const batchProcess = async <T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  batchSize = 10
+): Promise<R[]> => {
+  const results: R[] = [];
 
   for (let i = 0; i < items.length; i += batchSize) {
     const batch = items.slice(i, i + batchSize);
@@ -65,10 +72,14 @@ export const batchProcess = async (items, fn, batchSize = 10) => {
  * @param {string} [message] - Custom timeout error message
  * @returns {Promise<any>}
  */
-export const promiseWithTimeout = (promise, timeoutMs, message = 'Operation timed out') => {
+export const promiseWithTimeout = <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message = 'Operation timed out'
+): Promise<T> => {
   return Promise.race([
     promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), timeoutMs)),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(message)), timeoutMs)),
   ]);
 };
 
@@ -76,7 +87,9 @@ export const promiseWithTimeout = (promise, timeoutMs, message = 'Operation time
  * LLM-specific timeout error for better error handling
  */
 export class LLMTimeoutError extends Error {
-  constructor(operation, timeoutMs) {
+  operation: string;
+  timeoutMs: number;
+  constructor(operation: string, timeoutMs: number) {
     super(`LLM ${operation} timed out after ${timeoutMs}ms`);
     this.name = 'LLMTimeoutError';
     this.operation = operation;
@@ -92,9 +105,14 @@ export class LLMTimeoutError extends Error {
  * @param {number} timeoutMs - Timeout in milliseconds (default: 60000)
  * @returns {Promise<string>} Chain response
  */
-export const invokeWithTimeout = async (chain, input, options = {}, timeoutMs = 60000) => {
-  let timeoutId;
-  const timeoutPromise = new Promise((_, reject) => {
+export const invokeWithTimeout = async (
+  chain: Chain,
+  input: unknown,
+  options: unknown = {},
+  timeoutMs = 60000
+) => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
       reject(new LLMTimeoutError('invoke', timeoutMs));
     }, timeoutMs);
@@ -121,15 +139,15 @@ export const invokeWithTimeout = async (chain, input, options = {}, timeoutMs = 
  * @returns {AsyncGenerator<string>} Async generator yielding chunks
  */
 export async function* streamWithTimeout(
-  chain,
-  input,
-  options = {},
+  chain: Chain,
+  input: unknown,
+  options: unknown = {},
   initialTimeoutMs = 30000,
   chunkTimeoutMs = 10000
 ) {
-  let timeoutId;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-  const resetTimeout = (ms) => {
+  const resetTimeout = (ms: number) => {
     if (timeoutId) clearTimeout(timeoutId);
     return new Promise((_, reject) => {
       timeoutId = setTimeout(() => {
@@ -165,10 +183,10 @@ export async function* streamWithTimeout(
  * @param {number} delay - Delay in ms
  * @returns {Function}
  */
-export const debounce = (fn, delay) => {
-  let timeoutId;
+export const debounce = (fn: (...args: unknown[]) => unknown, delay: number) => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-  return function (...args) {
+  return function (this: unknown, ...args: unknown[]) {
     clearTimeout(timeoutId);
     return new Promise((resolve) => {
       timeoutId = setTimeout(() => {
@@ -185,10 +203,14 @@ export const debounce = (fn, delay) => {
  * @param {number} period - Period in ms
  * @returns {Function}
  */
-export const rateLimit = (fn, maxCalls, period) => {
-  const calls = [];
+export const rateLimit = (
+  fn: (...args: unknown[]) => unknown,
+  maxCalls: number,
+  period: number
+) => {
+  const calls: number[] = [];
 
-  return async function (...args) {
+  return async function (this: unknown, ...args: unknown[]) {
     const now = Date.now();
     const validCalls = calls.filter((timestamp) => now - timestamp < period);
 

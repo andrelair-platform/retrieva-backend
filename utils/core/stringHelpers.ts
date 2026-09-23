@@ -9,7 +9,7 @@
  * @param {string} suffix - Suffix to add (default: '...')
  * @returns {string}
  */
-export const truncate = (text, maxLength, suffix = '...') => {
+export const truncate = (text: string, maxLength: number, suffix = '...') => {
   if (!text || text.length <= maxLength) return text;
   return text.substring(0, maxLength - suffix.length) + suffix;
 };
@@ -19,7 +19,7 @@ export const truncate = (text, maxLength, suffix = '...') => {
  * @param {string} str - String to capitalize
  * @returns {string}
  */
-export const capitalize = (str) => {
+export const capitalize = (str: string) => {
   if (!str) return str;
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 };
@@ -29,7 +29,7 @@ export const capitalize = (str) => {
  * @param {string} str - String to slugify
  * @returns {string}
  */
-export const slugify = (str) => {
+export const slugify = (str: string) => {
   return str
     .toLowerCase()
     .trim()

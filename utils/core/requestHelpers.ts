@@ -8,23 +8,17 @@
  *
  * @module utils/core/requestHelpers
  */
+import type { Request } from 'express';
 
-/**
- * Extract user ID from request
- * @param {Object} req - Express request object
- * @param {string} fallback - Fallback value if no user (default 'anonymous')
- * @returns {string} User ID or fallback
- */
-export const getUserId = (req, fallback = 'anonymous') => {
+type Query = Record<string, unknown> | undefined;
+
+/** Extract user ID from request. */
+export const getUserId = (req: Request, fallback = 'anonymous') => {
   return req.user?.userId || fallback;
 };
 
-/**
- * Check if user is authenticated
- * @param {Object} req - Express request object
- * @returns {boolean} Whether user is authenticated
- */
-export const isAuthenticated = (req) => {
+/** Check if user is authenticated. */
+export const isAuthenticated = (req: Request) => {
   return !!req.user?.userId;
 };
 
@@ -35,11 +29,11 @@ export const isAuthenticated = (req) => {
  * @param {number} fallback - Fallback if invalid
  * @returns {number} Parsed integer or fallback
  */
-const safeParseInt = (value, fallback) => {
+const safeParseInt = (value: unknown, fallback: number) => {
   if (value === undefined || value === null || value === '') {
     return fallback;
   }
-  const parsed = parseInt(value, 10);
+  const parsed = parseInt(value as string, 10);
   return Number.isNaN(parsed) || !Number.isFinite(parsed) ? fallback : parsed;
 };
 
@@ -53,7 +47,10 @@ const safeParseInt = (value, fallback) => {
  * @param {number} [options.defaultSkip] - Default skip (default 0)
  * @returns {{ limit: number, skip: number, page: number }}
  */
-export const parsePagination = (query, options = {}) => {
+export const parsePagination = (
+  query: Query,
+  options: { defaultLimit?: number; maxLimit?: number; defaultSkip?: number } = {}
+) => {
   const { defaultLimit = 50, maxLimit = 100, defaultSkip = 0 } = options;
 
   // ISSUE #27 FIX: Use safe parsing and ensure positive values
@@ -76,7 +73,10 @@ export const parsePagination = (query, options = {}) => {
  * @param {Object} options - Pagination options
  * @returns {{ limit: number, skip: number, page: number }}
  */
-export const parsePagePagination = (query, options = {}) => {
+export const parsePagePagination = (
+  query: Query,
+  options: { defaultLimit?: number; maxLimit?: number } = {}
+) => {
   const { defaultLimit = 20, maxLimit = 50 } = options;
 
   const rawPage = safeParseInt(query?.page, 1);
@@ -96,7 +96,7 @@ export const parsePagePagination = (query, options = {}) => {
  * @param {number} skip - Items skipped
  * @returns {Object} Pagination metadata
  */
-export const buildPaginationMeta = (total, limit, skip) => {
+export const buildPaginationMeta = (total: number, limit: number, skip: number) => {
   const currentPage = Math.floor(skip / limit) + 1;
   const totalPages = Math.ceil(total / limit);
 
@@ -118,7 +118,11 @@ export const buildPaginationMeta = (total, limit, skip) => {
  * @param {string} defaultSort - Default sort field
  * @returns {Object} MongoDB sort object
  */
-export const parseSort = (sortQuery, allowedFields = [], defaultSort = '-createdAt') => {
+export const parseSort = (
+  sortQuery: string | undefined,
+  allowedFields: string[] = [],
+  defaultSort = '-createdAt'
+) => {
   const sort = sortQuery || defaultSort;
   const direction = sort.startsWith('-') ? -1 : 1;
   const field = sort.replace(/^-/, '');
@@ -139,7 +143,7 @@ export const parseSort = (sortQuery, allowedFields = [], defaultSort = '-created
  * @param {string} userId - Current user ID
  * @returns {boolean} Whether user owns the resource
  */
-export const verifyOwnership = (ownerId, userId) => {
+export const verifyOwnership = (ownerId: unknown, userId: unknown) => {
   const ownerStr = ownerId?.toString() || ownerId;
   const userStr = userId?.toString() || userId;
   return ownerStr === userStr;

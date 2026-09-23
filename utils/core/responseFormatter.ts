@@ -1,16 +1,16 @@
 /**
  * Response formatter utilities
  */
+import type { Response } from 'express';
 
-/**
- * Format success response
- * @param {Object} res - Express response object
- * @param {number} statusCode - HTTP status code
- * @param {string} message - Success message
- * @param {Object} data - Response data
- */
-export const sendSuccess = (res, statusCode, message, data = null) => {
-  const response = {
+/** Format success response. */
+export const sendSuccess = (
+  res: Response,
+  statusCode: number,
+  message: string,
+  data: unknown = null
+) => {
+  const response: { status: string; message: string; data?: unknown } = {
     status: 'success',
     message,
   };
@@ -29,8 +29,13 @@ export const sendSuccess = (res, statusCode, message, data = null) => {
  * @param {string} message - Error message
  * @param {Object} errors - Additional error details
  */
-export const sendError = (res, statusCode, message, errors = null) => {
-  const response = {
+export const sendError = (
+  res: Response,
+  statusCode: number,
+  message: string,
+  errors: unknown = null
+) => {
+  const response: { status: string; message: string; errors?: unknown } = {
     status: 'error',
     message,
   };
@@ -50,7 +55,13 @@ export const sendError = (res, statusCode, message, errors = null) => {
  * @param {number} limit - Items per page
  * @param {number} total - Total items
  */
-export const sendPaginatedResponse = (res, data, page, limit, total) => {
+export const sendPaginatedResponse = (
+  res: Response,
+  data: unknown,
+  page: number,
+  limit: number,
+  total: number
+) => {
   const totalPages = Math.ceil(total / limit);
 
   res.status(200).json({

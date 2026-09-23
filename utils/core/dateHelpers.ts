@@ -16,7 +16,7 @@ export const getCurrentTimestamp = () => {
  * @param {string} locale - Locale (default: 'en-US')
  * @returns {string}
  */
-export const formatDate = (date, locale = 'en-US') => {
+export const formatDate = (date: Date | string, locale = 'en-US') => {
   const d = new Date(date);
   return d.toLocaleDateString(locale, {
     year: 'numeric',
@@ -31,7 +31,7 @@ export const formatDate = (date, locale = 'en-US') => {
  * @param {string} locale - Locale (default: 'en-US')
  * @returns {string}
  */
-export const formatDateTime = (date, locale = 'en-US') => {
+export const formatDateTime = (date: Date | string, locale = 'en-US') => {
   const d = new Date(date);
   return d.toLocaleString(locale, {
     year: 'numeric',
@@ -47,8 +47,8 @@ export const formatDateTime = (date, locale = 'en-US') => {
  * @param {Date|string} date - Date to compare
  * @returns {string}
  */
-export const getTimeAgo = (date) => {
-  const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+export const getTimeAgo = (date: Date | string) => {
+  const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
 
   const intervals = {
     year: 31536000,
@@ -75,8 +75,8 @@ export const getTimeAgo = (date) => {
  * @param {Date|string} end - End date
  * @returns {Object} - {days, hours, minutes, seconds}
  */
-export const calculateDuration = (start, end) => {
-  const diff = new Date(end) - new Date(start);
+export const calculateDuration = (start: Date | string, end: Date | string) => {
+  const diff = new Date(end).getTime() - new Date(start).getTime();
 
   return {
     days: Math.floor(diff / (1000 * 60 * 60 * 24)),
@@ -92,7 +92,7 @@ export const calculateDuration = (start, end) => {
  * @param {any} date - Date to check
  * @returns {boolean}
  */
-export const isValidDate = (date) => {
-  const d = new Date(date);
-  return d instanceof Date && !isNaN(d);
+export const isValidDate = (date: unknown) => {
+  const d = new Date(date as string);
+  return d instanceof Date && !isNaN(d.getTime());
 };

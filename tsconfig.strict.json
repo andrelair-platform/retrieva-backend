@@ -16,7 +16,8 @@
     "services/registerProjection.ts",
     "services/registerProjectionService.ts",
     "services/assessment/verdict.ts",
-    "config/authz/**/*.ts"
+    "config/authz/**/*.ts",
+    "utils/core/**/*.ts"
   ],
   "exclude": ["node_modules", "dist", "coverage", "tests", "website", "seeds", "data"]
 }
