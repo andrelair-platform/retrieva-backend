@@ -11,6 +11,7 @@
  * (canViewSources: true). Only an explicit `false` strips sources.
  */
 
+import type { Request } from 'express';
 import { workspaceMemberRepository } from '../../repositories/drizzle/WorkspaceMemberRepository.js';
 
 /**
@@ -18,13 +19,16 @@ import { workspaceMemberRepository } from '../../repositories/drizzle/WorkspaceM
  * @param {string|import('mongoose').Types.ObjectId} workspaceId - target workspace
  * @returns {Promise<boolean>} whether sources may be returned to this user
  */
-export async function userCanViewSources(req, workspaceId) {
+export async function userCanViewSources(req: Request, workspaceId: string) {
   if (!workspaceId) return true;
   const wsId = workspaceId.toString();
 
   // requireWorkspaceAccess (RAG routes) already loaded memberships + permissions.
-  const loaded = req.authorizedWorkspaces?.find((w) => w.workspaceId === wsId);
-  if (loaded) return loaded.permissions?.canViewSources !== false;
+  const loaded = req.authorizedWorkspaces?.find(
+    (w: Record<string, unknown>) => w.workspaceId === wsId
+  );
+  if (loaded)
+    return (loaded.permissions as { canViewSources?: boolean } | undefined)?.canViewSources !== false;
 
   // Conversation routes only run `authenticate`, so look the membership up.
   const userId = req.user?.userId;

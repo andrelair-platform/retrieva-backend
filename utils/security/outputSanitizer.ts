@@ -86,12 +86,12 @@ const SUSPICIOUS_OUTPUT_PATTERNS = [
  * @param {string} text - Text to encode
  * @returns {string} HTML-encoded text
  */
-export function encodeHTMLEntities(text) {
+export function encodeHTMLEntities(text: string) {
   if (!text || typeof text !== 'string') {
     return '';
   }
 
-  return text.replace(/[&<>"'`=/]/g, (char) => HTML_ENTITIES[char] || char);
+  return text.replace(/[&<>"'`=/]/g, (char) => HTML_ENTITIES[char as keyof typeof HTML_ENTITIES] || char);
 }
 
 /**
@@ -99,7 +99,7 @@ export function encodeHTMLEntities(text) {
  * @param {string} text - Text to decode
  * @returns {string} Decoded text
  */
-export function decodeHTMLEntities(text) {
+export function decodeHTMLEntities(text: string) {
   if (!text || typeof text !== 'string') {
     return '';
   }
@@ -119,7 +119,7 @@ export function decodeHTMLEntities(text) {
 
   return text.replace(
     /&(?:amp|lt|gt|quot|#x27|#x2F|#x60|#x3D|#39|apos);/gi,
-    (entity) => entityMap[entity.toLowerCase()] || entity
+    (entity) => entityMap[entity.toLowerCase() as keyof typeof entityMap] || entity
   );
 }
 
@@ -128,7 +128,7 @@ export function decodeHTMLEntities(text) {
  * @param {string} text - Text to sanitize
  * @returns {string} Sanitized text
  */
-export function removeDangerousPatterns(text) {
+export function removeDangerousPatterns(text: string) {
   if (!text || typeof text !== 'string') {
     return '';
   }
@@ -161,7 +161,7 @@ export function removeDangerousPatterns(text) {
  * @param {string} text - Text to analyze
  * @returns {Object} Detection result
  */
-export function detectSuspiciousOutput(text) {
+export function detectSuspiciousOutput(text: string) {
   if (!text || typeof text !== 'string') {
     return { suspicious: false, categories: [] };
   }
@@ -199,7 +199,15 @@ export function detectSuspiciousOutput(text) {
  * @param {Object} options - Sanitization options
  * @returns {Object} Sanitization result with sanitized text and metadata
  */
-export function sanitizeLLMOutput(text, options = {}) {
+export function sanitizeLLMOutput(
+  text: unknown,
+  options: {
+    encodeHtml?: boolean;
+    removeDangerous?: boolean;
+    detectSuspicious?: boolean;
+    preserveMarkdown?: boolean;
+  } = {}
+) {
   const {
     encodeHtml = true, // Encode HTML entities
     removeDangerous = true, // Remove dangerous patterns
@@ -219,7 +227,10 @@ export function sanitizeLLMOutput(text, options = {}) {
 
   let result = text;
   let wasModified = false;
-  let suspiciousResult = { suspicious: false, categories: [] };
+  let suspiciousResult: { suspicious: boolean; categories: unknown[] } = {
+    suspicious: false,
+    categories: [],
+  };
 
   // Step 1: Detect suspicious patterns (before any modification)
   if (detectSuspicious) {
@@ -264,7 +275,7 @@ export function sanitizeLLMOutput(text, options = {}) {
  * @param {string} text - Text to encode
  * @returns {string} Selectively encoded text
  */
-function encodeHTMLSelective(text) {
+function encodeHTMLSelective(text: string) {
   if (!text) return '';
 
   // Split by code blocks to preserve them
@@ -294,7 +305,7 @@ function encodeHTMLSelective(text) {
  * @param {string} text - Text to sanitize
  * @returns {string} JSON-safe text
  */
-export function sanitizeForJSON(text) {
+export function sanitizeForJSON(text: string) {
   if (!text || typeof text !== 'string') {
     return '';
   }
@@ -313,7 +324,7 @@ export function sanitizeForJSON(text) {
  * @param {string} text - Text to sanitize
  * @returns {string} SQL-safe text
  */
-export function sanitizeForSQL(text) {
+export function sanitizeForSQL(text: string) {
   if (!text || typeof text !== 'string') {
     return '';
   }
@@ -336,12 +347,12 @@ export function sanitizeForSQL(text) {
  * @param {Object} ragResult - RAG result object with answer field
  * @returns {Object} RAG result with sanitized answer
  */
-export function sanitizeRAGResponse(ragResult) {
+export function sanitizeRAGResponse(ragResult: Record<string, unknown> | null | undefined) {
   if (!ragResult || typeof ragResult !== 'object') {
     return ragResult;
   }
 
-  const sanitizedResult = { ...ragResult };
+  const sanitizedResult: Record<string, unknown> = { ...ragResult };
 
   // Sanitize the main answer
   if (ragResult.answer) {

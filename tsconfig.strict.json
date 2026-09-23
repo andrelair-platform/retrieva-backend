@@ -19,7 +19,8 @@
     "config/authz/**/*.ts",
     "config/logger.ts",
     "config/db.ts",
-    "utils/core/**/*.ts"
+    "utils/core/**/*.ts",
+    "utils/security/**/*.ts"
   ],
   "exclude": ["node_modules", "dist", "coverage", "tests", "website", "seeds", "data"]
 }

@@ -165,7 +165,7 @@ const LEET_MAP = {
  * @param {string} text - Input text
  * @returns {string} - Normalized text
  */
-export function normalizeText(text) {
+export function normalizeText(text: string) {
   if (!text || typeof text !== 'string') {
     return '';
   }
@@ -352,7 +352,7 @@ const INJECTION_PATTERNS = [
  * @param {string} text - User input to analyze
  * @returns {Object} Analysis result with score and detected patterns
  */
-export function analyzeForInjection(text) {
+export function analyzeForInjection(text: string) {
   if (!text || typeof text !== 'string') {
     return {
       isInjection: false,
@@ -384,7 +384,7 @@ export function analyzeForInjection(text) {
     const matchesNormalized = pattern.test(normalizedText);
 
     if (matchesOriginal || matchesNormalized) {
-      const score = severityScores[severity] || 10;
+      const score = severityScores[severity as keyof typeof severityScores] || 10;
       totalScore += score;
 
       detectedPatterns.push({
@@ -423,7 +423,7 @@ export function analyzeForInjection(text) {
 /**
  * Additional heuristic checks for suspicious patterns
  */
-function analyzeHeuristics(originalText, normalizedText) {
+function analyzeHeuristics(originalText: string, normalizedText: string) {
   const flags = [];
   let score = 0;
 
@@ -470,7 +470,10 @@ function analyzeHeuristics(originalText, normalizedText) {
  * @param {Object} options - Validation options
  * @returns {Object} Validation result
  */
-export function validateInput(input, options = {}) {
+export function validateInput(
+  input: unknown,
+  options: { allowPartial?: boolean; maxLength?: number } = {}
+) {
   const { allowPartial = false, maxLength = 2000 } = options;
 
   if (!input || typeof input !== 'string') {

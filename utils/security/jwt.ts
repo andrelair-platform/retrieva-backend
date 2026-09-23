@@ -25,8 +25,14 @@ if (!ACCESS_TOKEN_SECRET || !REFRESH_TOKEN_SECRET) {
   throw error;
 }
 
+interface TokenPayload {
+  userId: string;
+  email?: string;
+  role?: string;
+}
+
 // Parse a comma-separated list of previous secrets (for verification only).
-const parsePreviousSecrets = (raw) =>
+const parsePreviousSecrets = (raw: string | undefined) =>
   (raw || '')
     .split(',')
     .map((s) => s.trim())
@@ -59,17 +65,25 @@ if (
  * @param {{ expired: string, invalid: string }} messages - error text to surface
  * @returns {Object} decoded payload
  */
-const verifyWithRotation = (token, secrets, messages) => {
-  let lastError;
+const verifyWithRotation = (
+  token: string,
+  secrets: string[],
+  messages: { expired: string; invalid: string }
+) => {
+  let lastError: (Error & { name?: string }) | undefined;
   for (const secret of secrets) {
     try {
-      return jwt.verify(token, secret, { issuer: 'rag-backend', audience: 'rag-api' });
+      return jwt.verify(token, secret, {
+        issuer: 'rag-backend',
+        audience: 'rag-api',
+      }) as jwt.JwtPayload;
     } catch (error) {
-      if (error.name === 'JsonWebTokenError' && error.message === 'invalid signature') {
-        lastError = error; // signed with a different key — try the next one
+      const e = error as Error;
+      if (e.name === 'JsonWebTokenError' && e.message === 'invalid signature') {
+        lastError = e; // signed with a different key — try the next one
         continue;
       }
-      lastError = error;
+      lastError = e;
       break; // expired / malformed / wrong issuer|audience — no other key helps
     }
   }
@@ -87,7 +101,7 @@ const REFRESH_TOKEN_EXPIRY = process.env.JWT_REFRESH_EXPIRY || '7d'; // 7 days
  * @param {string} token - Raw refresh token
  * @returns {string} SHA-256 hash of the token
  */
-export const hashRefreshToken = (token) => {
+export const hashRefreshToken = (token: string) => {
   return sha256(token);
 };
 
@@ -97,7 +111,7 @@ export const hashRefreshToken = (token) => {
  * @param {string} hashedToken - Stored hash from database
  * @returns {boolean} Whether tokens match
  */
-export const compareRefreshToken = (rawToken, hashedToken) => {
+export const compareRefreshToken = (rawToken: string, hashedToken: string) => {
   const hash = hashRefreshToken(rawToken);
   return timingSafeEqual(hash, hashedToken);
 };
@@ -107,7 +121,7 @@ export const compareRefreshToken = (rawToken, hashedToken) => {
  * @param {Object} payload - User data to encode
  * @returns {string} JWT access token
  */
-export const generateAccessToken = (payload) => {
+export const generateAccessToken = (payload: TokenPayload) => {
   try {
     return jwt.sign(
       {
@@ -120,10 +134,12 @@ export const generateAccessToken = (payload) => {
         expiresIn: ACCESS_TOKEN_EXPIRY,
         issuer: 'rag-backend',
         audience: 'rag-api',
-      }
+      } as jwt.SignOptions
     );
   } catch (error) {
-    logger.error('Failed to generate access token', { error: error.message });
+    logger.error('Failed to generate access token', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     throw new Error('Token generation failed');
   }
 };
@@ -133,7 +149,7 @@ export const generateAccessToken = (payload) => {
  * @param {Object} payload - User data to encode
  * @returns {string} JWT refresh token
  */
-export const generateRefreshToken = (payload) => {
+export const generateRefreshToken = (payload: TokenPayload) => {
   try {
     return jwt.sign(
       {
@@ -146,10 +162,12 @@ export const generateRefreshToken = (payload) => {
         expiresIn: REFRESH_TOKEN_EXPIRY,
         issuer: 'rag-backend',
         audience: 'rag-api',
-      }
+      } as jwt.SignOptions
     );
   } catch (error) {
-    logger.error('Failed to generate refresh token', { error: error.message });
+    logger.error('Failed to generate refresh token', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     throw new Error('Token generation failed');
   }
 };
@@ -159,7 +177,7 @@ export const generateRefreshToken = (payload) => {
  * @param {string} token - JWT token to verify
  * @returns {Object} Decoded token payload
  */
-export const verifyAccessToken = (token) => {
+export const verifyAccessToken = (token: string) => {
   return verifyWithRotation(token, ACCESS_VERIFY_SECRETS, {
     expired: 'Access token expired',
     invalid: 'Invalid access token',
@@ -171,7 +189,7 @@ export const verifyAccessToken = (token) => {
  * @param {string} token - JWT refresh token to verify
  * @returns {Object} Decoded token payload
  */
-export const verifyRefreshToken = (token) => {
+export const verifyRefreshToken = (token: string) => {
   return verifyWithRotation(token, REFRESH_VERIFY_SECRETS, {
     expired: 'Refresh token expired',
     invalid: 'Invalid refresh token',
@@ -183,7 +201,7 @@ export const verifyRefreshToken = (token) => {
  * @param {Object} payload - User data
  * @returns {Object} { accessToken, refreshToken }
  */
-export const generateTokenPair = (payload) => {
+export const generateTokenPair = (payload: TokenPayload) => {
   return {
     accessToken: generateAccessToken(payload),
     refreshToken: generateRefreshToken(payload),
@@ -200,12 +218,12 @@ const MFA_TOKEN_EXPIRY = process.env.JWT_MFA_EXPIRY || '5m';
  * @param {Object} payload - { userId }
  * @returns {string} JWT
  */
-export const generateMfaToken = (payload) => {
+export const generateMfaToken = (payload: { userId: string }) => {
   return jwt.sign({ userId: payload.userId, purpose: 'mfa' }, ACCESS_TOKEN_SECRET, {
     expiresIn: MFA_TOKEN_EXPIRY,
     issuer: 'rag-backend',
     audience: 'rag-mfa',
-  });
+  } as jwt.SignOptions);
 };
 
 /**
@@ -213,16 +231,16 @@ export const generateMfaToken = (payload) => {
  * @param {string} token
  * @returns {Object} decoded payload ({ userId, purpose })
  */
-export const verifyMfaToken = (token) => {
+export const verifyMfaToken = (token: string) => {
   try {
     const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET, {
       issuer: 'rag-backend',
       audience: 'rag-mfa',
-    });
+    }) as jwt.JwtPayload;
     if (decoded.purpose !== 'mfa') throw new Error('Invalid MFA token');
     return decoded;
   } catch (error) {
-    if (error.name === 'TokenExpiredError') {
+    if ((error as Error).name === 'TokenExpiredError') {
       throw new Error('MFA session expired. Please log in again.');
     }
     throw new Error('Invalid MFA token');
@@ -234,6 +252,6 @@ export const verifyMfaToken = (token) => {
  * @param {string} token - JWT token
  * @returns {Object} Decoded payload
  */
-export const decodeToken = (token) => {
+export const decodeToken = (token: string) => {
   return jwt.decode(token);
 };
