@@ -11,12 +11,21 @@
  *
  * @module services/security/entityScope
  */
-import { inArray, sql } from 'drizzle-orm';
+import { inArray, sql, type SQL } from 'drizzle-orm';
+import type { PgColumn } from 'drizzle-orm/pg-core';
 // Import the concrete repo file (NOT the repositories/index.js barrel) to avoid a cycle:
 // the org-scoped repos import THIS module, and they are re-exported by the barrel.
 import { roleAssignmentRepository } from '../../repositories/drizzle/RoleAssignmentRepository.js';
-import { getEntityScope } from '../../db/entityContext.js';
+import { getEntityScope, type EntityScope } from '../../db/entityContext.js';
+import type { RoleAssignmentRow } from '../../db/schema/index.js';
 import logger from '../../config/logger.js';
+
+/** The minimal req.user shape the authz layer reads (shared by can() + entity scope). */
+export interface CanUser {
+  userId: string;
+  platformAdmin?: boolean;
+  organizationId?: string;
+}
 
 export const ISOLATION_MODES = ['off', 'shadow', 'enforce'];
 const GROUP_ROLES = new Set(['group_admin', 'group_risk', 'group_compliance']);
@@ -37,7 +46,10 @@ export function getIsolationMode() {
  *   still denying every OTHER entity.
  * @returns {{platformAdmin:boolean, readAcross:boolean, entityIds:string[]}}
  */
-export function computeScope(user, assignments) {
+export function computeScope(
+  user: CanUser | null | undefined,
+  assignments: RoleAssignmentRow[] | null | undefined
+): EntityScope {
   if (user?.platformAdmin === true)
     return { platformAdmin: true, readAcross: false, entityIds: [] };
   const list = assignments || [];
@@ -48,18 +60,24 @@ export function computeScope(user, assignments) {
 }
 
 /** Does a resolved scope permit this entity id? (platform_admin / group = always). */
-export function scopeAllowsEntity(scope, entityId) {
+export function scopeAllowsEntity(
+  scope: EntityScope | null | undefined,
+  entityId: string | null | undefined
+): boolean {
   if (!scope || !entityId) return false;
   if (scope.platformAdmin || scope.readAcross) return true;
   return scope.entityIds.includes(String(entityId));
 }
 
 /** Async: resolve + memoize the scope for a user (used by the request middleware). */
-export async function resolveEntityScope(user) {
+export async function resolveEntityScope(user: CanUser | null | undefined): Promise<EntityScope> {
   if (!user || !user.userId) return { platformAdmin: false, readAcross: false, entityIds: [] };
-  if (user[SCOPE_MEMO]) return user[SCOPE_MEMO];
+  const memo = user as unknown as Record<symbol, EntityScope>;
+  if (memo[SCOPE_MEMO]) return memo[SCOPE_MEMO];
   const assignments =
-    user.platformAdmin === true ? [] : await roleAssignmentRepository.findByUser(user.userId);
+    user.platformAdmin === true
+      ? []
+      : ((await roleAssignmentRepository.findByUser(user.userId)) as RoleAssignmentRow[]);
   const scope = computeScope(user, assignments);
   Object.defineProperty(user, SCOPE_MEMO, { value: scope, enumerable: false, configurable: true });
   return scope;
@@ -78,7 +96,10 @@ export async function resolveEntityScope(user) {
  * @param {import('drizzle-orm/pg-core').PgColumn} orgColumn
  * @param {{action?:string}} [ctx] optional label for shadow logs
  */
-export function entityScopeCondition(orgColumn, ctx = {}) {
+export function entityScopeCondition(
+  orgColumn: PgColumn,
+  ctx: { action?: string } = {}
+): SQL | undefined {
   const mode = getIsolationMode();
   if (mode === 'off') return undefined;
 

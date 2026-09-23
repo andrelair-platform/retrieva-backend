@@ -17,28 +17,33 @@
  */
 import { roleGrants } from '../../config/authz/capabilities.js';
 import { roleAssignmentRepository } from '../../repositories/index.js';
-import { computeScope, scopeAllowsEntity } from './entityScope.js';
+import { computeScope, scopeAllowsEntity, type CanUser } from './entityScope.js';
+import type { RoleAssignmentRow } from '../../db/schema/index.js';
 import logger from '../../config/logger.js';
 
 // Per-request memo of a user's assignments, keyed off the req.user object so repeated
 // can() calls in one request hit the DB once. Non-enumerable so it never leaks in JSON.
 const MEMO = Symbol('roleAssignments');
 
-async function loadAssignments(user) {
-  if (user[MEMO]) return user[MEMO];
-  const rows = await roleAssignmentRepository.findByUser(user.userId);
+async function loadAssignments(user: CanUser): Promise<RoleAssignmentRow[]> {
+  const memo = user as unknown as Record<symbol, RoleAssignmentRow[]>;
+  if (memo[MEMO]) return memo[MEMO];
+  const rows = (await roleAssignmentRepository.findByUser(user.userId)) as RoleAssignmentRow[];
   Object.defineProperty(user, MEMO, { value: rows, enumerable: false, configurable: true });
   return rows;
 }
 
 /**
- * @param {{ userId: string, platformAdmin?: boolean, organizationId?: string }} user  req.user
- * @param {string} action  `resource:action`, e.g. 'finding:approve'
- * @param {{entityId?: string, organizationId?: string}} [resource]  the target; when it names an
- *        entity, the granting role must be IN THAT SCOPE (RTV-54 scope matching)
- * @returns {Promise<boolean>}
+ * @param user     req.user
+ * @param action   `resource:action`, e.g. 'finding:approve'
+ * @param resource the target; when it names an entity, the granting role must be IN THAT SCOPE
+ *                 (RTV-54 scope matching)
  */
-export async function can(user, action, resource) {
+export async function can(
+  user: CanUser | null | undefined,
+  action: string,
+  resource?: { entityId?: string; organizationId?: string }
+): Promise<boolean> {
   if (!user || !user.userId) return false;
   if (user.platformAdmin === true) return true;
 

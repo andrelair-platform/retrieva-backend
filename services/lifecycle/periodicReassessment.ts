@@ -21,10 +21,11 @@ import { assessmentQueue } from '../../config/queue.js';
 import logger from '../../config/logger.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const num = (v, d) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
+const num = (v: unknown, d: number): number =>
+  Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d;
 
 /** Enqueue a fresh assessment run for an overdue arrangement (system-initiated). */
-async function defaultEnqueue(a) {
+async function defaultEnqueue(a: { organizationId: string; id: string }) {
   await assessmentQueue.add('arrangementAssessment', {
     organizationId: a.organizationId,
     arrangementId: a.id,
@@ -54,9 +55,11 @@ export async function runPeriodicReassessment({
   const cifBefore = new Date(now.getTime() - cifIntervalDays * DAY_MS);
   const due = await repo.listActiveOverdueForReassessment({ before, cifBefore, limit: batchLimit });
 
+  const to = nextState('active', 'start_review'); // 'under_review' (always valid)
+  if (!to) return { scanned: due.length, reviewed: 0 };
+
   let reviewed = 0;
   for (const a of due) {
-    const to = nextState('active', 'start_review'); // 'under_review'
     const updated = await repo.setLifecycle(a.organizationId, a.id, to);
     if (!updated) continue; // lost a race (already moved) — skip silently
     await audit({

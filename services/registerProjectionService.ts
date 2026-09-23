@@ -19,7 +19,7 @@ import { assembleRegister } from './registerProjection.js';
 export { assembleRegister };
 
 /** Read the live graph for an org and assemble the register. */
-export async function buildRegister(organizationId) {
+export async function buildRegister(organizationId: string) {
   const [legalEntities, businessFunctions, ictServices, arrangements, providerNodes, edges] =
     await Promise.all([
       legalEntityRepository.listByOrg(organizationId),
@@ -33,12 +33,18 @@ export async function buildRegister(organizationId) {
   // Best-effort assessment status: assessments are workspace-scoped (not yet arrangement-linked,
   // RTV-30/40). Resolve the latest complete assessment for any provider node backed by a workspace;
   // otherwise the status stays null and shows as a gap.
-  const workspaceIds = [...new Set(providerNodes.map((p) => p.workspaceId).filter(Boolean))];
-  let assessmentByWorkspace = {};
+  const workspaceIds = [
+    ...new Set(
+      (providerNodes as Array<Record<string, unknown>>).map((p) => p.workspaceId).filter(Boolean)
+    ),
+  ].map(String);
+  let assessmentByWorkspace: Record<string, Record<string, unknown>> = {};
   if (workspaceIds.length) {
     try {
       const latest = await assessmentRepository.latestCompleteByWorkspaces(workspaceIds);
-      assessmentByWorkspace = Object.fromEntries(latest.map((a) => [String(a.workspaceId), a]));
+      assessmentByWorkspace = Object.fromEntries(
+        (latest as Array<Record<string, unknown>>).map((a) => [String(a.workspaceId), a])
+      );
     } catch {
       assessmentByWorkspace = {}; // non-fatal — the register must still generate
     }

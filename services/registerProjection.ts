@@ -14,15 +14,37 @@ import {
   RT0201_TEMPLATE_ORDER,
 } from '../config/register/rt0201FieldMap.js';
 
-const byId = (rows) => new Map((rows || []).map((r) => [String(r.id), r]));
+type Row = Record<string, unknown>;
+type NodeRef = { name?: unknown } | null | undefined;
+interface EdgeRow {
+  parent?: NodeRef;
+  child?: NodeRef;
+  relationship?: unknown;
+  confirmed?: unknown;
+}
+interface AssessmentSummary {
+  status?: string;
+  results?: { overallRisk?: string };
+}
+interface Graph {
+  legalEntities?: Row[];
+  businessFunctions?: Row[];
+  ictServices?: Row[];
+  arrangements?: Row[];
+  providerNodes?: Row[];
+  edges?: EdgeRow[];
+  assessmentByWorkspace?: Record<string, AssessmentSummary>;
+}
+
+const byId = (rows?: Row[]): Map<string, Row> =>
+  new Map((rows || []).map((r) => [String(r.id), r]));
 
 /**
- * Assemble the register from a flat graph (pure). `graph`:
+ * Assemble the register from a flat graph (pure):
  *   { legalEntities, businessFunctions, ictServices, arrangements, providerNodes,
  *     edges, assessmentByWorkspace }
- * @returns {{version:string, templates:Record<string,object[]>, gaps:object[]}}
  */
-export function assembleRegister(graph) {
+export function assembleRegister(graph?: Graph) {
   const {
     legalEntities = [],
     businessFunctions = [],
@@ -39,7 +61,7 @@ export function assembleRegister(graph) {
   const providerMap = byId(providerNodes);
 
   // ── B_01: one row per legal entity ──────────────────────────────────────────
-  const b01 = legalEntities.map((e) => ({
+  const b01 = legalEntities.map((e: Row) => ({
     lei: e.lei,
     name: e.name,
     country: e.country,
@@ -49,13 +71,13 @@ export function assembleRegister(graph) {
   }));
 
   // ── B_02: one row per arrangement (the fact) ────────────────────────────────
-  const assessmentStatusFor = (provider) => {
+  const assessmentStatusFor = (provider?: Row) => {
     const wsId = provider?.workspaceId ? String(provider.workspaceId) : null;
     const a = wsId ? assessmentByWorkspace[wsId] : null;
     return a?.status ?? a?.results?.overallRisk ?? null;
   };
 
-  const b02 = arrangements.map((a) => {
+  const b02 = arrangements.map((a: Row) => {
     const entity = entityMap.get(String(a.legalEntityId));
     const fn = functionMap.get(String(a.businessFunctionId));
     const provider = providerMap.get(String(a.providerId));
@@ -84,7 +106,7 @@ export function assembleRegister(graph) {
   const b03 = b02.filter((r) => r._isIntraGroup);
 
   // ── B_05: one row per provider identity ─────────────────────────────────────
-  const b05 = providerNodes.map((p) => ({
+  const b05 = providerNodes.map((p: Row) => ({
     lei: p.lei,
     name: p.displayName,
     country: p.country ?? null, // provider_nodes carries no country yet → gap (AC-4)
@@ -93,7 +115,7 @@ export function assembleRegister(graph) {
   }));
 
   // ── subcontracting: one row per provider→subcontractor edge ──────────────────
-  const sub = edges.map((e) => ({
+  const sub = edges.map((e: EdgeRow) => ({
     providerName: e.parent?.name ?? null,
     subcontractorName: e.child?.name ?? null,
     relationship: e.relationship ?? null,
@@ -104,8 +126,8 @@ export function assembleRegister(graph) {
   const templates = { B_01: b01, B_02: b02, B_03: b03, B_05: b05, subcontracting: sub };
 
   // ── gaps: required field with a null/empty source (AC-4) ─────────────────────
-  const gaps = [];
-  for (const key of RT0201_TEMPLATE_ORDER) {
+  const gaps: Array<Record<string, unknown>> = [];
+  for (const key of RT0201_TEMPLATE_ORDER as Array<keyof typeof templates>) {
     const def = RT0201_TEMPLATES[key];
     for (const row of templates[key]) {
       for (const col of def.columns) {

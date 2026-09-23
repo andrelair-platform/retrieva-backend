@@ -1,5 +1,5 @@
 {
-  "// note": "Incremental strict gate (RTV-22..25). `strict:true` is enforced on the converted files listed in `include`; `allowJs:true` lets them still import not-yet-converted `.js` at the boundary (as loose types). Each conversion slice adds its files here; RTV-25 flips `allowJs:false`, folds this into the base tsconfig, and deletes this file. `npm run typecheck:strict` runs it; CI blocks on it. (db/tenantContext.ts + the repository subclasses are the next slice.)",
+  "// note": "Incremental strict gate (RTV-22..25). `strict:true` is enforced on the converted files listed in `include`; `allowJs:true` lets them still import not-yet-converted `.js` at the boundary (as loose types). Each conversion slice adds its files here; RTV-25 flips `allowJs:false`, folds this into the base tsconfig, and deletes this file. `npm run typecheck:strict` runs it; CI blocks on it. (RTV-24 = the rest of services/ + workers/ + config/ + utils/.)",
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "strict": true,
@@ -7,6 +7,16 @@
     "checkJs": false,
     "noEmit": true
   },
-  "include": ["db/**/*.ts", "repositories/**/*.ts", "types/**/*.d.ts"],
+  "include": [
+    "db/**/*.ts",
+    "repositories/**/*.ts",
+    "types/**/*.d.ts",
+    "services/lifecycle/**/*.ts",
+    "services/security/**/*.ts",
+    "services/registerProjection.ts",
+    "services/registerProjectionService.ts",
+    "services/assessment/verdict.ts",
+    "config/authz/**/*.ts"
+  ],
   "exclude": ["node_modules", "dist", "coverage", "tests", "website", "seeds", "data"]
 }

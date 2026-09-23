@@ -19,40 +19,55 @@ export const VERDICTS = [
 // Verdicts a judge may return when evidence is present (insufficient_evidence is engine-only).
 const JUDGE_VERDICTS = ['compliant', 'partial', 'non_compliant', 'not_applicable'];
 
+type RowLike = Record<string, unknown>;
+interface Span {
+  source: string;
+  snippet: string;
+}
+interface Control {
+  id?: string;
+  expectedEvidenceTypes?: string[];
+}
+interface Gathered {
+  spans?: Span[];
+  searched?: unknown[];
+  evidenceRecords?: unknown[];
+  coveredEvidenceTypes?: string[];
+}
+interface JudgeResult {
+  verdict: string;
+  rationale?: string;
+  citedIndices?: number[];
+}
+type Judge = (control: Control, spans: Span[]) => Promise<JudgeResult>;
+
 /**
  * RTV-32 change signal — flag each finding `stale` when the arrangement's evidence changed AFTER the
  * finding was last assessed (its verdict is out of date). Pure. `updatedAt` on a finding is its last
  * assessment time (upsert bumps it); on evidence it's the last change time.
- * @returns {{findings: object[], staleCount: number}}
  */
-export function markFindingStaleness(findings = [], evidence = []) {
+export function markFindingStaleness(findings: RowLike[] = [], evidence: RowLike[] = []) {
   const latestEvidence = evidence.reduce(
-    (max, e) => Math.max(max, new Date(e.updatedAt || e.createdAt).getTime()),
+    (max, e) => Math.max(max, new Date((e.updatedAt || e.createdAt) as string).getTime()),
     0
   );
   const list = findings.map((f) => ({
     ...f,
-    stale: latestEvidence > new Date(f.updatedAt).getTime(),
+    stale: latestEvidence > new Date(f.updatedAt as string).getTime(),
   }));
   return { findings: list, staleCount: list.filter((f) => f.stale).length };
 }
 
 /** Coverage-derived confidence (§5: not the LLM's self-report). covered / expected, clamped 0..1. */
-export function coverageConfidence(control, coveredEvidenceTypes = []) {
+export function coverageConfidence(control: Control, coveredEvidenceTypes: string[] = []) {
   const expected = control.expectedEvidenceTypes?.length || 0;
   if (expected === 0) return coveredEvidenceTypes.length > 0 ? 1 : 0;
   const covered = new Set(coveredEvidenceTypes).size;
   return Math.max(0, Math.min(1, covered / expected));
 }
 
-/**
- * Decide the verdict for one control given the gathered evidence + an injected judge.
- * @param {{id:string, expectedEvidenceTypes:string[]}} control
- * @param {{spans?:Array<{source:string,snippet:string}>, searched?:any[], evidenceRecords?:any[], coveredEvidenceTypes?:string[]}} gathered
- * @param {(control:object, spans:object[]) => Promise<{verdict:string, rationale?:string, citedIndices?:number[]}>} llmJudge
- * @returns {Promise<{verdict:string, rationale:string, citations:object[], searched:any[], confidence:number}>}
- */
-export async function assessControl(control, gathered = {}, llmJudge) {
+/** Decide the verdict for one control given the gathered evidence + an injected judge. */
+export async function assessControl(control: Control, gathered: Gathered = {}, llmJudge: Judge) {
   const spans = gathered.spans || [];
   const searched = gathered.searched || [];
   const evidenceRecords = gathered.evidenceRecords || [];
@@ -72,7 +87,7 @@ export async function assessControl(control, gathered = {}, llmJudge) {
   }
 
   // ── evidence present → the judge grades it, grounded ONLY in the provided spans ──
-  let judged;
+  let judged: JudgeResult | null = null;
   try {
     judged = await llmJudge(control, spans);
   } catch {
@@ -94,14 +109,14 @@ export async function assessControl(control, gathered = {}, llmJudge) {
   }
 
   // map cited span indices → citation objects; default to all provided spans if none cited.
+  // (verdict !== insufficient_evidence ⇒ judged is a valid result here.)
+  const idx = judged!.citedIndices;
   const cited =
-    Array.isArray(judged.citedIndices) && judged.citedIndices.length
-      ? judged.citedIndices.map((i) => spans[i]).filter(Boolean)
-      : spans;
+    Array.isArray(idx) && idx.length ? idx.map((i) => spans[i]).filter(Boolean) : spans;
 
   return {
     verdict,
-    rationale: judged.rationale || '',
+    rationale: judged!.rationale || '',
     citations: cited,
     searched,
     confidence: coverageConfidence(control, gathered.coveredEvidenceTypes),
