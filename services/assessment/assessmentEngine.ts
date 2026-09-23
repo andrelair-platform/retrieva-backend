@@ -28,9 +28,20 @@ import { makeVerdictJudge } from './verdictLlm.js';
  * @param {{organizationId:string, arrangementId:string, userId?:string}} ctx
  * @param {{retriever?:{gatherEvidence:Function}, llmJudge?:Function}} [deps]
  */
+interface AssessDeps {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable retriever + judge (real orchestration, stubbed in tests)
+  retriever?: { gatherEvidence: (control: any, arrangement: any) => Promise<any> };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable judge fn
+  llmJudge?: (...args: any[]) => Promise<any>;
+}
+
 export async function assessArrangement(
-  { organizationId, arrangementId, userId = null },
-  deps = {}
+  {
+    organizationId,
+    arrangementId,
+    userId = null,
+  }: { organizationId: string; arrangementId: string; userId?: string | null },
+  deps: AssessDeps = {}
 ) {
   const arrangement = await arrangementRepository.findByIdInOrg(organizationId, arrangementId);
   if (!arrangement)
@@ -54,9 +65,10 @@ export async function assessArrangement(
     metadata: { libraryVersion, cif, controlCount: controls.length },
   });
 
-  const breakdown = {};
+  const breakdown: Record<string, number> = {};
   const findings = [];
-  for (const control of controls) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- controls are heterogeneous library entries
+  for (const control of controls as Array<Record<string, any>>) {
     const gathered = await retriever.gatherEvidence(control, arrangement);
     const decided = await assessControl(control, gathered, llmJudge);
     breakdown[decided.verdict] = (breakdown[decided.verdict] || 0) + 1;
@@ -66,7 +78,12 @@ export async function assessArrangement(
       arrangementId,
       controlId: control.id,
       libraryVersion,
-      verdict: decided.verdict,
+      verdict: decided.verdict as
+        | 'compliant'
+        | 'partial'
+        | 'non_compliant'
+        | 'insufficient_evidence'
+        | 'not_applicable',
       rationale: decided.rationale,
       citations: decided.citations,
       searched: decided.searched,

@@ -17,8 +17,9 @@ import {
  *   judge calls under the assessment run.
  * @returns {(control:object, spans:object[]) => Promise<{verdict:string, rationale:string, citedIndices:number[]}>}
  */
-export function makeVerdictJudge(ctx = {}) {
-  return async function llmJudge(control, spans) {
+export function makeVerdictJudge(ctx: { sessionId?: string } = {}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- control + evidence spans are heterogeneous domain objects
+  return async function llmJudge(control: any, spans: any[]) {
     const llm = await createLLM({ purpose: 'judge', temperature: 0, maxTokens: 1024 });
     const callbacks = getCallbacks({ feature: 'assessment-verdict', sessionId: ctx.sessionId });
     const response = await llm.invoke(

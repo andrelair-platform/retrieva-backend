@@ -22,8 +22,10 @@ export const COMPLIANCE_KB_COLLECTION = 'compliance_kb';
 const QDRANT_URL = process.env.QDRANT_URL || 'http://localhost:6333';
 const QDRANT_API_KEY = process.env.QDRANT_API_KEY;
 
-let cachedStore = null;
-let cachedStorePromise = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain vector store
+let cachedStore: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- lazy-init promise for the vector store
+let cachedStorePromise: any = null;
 
 /**
  * Lazy-init the QdrantVectorStore for the compliance_kb collection.
@@ -48,7 +50,7 @@ async function getComplianceKbStore(embeddings = defaultEmbeddings) {
       logger.warn('compliance_kb collection unavailable — regulation retrieval disabled', {
         service: 'compliance-kb-retriever',
         collection: COMPLIANCE_KB_COLLECTION,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
       return null;
     } finally {
@@ -62,7 +64,7 @@ async function getComplianceKbStore(embeddings = defaultEmbeddings) {
 // EUR-Lex CELEX identifiers for the regulations in the KB. DORA-RTS spans
 // several delegated acts with no single reliable CELEX, so it gets no direct
 // link (better no link than a misleading one).
-const CELEX_BY_REGULATION = { DORA: '32022R2554' };
+const CELEX_BY_REGULATION: Record<string, string> = { DORA: '32022R2554' };
 
 /**
  * Official EUR-Lex source URL for a regulation, in the user's language (#424).
@@ -70,7 +72,7 @@ const CELEX_BY_REGULATION = { DORA: '32022R2554' };
  * link to the official French DORA text. Returns undefined when we have no
  * reliable CELEX for that regulation.
  */
-export function eurLexUrl(regulation, lang) {
+export function eurLexUrl(regulation: string, lang?: string) {
   const celex = CELEX_BY_REGULATION[regulation];
   if (!celex) return undefined;
   const langCode = String(lang || 'en')
@@ -85,7 +87,8 @@ export function eurLexUrl(regulation, lang) {
  * Map a raw compliance_kb document to the shape the RAG context formatter
  * expects, so citations render as the article number rather than "Untitled".
  */
-function adaptRegulationDoc(doc, lang) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous KB document
+function adaptRegulationDoc(doc: any, lang?: string) {
   const meta = doc.metadata || {};
   const regulation = meta.regulation || 'Regulation';
   const article = meta.article || '';
@@ -112,7 +115,8 @@ function adaptRegulationDoc(doc, lang) {
 }
 
 // Qdrant similarity search restricted to one language of the KB.
-function searchByLang(store, query, k, lang) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain vector store
+function searchByLang(store: any, query: string, k: number, lang: string) {
   return store.similaritySearch(query, k, {
     must: [{ key: 'metadata.lang', match: { value: lang } }],
   });
@@ -127,7 +131,7 @@ function searchByLang(store, query, k, lang) {
  * @param {number} [k=5]
  * @returns {Promise<Array<{pageContent: string, metadata: object}>>}
  */
-export async function retrieveRegulationDocs(query, k = 5, lang = 'en') {
+export async function retrieveRegulationDocs(query: string, k = 5, lang = 'en') {
   if (!query || typeof query !== 'string') return [];
 
   const store = await getComplianceKbStore();
@@ -149,11 +153,11 @@ export async function retrieveRegulationDocs(query, k = 5, lang = 'en') {
     if (docs.length === 0) {
       docs = await store.similaritySearch(query, k);
     }
-    return docs.map((doc) => adaptRegulationDoc(doc, primaryLang));
+    return docs.map((doc: unknown) => adaptRegulationDoc(doc, primaryLang));
   } catch (error) {
     logger.warn('compliance_kb similarity search failed', {
       service: 'compliance-kb-retriever',
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     });
     return [];
   }

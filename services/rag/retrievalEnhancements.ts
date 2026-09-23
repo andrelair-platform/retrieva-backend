@@ -6,6 +6,8 @@
  * @module services/rag/retrievalEnhancements
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- retrieval enhancement runs over LangChain
+   chains + LLM output + heterogeneous RAG doc payloads; the intermediate shapes are untyped. */
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { createHash } from 'crypto';
@@ -48,10 +50,10 @@ import logger from '../../config/logger.js';
  */
 
 // Chains are initialized lazily
-let queryExpansionChain = null;
-let hydeChain = null;
-let compressionChain = null;
-let cachedLLM = null;
+let queryExpansionChain: any = null;
+let hydeChain: any = null;
+let compressionChain: any = null;
+let cachedLLM: any = null;
 
 /**
  * Get the LLM instance (cached after first fetch)
@@ -76,6 +78,10 @@ class ExpansionCache {
    * @param {number} [maxSize=500] - Maximum number of entries
    * @param {number} [ttlMs=300000] - Time-to-live in milliseconds (default 5 min)
    */
+  cache: Map<string, { value: any; timestamp: number }>;
+  maxSize: number;
+  ttlMs: number;
+
   constructor(maxSize = 500, ttlMs = 5 * 60 * 1000) {
     // 5 minute TTL
     this.cache = new Map();
@@ -89,7 +95,7 @@ class ExpansionCache {
    * @returns {string} 16-character hash
    * @private
    */
-  _hash(key) {
+  _hash(key: string) {
     return createHash('sha256').update(key.toLowerCase().trim()).digest('hex').substring(0, 16);
   }
 
@@ -98,7 +104,7 @@ class ExpansionCache {
    * @param {string} key - Cache key
    * @returns {*|null} Cached value or null if not found/expired
    */
-  get(key) {
+  get(key: string) {
     const hash = this._hash(key);
     const entry = this.cache.get(hash);
 
@@ -122,13 +128,13 @@ class ExpansionCache {
    * @param {string} key - Cache key
    * @param {*} value - Value to cache
    */
-  set(key, value) {
+  set(key: string, value: any) {
     const hash = this._hash(key);
 
     // Evict oldest entries if at capacity
     if (this.cache.size >= this.maxSize) {
       const firstKey = this.cache.keys().next().value;
-      this.cache.delete(firstKey);
+      if (firstKey !== undefined) this.cache.delete(firstKey);
     }
 
     this.cache.set(hash, {
@@ -281,7 +287,7 @@ export function clearExpansionCaches() {
  * @param {string} query - Original query
  * @returns {Promise<string[]>} Array of query variations (original + alternatives, max 3)
  */
-export async function expandQuery(query) {
+export async function expandQuery(query: string) {
   // Check cache first
   const cached = queryExpansionCache.get(query);
   if (cached) {
@@ -297,8 +303,8 @@ export async function expandQuery(query) {
     const alternativeQs = await chain.invoke({ question: query });
     const variations = alternativeQs
       .split('\n')
-      .map((q) => q.trim())
-      .filter((q) => q.length > 0 && !q.match(/^(Alternative|Question|\d+\.)/));
+      .map((q: string) => q.trim())
+      .filter((q: string) => q.length > 0 && !q.match(/^(Alternative|Question|\d+\.)/));
 
     const allQueries = [query, ...variations].slice(0, 3); // Original + top 2 alternatives
 
@@ -316,7 +322,7 @@ export async function expandQuery(query) {
   } catch (error) {
     logger.warn('Query expansion failed, using original query', {
       service: 'rag',
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     });
     return [query];
   }
@@ -329,7 +335,7 @@ export async function expandQuery(query) {
  * @param {string} query - Original query
  * @returns {Promise<string>} - Hypothetical answer
  */
-export async function generateHypotheticalDocument(query) {
+export async function generateHypotheticalDocument(query: string) {
   // Check cache first
   const cached = hydeCache.get(query);
   if (cached) {
@@ -357,7 +363,7 @@ export async function generateHypotheticalDocument(query) {
   } catch (error) {
     logger.warn('HyDE generation failed, using original query', {
       service: 'rag',
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     });
     return query;
   }
@@ -371,7 +377,7 @@ export async function generateHypotheticalDocument(query) {
  * @param {string} query - User query for relevance filtering
  * @returns {Promise<Document[]>} Compressed documents with metadata about compression
  */
-export async function compressDocuments(docs, query) {
+export async function compressDocuments(docs: any[], query: string) {
   // Patterns that indicate LLM returned a disclaimer instead of actual extracted content
   const LLM_DISCLAIMER_PATTERNS = [
     /trained on data/i,
@@ -385,7 +391,7 @@ export async function compressDocuments(docs, query) {
   /**
    * Check if compressed content is a valid extraction (not an LLM disclaimer)
    */
-  function isValidCompression(compressed, original) {
+  function isValidCompression(compressed: string, original: string) {
     if (!compressed || compressed.trim().length < 20) return false;
     // Reject LLM disclaimers
     if (LLM_DISCLAIMER_PATTERNS.some((p) => p.test(compressed))) return false;
@@ -397,7 +403,7 @@ export async function compressDocuments(docs, query) {
   try {
     const chain = await initCompressionChain();
     const compressedDocs = await Promise.all(
-      docs.slice(0, 5).map(async (doc) => {
+      docs.slice(0, 5).map(async (doc: any) => {
         // Only compress top 5 to save time
         const originalContent = doc.pageContent;
 
@@ -426,7 +432,7 @@ export async function compressDocuments(docs, query) {
         } catch (err) {
           logger.debug('Compression failed for document, using original', {
             service: 'rag',
-            error: err.message,
+            error: err instanceof Error ? err.message : String(err),
           });
           return {
             ...doc,
@@ -441,9 +447,9 @@ export async function compressDocuments(docs, query) {
 
     const compressionStats = {
       totalDocs: compressedDocs.length,
-      compressed: compressedDocs.filter((d) => d.metadata?.compressed).length,
+      compressed: compressedDocs.filter((d: any) => d.metadata?.compressed).length,
       avgReduction:
-        compressedDocs.reduce((sum, d) => {
+        compressedDocs.reduce((sum: number, d: any) => {
           if (d.metadata?.compressed) {
             return (
               sum +
@@ -453,7 +459,7 @@ export async function compressDocuments(docs, query) {
             );
           }
           return sum;
-        }, 0) / compressedDocs.filter((d) => d.metadata?.compressed).length || 0,
+        }, 0) / compressedDocs.filter((d: any) => d.metadata?.compressed).length || 0,
     };
 
     logger.info('Contextual compression applied', {
@@ -466,7 +472,7 @@ export async function compressDocuments(docs, query) {
   } catch (error) {
     logger.warn('Contextual compression failed, using original docs', {
       service: 'rag',
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     });
     return docs;
   }

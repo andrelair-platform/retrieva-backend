@@ -7,6 +7,13 @@
 import logger from '../../config/logger.js';
 import { normalizeText, calculateTitleSimilarity, calculateHeadingPathSimilarity } from '../../utils/rag/textNormalization.js';
 
+interface DocLike {
+  pageContent: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous RAG doc metadata
+  metadata?: Record<string, any>;
+  rrfScore?: number;
+}
+
 /**
  * @typedef {Object} DocumentMetadata
  * @property {number} [score] - Semantic similarity score
@@ -61,8 +68,8 @@ const RRF_K = 60; // RRF constant (standard value from research)
  * @param {Document[]} docs - Retrieved documents
  * @returns {Map<string, number>} term → number of docs containing it
  */
-export function buildDocFrequencyMap(docs) {
-  const dfMap = new Map();
+export function buildDocFrequencyMap(docs: DocLike[]) {
+  const dfMap = new Map<string, number>();
   for (const doc of docs) {
     const uniqueTerms = new Set(normalizeText(doc.pageContent).split(/\s+/));
     for (const term of uniqueTerms) {
@@ -81,7 +88,13 @@ export function buildDocFrequencyMap(docs) {
  * @param {number} [totalDocs] - Total documents in the set
  * @returns {number} - BM25 score
  */
-export function calculateBM25Score(query, document, avgDocLength = 800, dfMap = null, totalDocs = 1) {
+export function calculateBM25Score(
+  query: string,
+  document: string,
+  avgDocLength = 800,
+  dfMap: Map<string, number> | null = null,
+  totalDocs = 1
+) {
   const queryTerms = normalizeText(query).split(/\s+/);
   const docTerms = normalizeText(document).split(/\s+/);
   const docLength = docTerms.length;
@@ -109,7 +122,7 @@ export function calculateBM25Score(query, document, avgDocLength = 800, dfMap = 
  * @returns {string} Unique identifier based on content prefix
  * @private
  */
-function getDocId(doc) {
+function getDocId(doc: DocLike) {
   return doc.pageContent.substring(0, 100);
 }
 
@@ -122,7 +135,7 @@ function getDocId(doc) {
  * @param {number} [topK=5] - Number of top documents to return
  * @returns {RankedDocument[]} Top K re-ranked documents with scoring details
  */
-export function rerankDocuments(docs, query, topK = 5) {
+export function rerankDocuments(docs: DocLike[], query: string, topK = 5) {
   if (!docs || docs.length === 0) return [];
 
   const avgDocLength =
@@ -311,7 +324,7 @@ export function rerankDocuments(docs, query, topK = 5) {
  * @param {number} [topK=5] - Number of top documents to return
  * @returns {RankedDocument[]} Top K re-ranked documents
  */
-export function rerankDocumentsWeighted(docs, query, topK = 5) {
+export function rerankDocumentsWeighted(docs: DocLike[], query: string, topK = 5) {
   const avgDocLength =
     docs.reduce((sum, doc) => sum + doc.pageContent.split(/\s+/).length, 0) / docs.length;
   const dfMap = buildDocFrequencyMap(docs);

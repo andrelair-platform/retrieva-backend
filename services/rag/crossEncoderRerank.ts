@@ -13,10 +13,25 @@
  * @module services/rag/crossEncoderRerank
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- reranking works over untyped provider-API
+   responses (Cohere/Azure) and LLM output; the doc shapes are heterogeneous RAG payloads. */
 import logger from '../../config/logger.js';
 import { createLLM } from '../../config/llm.js';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
+
+interface DocLike {
+  pageContent: string;
+  metadata?: Record<string, any>;
+  rerankScore?: number;
+}
+
+interface RerankOptions {
+  topN?: number;
+  minScore?: number;
+  crossEncoderTopK?: number;
+  finalTopK?: number;
+}
 
 /**
  * Re-ranking provider configuration
@@ -29,15 +44,15 @@ export const RERANK_CONFIG = {
   // Model for re-ranking
   cohereModel: process.env.COHERE_RERANK_MODEL || 'rerank-english-v3.0',
   // Number of top documents to return after re-ranking
-  topN: parseInt(process.env.RERANK_TOP_N) || 5,
+  topN: parseInt(process.env.RERANK_TOP_N || '', 10) || 5,
   // Enable/disable re-ranking
   enabled: process.env.ENABLE_CROSS_ENCODER_RERANK === 'true',
   // Minimum score threshold (provider-specific)
-  minScore: parseFloat(process.env.RERANK_MIN_SCORE) || 0.1,
+  minScore: parseFloat(process.env.RERANK_MIN_SCORE || '') || 0.1,
   // Request timeout in ms
-  timeout: parseInt(process.env.RERANK_TIMEOUT) || 10000,
+  timeout: parseInt(process.env.RERANK_TIMEOUT || '', 10) || 10000,
   // Cache results (TTL in seconds)
-  cacheTTL: parseInt(process.env.RERANK_CACHE_TTL) || 300,
+  cacheTTL: parseInt(process.env.RERANK_CACHE_TTL || '', 10) || 300,
 };
 
 /**
@@ -52,17 +67,21 @@ export const RERANK_CONFIG = {
  * Simple LRU cache for re-ranking results
  */
 class RerankCache {
+  cache: Map<string, { result: any; timestamp: number }>;
+  maxSize: number;
+  ttlMs: number;
+
   constructor(maxSize = 100, ttlMs = 300000) {
     this.cache = new Map();
     this.maxSize = maxSize;
     this.ttlMs = ttlMs;
   }
 
-  _generateKey(query, docIds) {
+  _generateKey(query: string, docIds: string[]) {
     return `${query.substring(0, 100)}_${docIds.slice(0, 5).join(',')}`;
   }
 
-  get(query, documents) {
+  get(query: string, documents: DocLike[]) {
     const docIds = documents.map((d) => d.pageContent.substring(0, 50));
     const key = this._generateKey(query, docIds);
     const cached = this.cache.get(key);
@@ -74,14 +93,14 @@ class RerankCache {
     return null;
   }
 
-  set(query, documents, result) {
+  set(query: string, documents: DocLike[], result: any) {
     const docIds = documents.map((d) => d.pageContent.substring(0, 50));
     const key = this._generateKey(query, docIds);
 
     // Evict oldest if at capacity
     if (this.cache.size >= this.maxSize) {
       const oldestKey = this.cache.keys().next().value;
-      this.cache.delete(oldestKey);
+      if (oldestKey !== undefined) this.cache.delete(oldestKey);
     }
 
     this.cache.set(key, { result, timestamp: Date.now() });
@@ -98,7 +117,7 @@ const rerankCache = new RerankCache(100, RERANK_CONFIG.cacheTTL * 1000);
  * @param {Object} options - Re-ranking options
  * @returns {Promise<RerankResult>} Re-ranked documents
  */
-async function rerankWithCohere(query, documents, options = {}) {
+async function rerankWithCohere(query: string, documents: DocLike[], options: RerankOptions = {}) {
   const { topN = RERANK_CONFIG.topN, minScore = RERANK_CONFIG.minScore } = options;
 
   if (!RERANK_CONFIG.cohereApiKey) {
@@ -133,8 +152,8 @@ async function rerankWithCohere(query, documents, options = {}) {
 
     // Map results back to original documents with scores
     const rerankedDocs = data.results
-      .filter((r) => r.relevance_score >= minScore)
-      .map((r) => ({
+      .filter((r: any) => r.relevance_score >= minScore)
+      .map((r: any) => ({
         ...documents[r.index],
         rerankScore: r.relevance_score,
         rerankRank: r.index + 1,
@@ -162,7 +181,7 @@ async function rerankWithCohere(query, documents, options = {}) {
   } catch (error) {
     logger.error('Cohere re-ranking failed', {
       service: 'cross-encoder',
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     });
     throw error;
   }
@@ -205,7 +224,7 @@ Rate the relevance (0-10):`,
  * @param {Object} options - Re-ranking options
  * @returns {Promise<RerankResult>} Re-ranked documents
  */
-async function rerankWithLLM(query, documents, options = {}) {
+async function rerankWithLLM(query: string, documents: DocLike[], options: RerankOptions = {}) {
   const { topN = RERANK_CONFIG.topN, minScore = RERANK_CONFIG.minScore } = options;
 
   const startTime = Date.now();
@@ -221,7 +240,7 @@ async function rerankWithLLM(query, documents, options = {}) {
   for (let i = 0; i < documents.length; i += BATCH_SIZE) {
     const batch = documents.slice(i, i + BATCH_SIZE);
     const batchResults = await Promise.all(
-      batch.map(async (doc, batchIndex) => {
+      batch.map(async (doc: DocLike, batchIndex: number) => {
         try {
           const response = await chain.invoke({
             query,
@@ -242,7 +261,7 @@ async function rerankWithLLM(query, documents, options = {}) {
           logger.debug('Failed to parse LLM rerank response', {
             service: 'cross-encoder',
             index: i + batchIndex,
-            error: parseError.message,
+            error: parseError instanceof Error ? parseError.message : String(parseError),
           });
         }
         return { doc, score: 0.5, reason: 'Parse error - default score' };
@@ -294,7 +313,11 @@ async function rerankWithLLM(query, documents, options = {}) {
  * @param {Object} options - Re-ranking options
  * @returns {Promise<RerankResult>} Re-ranked documents
  */
-export async function crossEncoderRerank(query, documents, options = {}) {
+export async function crossEncoderRerank(
+  query: string,
+  documents: DocLike[],
+  options: RerankOptions = {}
+) {
   // Check if re-ranking is enabled
   if (!RERANK_CONFIG.enabled) {
     return {
@@ -338,7 +361,7 @@ export async function crossEncoderRerank(query, documents, options = {}) {
       default:
         // No re-ranking, return documents as-is with normalized structure
         result = {
-          documents: documents.map((doc, i) => ({
+          documents: documents.map((doc: DocLike, i: number) => ({
             ...doc,
             rerankScore: doc.metadata?.score || 1 / (i + 1),
             rerankRank: i + 1,
@@ -354,15 +377,16 @@ export async function crossEncoderRerank(query, documents, options = {}) {
 
     return result;
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     logger.error('Cross-encoder re-ranking failed, falling back to original order', {
       service: 'cross-encoder',
       provider: RERANK_CONFIG.provider,
-      error: error.message,
+      error: message,
     });
 
     // Graceful fallback - return original documents
     return {
-      documents: documents.map((doc, i) => ({
+      documents: documents.map((doc: DocLike, i: number) => ({
         ...doc,
         rerankScore: doc.metadata?.score || 1 / (i + 1),
         rerankRank: i + 1,
@@ -370,7 +394,7 @@ export async function crossEncoderRerank(query, documents, options = {}) {
       provider: 'fallback',
       processingTimeMs: 0,
       success: false,
-      error: error.message,
+      error: message,
     };
   }
 }
@@ -398,7 +422,7 @@ export function getRerankStatus() {
  * @param {Object} options - Options
  * @returns {Promise<Object[]>} Final re-ranked documents
  */
-export async function hybridRerank(rrfRankedDocs, query, options = {}) {
+export async function hybridRerank(rrfRankedDocs: any[], query: string, options: RerankOptions = {}) {
   const { crossEncoderTopK = 15, finalTopK = 5 } = options;
 
   // Take top K from RRF for cross-encoder re-ranking
@@ -411,9 +435,9 @@ export async function hybridRerank(rrfRankedDocs, query, options = {}) {
   });
 
   // Merge scores: combine RRF rank with cross-encoder score
-  const finalDocs = result.documents.map((doc) => {
+  const finalDocs = result.documents.map((doc: any) => {
     const rrfDoc = rrfRankedDocs.find(
-      (d) => d.pageContent.substring(0, 100) === doc.pageContent.substring(0, 100)
+      (d: any) => d.pageContent.substring(0, 100) === doc.pageContent.substring(0, 100)
     );
     return {
       ...doc,
@@ -424,7 +448,7 @@ export async function hybridRerank(rrfRankedDocs, query, options = {}) {
   });
 
   // Re-sort by combined score
-  finalDocs.sort((a, b) => b.combinedScore - a.combinedScore);
+  finalDocs.sort((a: any, b: any) => b.combinedScore - a.combinedScore);
 
   return finalDocs;
 }

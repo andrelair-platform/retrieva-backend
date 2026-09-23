@@ -4,6 +4,8 @@
  * @module services/rag/queryRetrieval
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- retrieval works over dynamic user filters,
+   Qdrant filter clauses, and external retriever/vector-store instances (all heterogeneous). */
 import { expandQuery, generateHypotheticalDocument } from './retrievalEnhancements.js';
 import { deduplicateDocuments } from '../../utils/rag/contextFormatter.js';
 
@@ -121,7 +123,7 @@ const FILTER_LIMITS = {
  * @returns {FilterValidationResult} Validation result with sanitized value or error
  * @private
  */
-function validateFilterValue(type, value) {
+function validateFilterValue(type: string, value: any) {
   switch (type) {
     case 'page': {
       const page = parseInt(value, 10);
@@ -197,7 +199,7 @@ function validateFilterValue(type, value) {
       if (from > to) {
         return { valid: false, error: 'Date range from cannot be after to' };
       }
-      const daysDiff = (to - from) / (1000 * 60 * 60 * 24);
+      const daysDiff = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24);
       if (daysDiff > FILTER_LIMITS.dateRange.maxSpanDays) {
         return {
           valid: false,
@@ -314,14 +316,14 @@ function validateFilterValue(type, value) {
  * @returns {QdrantFilter} Qdrant filter object (always includes workspaceId)
  * @throws {Error} If workspaceId is missing or filter validation fails
  */
-export function buildQdrantFilter(filters, workspaceId) {
+export function buildQdrantFilter(filters: any, workspaceId: string) {
   // CRITICAL: workspaceId is REQUIRED for multi-tenant isolation
   if (!workspaceId || typeof workspaceId !== 'string') {
     throw new Error('workspaceId is required for vector store queries (multi-tenant isolation)');
   }
 
-  const qdrantFilter = { must: [] };
-  const errors = [];
+  const qdrantFilter: { must: any[]; should?: any[] } = { must: [] };
+  const errors: string[] = [];
 
   // ALWAYS add workspaceId filter for tenant isolation
   // This ensures queries only return documents from the user's workspace
@@ -336,7 +338,7 @@ export function buildQdrantFilter(filters, workspaceId) {
     if (filters.page !== undefined) {
       const result = validateFilterValue('page', filters.page);
       if (!result.valid) {
-        errors.push(result.error);
+        errors.push(result.error!);
       } else {
         qdrantFilter.must.push({
           key: 'metadata.page',
@@ -349,7 +351,7 @@ export function buildQdrantFilter(filters, workspaceId) {
     if (filters.section !== undefined) {
       const result = validateFilterValue('section', filters.section);
       if (!result.valid) {
-        errors.push(result.error);
+        errors.push(result.error!);
       } else {
         qdrantFilter.must.push({
           key: 'metadata.section',
@@ -362,13 +364,13 @@ export function buildQdrantFilter(filters, workspaceId) {
     if (filters.pageRange !== undefined) {
       const result = validateFilterValue('pageRange', filters.pageRange);
       if (!result.valid) {
-        errors.push(result.error);
+        errors.push(result.error!);
       } else {
         qdrantFilter.must.push({
           key: 'metadata.page',
           range: {
-            gte: result.value.min,
-            lte: result.value.max,
+            gte: (result.value as any).min,
+            lte: (result.value as any).max,
           },
         });
       }
@@ -378,13 +380,13 @@ export function buildQdrantFilter(filters, workspaceId) {
     if (filters.dateRange !== undefined) {
       const result = validateFilterValue('dateRange', filters.dateRange);
       if (!result.valid) {
-        errors.push(result.error);
+        errors.push(result.error!);
       } else {
         qdrantFilter.must.push({
           key: 'metadata.lastModified',
           range: {
-            gte: result.value.from,
-            lte: result.value.to,
+            gte: (result.value as any).from,
+            lte: (result.value as any).to,
           },
         });
       }
@@ -394,7 +396,7 @@ export function buildQdrantFilter(filters, workspaceId) {
     if (filters.author !== undefined) {
       const result = validateFilterValue('author', filters.author);
       if (!result.valid) {
-        errors.push(result.error);
+        errors.push(result.error!);
       } else {
         qdrantFilter.must.push({
           key: 'metadata.author',
@@ -407,7 +409,7 @@ export function buildQdrantFilter(filters, workspaceId) {
     if (filters.documentType !== undefined) {
       const result = validateFilterValue('documentType', filters.documentType);
       if (!result.valid) {
-        errors.push(result.error);
+        errors.push(result.error!);
       } else {
         qdrantFilter.must.push({
           key: 'metadata.documentType',
@@ -420,7 +422,7 @@ export function buildQdrantFilter(filters, workspaceId) {
     if (filters.classification !== undefined) {
       const result = validateFilterValue('classification', filters.classification);
       if (!result.valid) {
-        errors.push(result.error);
+        errors.push(result.error!);
       } else {
         qdrantFilter.must.push({
           key: 'metadata.classification',
@@ -434,10 +436,10 @@ export function buildQdrantFilter(filters, workspaceId) {
     if (filters.classificationLevel !== undefined) {
       const result = validateFilterValue('classificationLevel', filters.classificationLevel);
       if (!result.valid) {
-        errors.push(result.error);
+        errors.push(result.error!);
       } else {
         // Use "should" with minimum_should_match for OR logic
-        const classificationConditions = result.value.map((level) => ({
+        const classificationConditions = (result.value as string[]).map((level) => ({
           key: 'metadata.classification',
           match: { value: level },
         }));
@@ -458,13 +460,13 @@ export function buildQdrantFilter(filters, workspaceId) {
     if (filters.tags !== undefined) {
       const result = validateFilterValue('tags', filters.tags);
       if (!result.valid) {
-        errors.push(result.error);
+        errors.push(result.error!);
       } else {
         // Use "should" for OR logic - document must match at least one tag
         if (!qdrantFilter.should) {
           qdrantFilter.should = [];
         }
-        for (const tag of result.value) {
+        for (const tag of result.value as string[]) {
           qdrantFilter.should.push({
             key: 'metadata.tags',
             match: { value: tag },
@@ -495,11 +497,11 @@ export function buildQdrantFilter(filters, workspaceId) {
  * @returns {Promise<MultiQueryRetrievalResult>} Retrieved documents, queries, and metrics
  */
 export async function performMultiQueryRetrieval(
-  searchQuery,
-  retriever,
-  vectorStore,
-  qdrantFilter,
-  logger
+  searchQuery: string,
+  retriever: any,
+  vectorStore: any,
+  qdrantFilter: any,
+  logger: any
 ) {
   // Multi-query retrieval with query expansion + HyDE
   const queryVariations = await expandQuery(searchQuery);
@@ -508,13 +510,13 @@ export async function performMultiQueryRetrieval(
 
   logger.info(`Expanded query into ${allQueries.length} variations (including HyDE)`, {
     service: 'rag',
-    queries: allQueries.map((q) => q.substring(0, 50) + '...'),
+    queries: allQueries.map((q: string) => q.substring(0, 50) + '...'),
   });
 
   // Retrieve documents for each query variation
-  const allRetrievedDocs = [];
+  const allRetrievedDocs: any[] = [];
   for (const qVariation of allQueries) {
-    let docs;
+    let docs: any;
     if (qdrantFilter) {
       docs = await vectorStore.similaritySearch(qVariation, 15, qdrantFilter);
     } else {
@@ -538,10 +540,12 @@ export async function performMultiQueryRetrieval(
     avgDocLength:
       retrievedDocs.length > 0
         ? Math.round(
-            retrievedDocs.reduce((sum, d) => sum + d.pageContent.length, 0) / retrievedDocs.length
+            retrievedDocs.reduce((sum: number, d: any) => sum + (d.pageContent?.length || 0), 0) /
+              retrievedDocs.length
           )
         : 0,
-    uniquePages: [...new Set(retrievedDocs.map((d) => d.metadata?.page).filter(Boolean))].length,
+    uniquePages: [...new Set(retrievedDocs.map((d: any) => d.metadata?.page).filter(Boolean))]
+      .length,
     filtersApplied: !!qdrantFilter,
   };
 
@@ -569,13 +573,13 @@ export async function performMultiQueryRetrieval(
  * @returns {Promise<Document[]>} Combined unique documents (existing + additional)
  */
 export async function retrieveAdditionalDocuments(
-  allQueries,
-  retriever,
-  vectorStore,
-  qdrantFilter,
-  existingDocs
+  allQueries: string[],
+  retriever: any,
+  vectorStore: any,
+  qdrantFilter: any,
+  existingDocs: any[]
 ) {
-  const additionalDocs = [];
+  const additionalDocs: any[] = [];
 
   for (const qVariation of allQueries.slice(0, 2)) {
     const moreDocs = qdrantFilter

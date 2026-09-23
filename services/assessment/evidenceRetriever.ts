@@ -12,26 +12,31 @@
 import { evidenceRepository } from '../../repositories/index.js';
 import { searchArrangementSpans } from './arrangementRag.js';
 
-const normalize = (s) => String(s || '').toLowerCase();
-const typeAsPhrase = (t) => normalize(t).replace(/_/g, ' ');
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous assessment domain objects
+type AnyObj = Record<string, any>;
+
+const normalize = (s: unknown) => String(s || '').toLowerCase();
+const typeAsPhrase = (t: unknown) => normalize(t).replace(/_/g, ' ');
 
 /** Does the control match this evidence record (by clause pattern or expected-type phrase)? */
-function matchesControl(control, evidence) {
+function matchesControl(control: AnyObj, evidence: AnyObj) {
   const haystack = `${normalize(evidence.document)} ${normalize(evidence.source)}`;
-  const patternHit = (control.clauseMatchPatterns || []).some((p) =>
+  const patternHit = (control.clauseMatchPatterns || []).some((p: string) =>
     haystack.includes(normalize(p))
   );
-  const typeHit = (control.expectedEvidenceTypes || []).some((t) =>
+  const typeHit = (control.expectedEvidenceTypes || []).some((t: string) =>
     haystack.includes(typeAsPhrase(t))
   );
   return patternHit || typeHit;
 }
 
 /** Which expected evidence types are covered by the matched records (for coverage confidence). */
-function coveredTypes(control, matched) {
-  return (control.expectedEvidenceTypes || []).filter((t) => {
+function coveredTypes(control: AnyObj, matched: AnyObj[]) {
+  return (control.expectedEvidenceTypes || []).filter((t: string) => {
     const phrase = typeAsPhrase(t);
-    return matched.some((e) => `${normalize(e.document)} ${normalize(e.source)}`.includes(phrase));
+    return matched.some((e: AnyObj) =>
+      `${normalize(e.document)} ${normalize(e.source)}`.includes(phrase)
+    );
   });
 }
 
@@ -42,14 +47,19 @@ function coveredTypes(control, matched) {
  * still assesses (→ insufficient-evidence) when not. `deps.searchSpans` is injectable for tests.
  * @returns {Promise<{spans:Array<{source:string,snippet:string}>, searched:any[], evidenceRecords:object[], coveredEvidenceTypes:string[]}>}
  */
-export async function gatherEvidence(control, arrangement, deps = {}) {
+export async function gatherEvidence(
+  control: AnyObj,
+  arrangement: AnyObj,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable span search (stubbed in tests)
+  deps: { searchSpans?: (...args: any[]) => Promise<any[]> } = {}
+) {
   const searchSpans = deps.searchSpans || searchArrangementSpans;
-  const all = await evidenceRepository.resolveForArrangement(
+  const all: AnyObj[] = await evidenceRepository.resolveForArrangement(
     arrangement.organizationId,
     arrangement.id
   );
-  const matched = all.filter((e) => matchesControl(control, e));
-  const metaSpans = matched.map((e) => ({
+  const matched = all.filter((e: AnyObj) => matchesControl(control, e));
+  const metaSpans = matched.map((e: AnyObj) => ({
     source: e.document,
     snippet: `${e.document}${e.version ? ` (v${e.version})` : ''} — source: ${e.source || 'n/a'}${
       e.scope === 'provider' ? ' [provider-global]' : ' [arrangement-local]'
@@ -78,7 +88,7 @@ export async function gatherEvidence(control, arrangement, deps = {}) {
     searched: [
       {
         scope: 'evidence',
-        documentsExamined: all.map((e) => e.document),
+        documentsExamined: all.map((e: AnyObj) => e.document),
         ragHits: ragSpans.length,
         patterns: control.clauseMatchPatterns || [],
         expectedTypes: control.expectedEvidenceTypes || [],

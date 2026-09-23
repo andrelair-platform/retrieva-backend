@@ -41,19 +41,21 @@ export default defineConfig({
         'types/**',
         '**/*.types.ts',
         // LLM / vector-retrieval / RAG orchestration (integration → L2/L4)
-        'services/rag.js',
-        'services/rag/queryRetrieval.js',
-        'services/rag/retrievalEnhancements.js',
-        'services/rag/llmJudge.js',
-        'services/ragExecutor.js',
-        'services/assessment/verdictLlm.js',
-        'services/answerFormatter.js',
+        // `.{js,ts}` so the exclude survives the JS→TS conversion (RTV-24) — these
+        // adapters are exercised by L2/L4 integration, not unit coverage.
+        'services/rag.{js,ts}',
+        'services/rag/queryRetrieval.{js,ts}',
+        'services/rag/retrievalEnhancements.{js,ts}',
+        'services/rag/llmJudge.{js,ts}',
+        'services/ragExecutor.{js,ts}',
+        'services/assessment/verdictLlm.{js,ts}',
+        'services/answerFormatter.{js,ts}',
         // document/report generation + external export + HTTP client (IO adapters)
-        'services/reportGenerator.js',
-        'services/roiExportService.js',
-        'services/questionnaireScorer.js',
-        'services/fileIngestionService.js',
-        'utils/internalClient.js',
+        'services/reportGenerator.{js,ts}',
+        'services/roiExportService.{js,ts}',
+        'services/questionnaireScorer.{js,ts}',
+        'services/fileIngestionService.{js,ts}',
+        'utils/internalClient.{js,ts}',
       ],
       thresholds: {
         // RTV-21 AC-3 — ≥70% on business-logic files (testing.md). Vitest 4's v8

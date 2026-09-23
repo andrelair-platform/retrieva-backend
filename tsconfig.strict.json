@@ -15,7 +15,8 @@
     "services/security/**/*.ts",
     "services/registerProjection.ts",
     "services/registerProjectionService.ts",
-    "services/assessment/verdict.ts",
+    "services/assessment/**/*.ts",
+    "services/rag/**/*.ts",
     "config/**/*.ts",
     "utils/**/*.ts"
   ],
