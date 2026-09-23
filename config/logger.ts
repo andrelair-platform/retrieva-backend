@@ -67,15 +67,32 @@ const pinoLogger = pino({
   transport: { targets },
 });
 
-// Winston-compatible wrapper (handles argument order difference)
+// A Winston-compatible wrapper over pino (level methods assigned dynamically). This is the
+// canonical logger type for the whole app — the former config/logger.d.ts sidecar folded in here
+// when logger.js became TypeScript.
+type LogFn = (msgOrObj: string | Record<string, unknown>, meta?: Record<string, unknown>) => void;
+export interface Logger {
+  trace: LogFn;
+  debug: LogFn;
+  info: LogFn;
+  warn: LogFn;
+  error: LogFn;
+  fatal: LogFn;
+  child(bindings: Record<string, unknown>): Logger;
+  _pino: unknown;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- pino instance is externally typed
+type PinoLike = any;
+
 const logger = createCompatLogger(pinoLogger);
 
-function createCompatLogger(pinoInstance) {
-  const levels = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
-  const compat = {};
+function createCompatLogger(pinoInstance: PinoLike): Logger {
+  const levels = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const;
+  const compat: Record<string, unknown> = {};
 
   levels.forEach((level) => {
-    compat[level] = (msgOrObj, metaOrMsg) => {
+    compat[level] = (msgOrObj: unknown, metaOrMsg?: unknown) => {
       if (typeof msgOrObj === 'string' && metaOrMsg === undefined) {
         pinoInstance[level](msgOrObj);
       } else if (typeof msgOrObj === 'string' && typeof metaOrMsg === 'object') {
@@ -88,10 +105,11 @@ function createCompatLogger(pinoInstance) {
     };
   });
 
-  compat.child = (bindings) => createCompatLogger(pinoInstance.child(bindings));
+  compat.child = (bindings: Record<string, unknown>) =>
+    createCompatLogger(pinoInstance.child(bindings));
   compat._pino = pinoInstance; // Access raw Pino if needed
 
-  return compat;
+  return compat as unknown as Logger;
 }
 
 export default logger;
