@@ -54,7 +54,15 @@
  * @param {Document[]} docs - Documents to format
  * @returns {string} Formatted context string with [Source N] headers
  */
-export function formatContext(docs) {
+interface DocLike {
+  pageContent?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous RAG doc metadata
+  metadata?: Record<string, any>;
+  rrfScore?: number;
+  score?: number;
+}
+
+export function formatContext(docs: DocLike[]) {
   return docs
     .map((doc, index) => {
       const docTitle = doc.metadata?.documentTitle || 'Untitled';
@@ -83,7 +91,7 @@ export function formatContext(docs) {
  * @param {Document[]} docs - Documents to format
  * @returns {FormattedSource[]} Array of formatted source metadata
  */
-export function formatSources(docs) {
+export function formatSources(docs: DocLike[]) {
   return docs.map((doc, index) => {
     const sourceNumber = index + 1;
     const relevanceScore = doc.rrfScore || doc.score || null;
@@ -135,12 +143,12 @@ export function formatSources(docs) {
  * @param {Document[]} docs - Documents to deduplicate
  * @returns {Document[]} Unique documents (first occurrence preserved)
  */
-export function deduplicateDocuments(docs) {
+export function deduplicateDocuments(docs: DocLike[]) {
   const uniqueDocs = [];
   const seenContent = new Set();
 
   for (const doc of docs) {
-    const contentKey = doc.metadata?.contentFingerprint || doc.pageContent.substring(0, 100);
+    const contentKey = doc.metadata?.contentFingerprint || (doc.pageContent || '').substring(0, 100);
     if (!seenContent.has(contentKey)) {
       seenContent.add(contentKey);
       uniqueDocs.push(doc);

@@ -14,7 +14,7 @@
  * normalizeText("Titre de séjour") // "titre de sejour"
  * normalizeText("  café   résumé  ") // "cafe resume"
  */
-export function normalizeText(text) {
+export function normalizeText(text: string) {
   if (!text) return '';
   return text
     .normalize('NFD')
@@ -35,7 +35,7 @@ export function normalizeText(text) {
  * calculateTitleSimilarity("Liste de document demande titre de sejour", "Liste de document demande titre de séjour") // 1.0
  * calculateTitleSimilarity("titre de sejour", "Liste de document demande titre de séjour") // ~0.9
  */
-export function calculateTitleSimilarity(query, title) {
+export function calculateTitleSimilarity(query: string, title: string) {
   if (!query || !title) return 0;
 
   const normalizedQuery = normalizeText(query);
@@ -78,7 +78,7 @@ export function calculateTitleSimilarity(query, title) {
  * @example
  * calculateHeadingPathSimilarity("testing best practices", ["5. Testing", "Best Practices"]) // ~0.8
  */
-export function calculateHeadingPathSimilarity(query, headingPath) {
+export function calculateHeadingPathSimilarity(query: string, headingPath: string[]) {
   if (!query || !headingPath || !Array.isArray(headingPath) || headingPath.length === 0) {
     return 0;
   }

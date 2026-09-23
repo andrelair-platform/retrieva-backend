@@ -23,27 +23,34 @@ const guardrailsConfig = {
 
 /**
  * Citation validation result
- * @typedef {Object} CitationValidationResult
- * @property {boolean} valid - Whether all citations are valid
- * @property {string} text - Processed text (with invalid citations removed/corrected)
- * @property {number[]} validCitations - Array of valid source numbers found
- * @property {number[]} invalidCitations - Array of invalid source numbers found
- * @property {number} totalCitations - Total number of citations found
- * @property {string[]} issues - List of validation issues
- * @property {boolean} modified - Whether the text was modified
  */
+export interface CitationValidationResult {
+  valid: boolean;
+  text: string;
+  validCitations: number[];
+  invalidCitations: number[];
+  totalCitations: number;
+  issues: string[];
+  modified: boolean;
+}
+
+interface Citation {
+  match: string;
+  number: number;
+  index: number;
+}
 
 /**
  * Extract all [Source N] citations from text
  * @param {string} text - Text to search
  * @returns {Array<{match: string, number: number, index: number}>} Array of citation matches
  */
-export function extractCitations(text) {
+export function extractCitations(text: unknown): Citation[] {
   if (!text || typeof text !== 'string') {
     return [];
   }
 
-  const citations = [];
+  const citations: Citation[] = [];
   // Match [Source N], [Source N, M], [Sources N, M], [Source N-M] patterns
   const pattern = /\[Sources?\s*(\d+(?:\s*[-,]\s*\d+)*)\]/gi;
 
@@ -71,8 +78,8 @@ export function extractCitations(text) {
  * @param {string} numbersStr - Numbers string from citation
  * @returns {number[]} Array of source numbers
  */
-function parseSourceNumbers(numbersStr) {
-  const numbers = [];
+function parseSourceNumbers(numbersStr: string): number[] {
+  const numbers: number[] = [];
   const parts = numbersStr.split(/\s*,\s*/);
 
   for (const part of parts) {
@@ -109,16 +116,24 @@ function parseSourceNumbers(numbersStr) {
  * @param {number} options.maxOrphanCitations - Max allowed orphan citations (default from guardrails)
  * @returns {CitationValidationResult} Validation result
  */
-export function validateCitations(text, sources, options = {}) {
+export function validateCitations(
+  text: unknown,
+  sources?: unknown[] | null,
+  options: {
+    removeInvalid?: boolean;
+    logWarnings?: boolean;
+    maxOrphanCitations?: number;
+  } = {}
+): CitationValidationResult {
   const {
     removeInvalid = true,
     logWarnings = true,
     maxOrphanCitations = guardrailsConfig.output.citationValidation.maxOrphanCitations,
   } = options;
 
-  const result = {
+  const result: CitationValidationResult = {
     valid: true,
-    text: text,
+    text: typeof text === 'string' ? text : '',
     validCitations: [],
     invalidCitations: [],
     totalCitations: 0,
@@ -135,8 +150,8 @@ export function validateCitations(text, sources, options = {}) {
   result.totalCitations = citations.length;
 
   // Categorize citations as valid or invalid
-  const validNumbers = new Set();
-  const invalidNumbers = new Set();
+  const validNumbers = new Set<number>();
+  const invalidNumbers = new Set<number>();
 
   for (const citation of citations) {
     if (citation.number >= 1 && citation.number <= maxSourceNumber) {
@@ -181,7 +196,7 @@ export function validateCitations(text, sources, options = {}) {
  * @param {number[]} invalidNumbers - Invalid source numbers to remove
  * @returns {string} Text with invalid citations removed
  */
-function removeInvalidCitations(text, invalidNumbers) {
+function removeInvalidCitations(text: string, invalidNumbers: number[]): string {
   if (!invalidNumbers || invalidNumbers.length === 0) {
     return text;
   }
@@ -214,9 +229,9 @@ function removeInvalidCitations(text, invalidNumbers) {
  * @param {string} text - Text to normalize
  * @returns {string} Text with normalized citations
  */
-export function normalizeCitationFormat(text) {
+export function normalizeCitationFormat(text: unknown): string {
   if (!text || typeof text !== 'string') {
-    return text || '';
+    return (text as string) || '';
   }
 
   let result = text;
@@ -248,7 +263,15 @@ export function normalizeCitationFormat(text) {
  * @param {Object} options - Processing options
  * @returns {CitationValidationResult} Processed result
  */
-export function processCitations(text, sources, options = {}) {
+export function processCitations(
+  text: unknown,
+  sources?: unknown[] | null,
+  options: {
+    removeInvalid?: boolean;
+    logWarnings?: boolean;
+    maxOrphanCitations?: number;
+  } = {}
+): CitationValidationResult {
   // Step 1: Normalize citation format
   const normalizedText = normalizeCitationFormat(text);
 
@@ -274,7 +297,7 @@ export function processCitations(text, sources, options = {}) {
  * @param {string} text - Answer text
  * @returns {Object} Coverage analysis
  */
-export function analyzeCitationCoverage(text) {
+export function analyzeCitationCoverage(text: unknown) {
   if (!text || typeof text !== 'string') {
     return { coverage: 0, totalSentences: 0, citedSentences: 0 };
   }

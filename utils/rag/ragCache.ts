@@ -7,8 +7,11 @@ import { redisConnection as redisClient } from '../../config/redis.js';
  * Caches answers to frequently asked questions for faster response times
  */
 class RAGCache {
+  ttl: number;
+  enabled: boolean;
+
   constructor() {
-    this.ttl = parseInt(process.env.RAG_CACHE_TTL) || 3600; // 1 hour default
+    this.ttl = parseInt(process.env.RAG_CACHE_TTL || '', 10) || 3600; // 1 hour default
     this.enabled = process.env.RAG_CACHE_ENABLED !== 'false';
   }
 
@@ -20,7 +23,7 @@ class RAGCache {
    * @param {string} conversationId - Optional conversation ID
    * @returns {string} Cache key
    */
-  getCacheKey(question, workspaceId, conversationId = null) {
+  getCacheKey(question: string, workspaceId: string, conversationId: string | null = null) {
     if (!workspaceId) {
       throw new Error('workspaceId is required for cache key generation (tenant isolation)');
     }
@@ -37,7 +40,7 @@ class RAGCache {
    * @param {string} question - User question
    * @returns {string} Question hash
    */
-  getQuestionHash(question) {
+  getQuestionHash(question: string) {
     const normalized = question.toLowerCase().trim();
     return createHash('sha256').update(normalized).digest('hex').substring(0, 16);
   }
@@ -49,7 +52,7 @@ class RAGCache {
    * @param {string} conversationId - Optional conversation ID
    * @returns {Promise<Object|null>} Cached answer or null
    */
-  async get(question, workspaceId, conversationId = null) {
+  async get(question: string, workspaceId: string, conversationId: string | null = null) {
     if (!this.enabled) return null;
     if (!workspaceId) {
       logger.warn('Cache get called without workspaceId, skipping for tenant isolation', {
@@ -90,7 +93,7 @@ class RAGCache {
     } catch (error) {
       logger.error('Cache retrieval error', {
         service: 'rag-cache',
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
       return null;
     }
@@ -103,7 +106,7 @@ class RAGCache {
    * @param {string} workspaceId - Workspace ID (required for tenant isolation)
    * @param {string} conversationId - Optional conversation ID
    */
-  async set(question, answer, workspaceId, conversationId = null) {
+  async set(question: string, answer: Record<string, unknown>, workspaceId: string, conversationId: string | null = null) {
     if (!this.enabled) return;
     if (!workspaceId) {
       logger.warn('Cache set called without workspaceId, skipping for tenant isolation', {
@@ -131,7 +134,7 @@ class RAGCache {
     } catch (error) {
       logger.error('Cache storage error', {
         service: 'rag-cache',
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -142,7 +145,7 @@ class RAGCache {
    * @param {string} workspaceId - Workspace ID (required for tenant isolation)
    * @param {string} conversationId - Optional conversation ID
    */
-  async invalidate(question, workspaceId, conversationId = null) {
+  async invalidate(question: string, workspaceId: string, conversationId: string | null = null) {
     if (!this.enabled) return;
     if (!workspaceId) {
       logger.warn('Cache invalidate called without workspaceId, skipping for tenant isolation', {
@@ -163,7 +166,7 @@ class RAGCache {
     } catch (error) {
       logger.error('Cache invalidation error', {
         service: 'rag-cache',
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -185,7 +188,7 @@ class RAGCache {
     } catch (error) {
       logger.error('Cache clear error', {
         service: 'rag-cache',
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -194,7 +197,7 @@ class RAGCache {
    * Clear cache for a specific workspace (tenant-safe)
    * @param {string} workspaceId - Workspace ID
    */
-  async clearByWorkspace(workspaceId) {
+  async clearByWorkspace(workspaceId: string) {
     if (!this.enabled) return;
     if (!workspaceId) {
       logger.warn('clearByWorkspace called without workspaceId', {
@@ -216,7 +219,7 @@ class RAGCache {
       logger.error('Workspace cache clear error', {
         service: 'rag-cache',
         workspaceId,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -236,13 +239,13 @@ class RAGCache {
     } catch (error) {
       logger.error('Cache stats error', {
         service: 'rag-cache',
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
       return {
         totalCached: 0,
         enabled: this.enabled,
         ttl: this.ttl,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }

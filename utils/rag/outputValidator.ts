@@ -38,44 +38,56 @@ export const ragAnswerSchema = z.object({
 
 /**
  * Validation result type
- * @typedef {Object} OutputValidationResult
- * @property {boolean} valid - Whether the output passed validation
- * @property {string} content - The validated/processed content
- * @property {string[]} errors - List of validation errors
- * @property {string[]} warnings - List of validation warnings
- * @property {Object} metadata - Extracted metadata about the content
- * @property {boolean} modified - Whether content was modified during validation
  */
+export interface OutputValidationResult {
+  valid: boolean;
+  content: string;
+  errors: string[];
+  warnings: string[];
+  metadata: {
+    hasContent: boolean;
+    citationCount: number;
+    wordCount: number;
+    characterCount: number;
+  };
+  modified: boolean;
+}
+
+interface QualityCheck {
+  name: string;
+  check: (content: string) => boolean;
+  warning: string;
+}
 
 /**
  * Content quality checks that don't block but should be logged
  */
-const QUALITY_CHECKS = [
+const QUALITY_CHECKS: QualityCheck[] = [
   {
     name: 'too_short',
-    check: (content) => content.length < 50,
+    check: (content: string) => content.length < 50,
     warning: 'Answer is very short and may lack detail',
   },
   {
     name: 'no_citations',
-    check: (content) => !/\[Source\s+\d+\]/i.test(content),
+    check: (content: string) => !/\[Source\s+\d+\]/i.test(content),
     warning: 'Answer contains no source citations',
   },
   {
     name: 'starts_with_apology',
-    check: (content) => /^(I'm sorry|I apologize|Unfortunately)/i.test(content.trim()),
+    check: (content: string) => /^(I'm sorry|I apologize|Unfortunately)/i.test(content.trim()),
     warning: 'Answer starts with an apology which may indicate inability to answer',
   },
   {
     name: 'contains_uncertainty',
-    check: (content) =>
+    check: (content: string) =>
       /\b(I don't know|I'm not sure|I cannot|I can't find)\b/i.test(content) &&
       content.length < 200,
     warning: 'Answer expresses uncertainty and is brief',
   },
   {
     name: 'repetitive_content',
-    check: (content) => {
+    check: (content: string) => {
       const sentences = content.split(/[.!?]+/).filter((s) => s.trim().length > 10);
       if (sentences.length < 3) return false;
       const uniqueSentences = new Set(sentences.map((s) => s.trim().toLowerCase()));
@@ -85,7 +97,7 @@ const QUALITY_CHECKS = [
   },
   {
     name: 'incomplete_sentence',
-    check: (content) => {
+    check: (content: string) => {
       const trimmed = content.trim();
       return trimmed.length > 50 && !/[.!?:"]$/.test(trimmed);
     },
@@ -126,7 +138,15 @@ const BLOCKED_PATTERNS = [
  * @param {number} options.maxLength - Maximum content length
  * @returns {OutputValidationResult} Validation result
  */
-export function validateOutput(content, options = {}) {
+export function validateOutput(
+  content: unknown,
+  options: {
+    strict?: boolean;
+    allowEmpty?: boolean;
+    minLength?: number;
+    maxLength?: number;
+  } = {}
+): OutputValidationResult {
   const {
     strict = false,
     allowEmpty = false,
@@ -134,9 +154,9 @@ export function validateOutput(content, options = {}) {
     maxLength = guardrailsConfig.output.maxResponseLength,
   } = options;
 
-  const result = {
+  const result: OutputValidationResult = {
     valid: true,
-    content: content || '',
+    content: (content as string) || '',
     errors: [],
     warnings: [],
     metadata: {
@@ -217,7 +237,7 @@ export function validateOutput(content, options = {}) {
   }
 
   // Run quality checks
-  for (const { _name, check, warning } of QUALITY_CHECKS) {
+  for (const { check, warning } of QUALITY_CHECKS) {
     if (check(trimmedContent)) {
       if (strict) {
         result.valid = false;
@@ -249,7 +269,7 @@ export function validateOutput(content, options = {}) {
  * @param {string} content - Content to validate
  * @returns {Object} Zod validation result
  */
-export function validateWithSchema(content) {
+export function validateWithSchema(content: string | null | undefined) {
   const data = {
     content: content || '',
     metadata: {
@@ -270,27 +290,36 @@ export function validateWithSchema(content) {
  * @param {Object} options - Processing options
  * @returns {OutputValidationResult} Processed result
  */
-export function processOutput(content, options = {}) {
-  let processed = content;
+export function processOutput(
+  content: unknown,
+  options: {
+    strict?: boolean;
+    allowEmpty?: boolean;
+    minLength?: number;
+    maxLength?: number;
+  } = {}
+): OutputValidationResult {
+  let processed: unknown = content;
   let modified = false;
 
   // Step 1: Basic cleanup
   if (typeof processed === 'string') {
     // Remove common LLM artifacts
-    const before = processed;
+    const before: string = processed;
 
     // Remove trailing "assistant:" or similar role markers
-    processed = processed.replace(/^(assistant|ai|bot):\s*/i, '');
+    let cleaned = before.replace(/^(assistant|ai|bot):\s*/i, '');
 
     // Remove trailing incomplete markers
-    processed = processed.replace(/\[?(incomplete|continued|truncated)\]?\s*$/i, '');
+    cleaned = cleaned.replace(/\[?(incomplete|continued|truncated)\]?\s*$/i, '');
 
     // Remove multiple consecutive newlines (keep max 2)
-    processed = processed.replace(/\n{3,}/g, '\n\n');
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
 
-    if (processed !== before) {
+    if (cleaned !== before) {
       modified = true;
     }
+    processed = cleaned;
   }
 
   // Step 2: Validate
@@ -314,7 +343,10 @@ export function processOutput(content, options = {}) {
  * @param {Object} options - Check options
  * @returns {boolean} Whether retry is recommended
  */
-export function shouldRetryOutput(validation, options = {}) {
+export function shouldRetryOutput(
+  validation: OutputValidationResult,
+  options: { retryOnWarnings?: boolean; maxWarningsBeforeRetry?: number } = {}
+) {
   const { retryOnWarnings = false, maxWarningsBeforeRetry = 2 } = options;
 
   // Always retry on errors

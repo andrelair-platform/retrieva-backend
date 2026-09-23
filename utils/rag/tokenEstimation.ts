@@ -31,8 +31,11 @@ const CODE_PATTERN =
  * Cached tiktoken encoder instance
  * @type {Object|null}
  */
-let cachedEncoder = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- external js-tiktoken encoder
+let cachedEncoder: any = null;
 let encoderLoadFailed = false;
+
+type ContentType = 'english' | 'code' | 'cjk' | 'mixed';
 
 /**
  * Detect content type for character ratio selection
@@ -40,7 +43,7 @@ let encoderLoadFailed = false;
  * @param {string} text - Text to analyze
  * @returns {'english'|'code'|'cjk'|'mixed'} Content type
  */
-function detectContentType(text) {
+function detectContentType(text: string): ContentType {
   if (!text || typeof text !== 'string') {
     return 'mixed';
   }
@@ -74,7 +77,7 @@ function detectContentType(text) {
  * @param {string} [options.contentType] - Override content type detection ('english', 'code', 'cjk', 'mixed')
  * @returns {number} Estimated token count
  */
-export function estimateTokens(text, options = {}) {
+export function estimateTokens(text: string, options: { contentType?: ContentType } = {}) {
   if (!text || typeof text !== 'string') {
     return 0;
   }
@@ -120,7 +123,7 @@ async function loadEncoder() {
     encoderLoadFailed = true;
     logger.warn('Failed to load tiktoken encoder, using heuristics only', {
       service: 'token-estimation',
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     });
     return null;
   }
@@ -133,7 +136,7 @@ async function loadEncoder() {
  * @param {string} text - Text to estimate tokens for
  * @returns {Promise<number>} Token count
  */
-export async function estimateTokensAccurate(text) {
+export async function estimateTokensAccurate(text: string) {
   if (!text || typeof text !== 'string') {
     return 0;
   }
@@ -158,7 +161,7 @@ export async function estimateTokensAccurate(text) {
   } catch (error) {
     logger.debug('Tiktoken encoding failed, using heuristic', {
       service: 'token-estimation',
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     });
     return estimateTokens(text);
   }
@@ -173,7 +176,7 @@ export async function estimateTokensAccurate(text) {
  * @param {boolean} [options.accurate=false] - Use tiktoken for accuracy
  * @returns {Promise<number[]>} Array of token counts
  */
-export async function estimateTokensBatch(texts, options = {}) {
+export async function estimateTokensBatch(texts: string[], options: { accurate?: boolean } = {}) {
   if (!Array.isArray(texts)) {
     return [];
   }
@@ -209,7 +212,7 @@ export async function estimateTokensBatch(texts, options = {}) {
  * @param {string} contentType - Content type
  * @returns {number} Characters per token ratio
  */
-export function getCharsPerToken(contentType = 'english') {
+export function getCharsPerToken(contentType: ContentType = 'english') {
   return CHARS_PER_TOKEN[contentType] || CHARS_PER_TOKEN.mixed;
 }
 
