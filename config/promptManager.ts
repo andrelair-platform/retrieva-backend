@@ -32,9 +32,16 @@ export const PROMPT_NAMES = {
 
 // Guardrail bounds for params read from the (externally-editable) Langfuse prompt
 // config — a bad/unbounded playground value can never reach prod (DORA change-safety).
-const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
-function safeModelParams(cfg = {}) {
-  const out = {};
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+
+interface ModelParams {
+  temperature?: number;
+  topP?: number;
+  maxTokens?: number;
+}
+
+function safeModelParams(cfg: Record<string, unknown> = {}): ModelParams {
+  const out: ModelParams = {};
   if (typeof cfg.temperature === 'number') out.temperature = clamp(cfg.temperature, 0, 2);
   if (typeof cfg.topP === 'number') out.topP = clamp(cfg.topP, 0, 1);
   if (typeof cfg.top_p === 'number') out.topP = clamp(cfg.top_p, 0, 1); // accept snake_case from UI
@@ -46,8 +53,8 @@ function safeModelParams(cfg = {}) {
 }
 
 /** Minimal, dependency-free Mustache substitution for the Git fallback path. */
-function renderMustacheLite(template, vars = {}) {
-  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) =>
+function renderMustacheLite(template: string, vars: Record<string, unknown> = {}) {
+  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_: string, key: string) =>
     key in vars && vars[key] !== null && vars[key] !== undefined ? String(vars[key]) : ''
   );
 }
@@ -63,8 +70,21 @@ function renderMustacheLite(template, vars = {}) {
  * @param {object}  [o.fallbackConfig] default model params (null = don't manage params)
  * @returns {Promise<{ text: string, langfusePrompt: object|null, source: 'langfuse'|'git', label: string, modelParams: object }>}
  */
-export async function resolveManagedPrompt({ name, fallbackTemplate, vars = {}, fallbackConfig = null }) {
-  const lf = await getLangfusePrompt(name, { label: PROMPT_LABEL });
+interface ResolveManagedPromptArgs {
+  name: string;
+  fallbackTemplate: string;
+  vars?: Record<string, unknown>;
+  fallbackConfig?: ModelParams | null;
+}
+
+export async function resolveManagedPrompt({
+  name,
+  fallbackTemplate,
+  vars = {},
+  fallbackConfig = null,
+}: ResolveManagedPromptArgs) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external Langfuse prompt object
+  const lf: any = await getLangfusePrompt(name, { label: PROMPT_LABEL });
   if (lf) {
     try {
       const text = lf.compile(vars); // static prompts: vars={} → returns text unchanged
@@ -74,7 +94,7 @@ export async function resolveManagedPrompt({ name, fallbackTemplate, vars = {}, 
       return { text, langfusePrompt: lf, source: 'langfuse', label: PROMPT_LABEL, modelParams };
     } catch (e) {
       logger.warn('Langfuse prompt.compile failed — using Git fallback', {
-        service: 'prompt-manager', name, error: e.message,
+        service: 'prompt-manager', name, error: e instanceof Error ? e.message : String(e),
       });
     }
   }
@@ -92,8 +112,8 @@ export async function resolveManagedPrompt({ name, fallbackTemplate, vars = {}, 
  *
  * @param {object} vars  values for the template variables (context, responseInstruction)
  */
-export async function resolveRagPrompt(vars = {}) {
-  const safeVars = {};
+export async function resolveRagPrompt(vars: Record<string, unknown> = {}) {
+  const safeVars: Record<string, unknown> = {};
   for (const v of RAG_PROMPT_VARIABLES) safeVars[v] = vars[v] ?? '';
   const r = await resolveManagedPrompt({
     name: RAG_PROMPT_NAME,
@@ -121,7 +141,7 @@ export function resolveDoraPrompt() {
 }
 
 /** Vision figure-caption prompt (static). Fallback text passed by the caller. */
-export function resolveVisionCaptionPrompt(fallbackTemplate) {
+export function resolveVisionCaptionPrompt(fallbackTemplate: string) {
   return resolveManagedPrompt({ name: PROMPT_NAMES.visionCaption, fallbackTemplate });
 }
 

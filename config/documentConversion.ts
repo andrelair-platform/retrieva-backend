@@ -36,9 +36,9 @@ export function isDoclingEnabled() {
  * @param {string} fileName  original filename (drives server-side type routing)
  * @param {string} field     multipart field name ('file' for the proxy, 'files' for docling)
  */
-async function postConvert(baseUrl, buffer, fileName, field) {
+async function postConvert(baseUrl: string, buffer: Buffer, fileName: string, field: string) {
   const form = new FormData();
-  form.append(field, new Blob([buffer]), fileName || 'document');
+  form.append(field, new Blob([buffer as unknown as BlobPart]), fileName || 'document');
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CONVERT_TIMEOUT_MS);
@@ -63,7 +63,7 @@ async function postConvert(baseUrl, buffer, fileName, field) {
  * Convert via markitdown-proxy. Images are OCR'd (proxied to Docling); PDF/Office
  * are converted with MarkItDown/PyMuPDF (fast, low memory).
  */
-export async function convertToMarkdown(buffer, fileName) {
+export async function convertToMarkdown(buffer: Buffer, fileName: string) {
   return postConvert(MARKITDOWN_URL, buffer, fileName, 'file');
 }
 
@@ -72,7 +72,7 @@ export async function convertToMarkdown(buffer, fileName) {
  * fallback for scanned / image-only PDFs. Docling's endpoint expects the
  * multipart field name `files`.
  */
-export async function convertViaDocling(buffer, fileName) {
+export async function convertViaDocling(buffer: Buffer, fileName: string) {
   return postConvert(DOCLING_URL, buffer, fileName, 'files');
 }
 
@@ -84,9 +84,9 @@ export async function convertViaDocling(buffer, fileName) {
  *
  * @returns {Promise<{ markdown: string, figures: Array<{dataUrl:string,width:number,height:number,bytes:number}> }>}
  */
-export async function convertWithFigures(buffer, fileName) {
+export async function convertWithFigures(buffer: Buffer, fileName: string) {
   const form = new FormData();
-  form.append('files', new Blob([buffer]), fileName || 'document');
+  form.append('files', new Blob([buffer as unknown as BlobPart]), fileName || 'document');
   form.append('to_formats', 'md');
   form.append('to_formats', 'json');
   form.append('image_export_mode', 'embedded');
@@ -107,7 +107,7 @@ export async function convertWithFigures(buffer, fileName) {
     const doc = json?.document || {};
     const markdown = typeof doc.md_content === 'string' ? doc.md_content : '';
     const pics = doc.json_content?.pictures || [];
-    const figures = [];
+    const figures: Array<{ dataUrl: string; width: number; height: number; bytes: number }> = [];
     for (const p of pics) {
       const uri = p?.image?.uri || p?.image?.url || '';
       if (typeof uri !== 'string' || !uri.startsWith('data:image')) continue;

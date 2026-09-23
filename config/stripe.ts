@@ -2,10 +2,13 @@ import Stripe from 'stripe';
 
 // Lazy singleton — avoids instantiation failure when STRIPE_SECRET_KEY is not
 // set (e.g. in test environments). The instance is created on first use.
-let _stripe = null;
-export function getStripe() {
+let _stripe: Stripe | null = null;
+export function getStripe(): Stripe {
   if (!_stripe) {
-    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-04-10' });
+    // Pin the Stripe API version deliberately; cast past the SDK's newer default literal.
+    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+      apiVersion: '2024-04-10',
+    } as unknown as Stripe.StripeConfig);
   }
   return _stripe;
 }
@@ -18,10 +21,10 @@ export const PLAN_LIMITS = {
 };
 
 // Map Stripe Price IDs → internal plan names (set once products are created in Stripe Dashboard)
-export const PRICE_TO_PLAN = {
-  [process.env.STRIPE_PRICE_STARTER]: 'starter',
-  [process.env.STRIPE_PRICE_PROFESSIONAL]: 'professional',
-  [process.env.STRIPE_PRICE_BUSINESS]: 'business',
+export const PRICE_TO_PLAN: Record<string, string> = {
+  [process.env.STRIPE_PRICE_STARTER || '']: 'starter',
+  [process.env.STRIPE_PRICE_PROFESSIONAL || '']: 'professional',
+  [process.env.STRIPE_PRICE_BUSINESS || '']: 'business',
 };
 
 // Map Stripe subscription.status → internal planStatus

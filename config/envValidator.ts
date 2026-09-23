@@ -13,7 +13,13 @@ import logger from './logger.js';
  * Required environment variables by category
  * ISSUE #21 FIX: Infrastructure services required in production
  */
-const REQUIRED_ENV_VARS = {
+interface EnvVarConfig {
+  name: string;
+  minLength?: number;
+  description: string;
+}
+
+const REQUIRED_ENV_VARS: Record<string, EnvVarConfig[]> = {
   // Critical - Server won't function without these
   critical: [
     { name: 'JWT_ACCESS_SECRET', minLength: 32, description: 'JWT access token secret' },
@@ -50,7 +56,10 @@ const REQUIRED_ENV_VARS = {
  * @param {string} config.description - Human-readable description
  * @returns {{ valid: boolean, error?: string }}
  */
-function validateVar({ name, minLength, description }) {
+function validateVar({ name, minLength, description }: EnvVarConfig): {
+  valid: boolean;
+  error?: string;
+} {
   const value = process.env[name];
 
   if (!value || value.trim() === '') {
@@ -75,17 +84,17 @@ function validateVar({ name, minLength, description }) {
  * @param {boolean} options.strict - If true, also require recommended vars
  * @returns {{ valid: boolean, errors: string[], warnings: string[] }}
  */
-export function validateEnv(options = {}) {
+export function validateEnv(options: { strict?: boolean } = {}) {
   const { strict = false } = options;
   const isProduction = process.env.NODE_ENV === 'production';
-  const errors = [];
-  const warnings = [];
+  const errors: string[] = [];
+  const warnings: string[] = [];
 
   // Validate critical variables (always required)
   for (const varConfig of REQUIRED_ENV_VARS.critical) {
     const result = validateVar(varConfig);
     if (!result.valid) {
-      errors.push(result.error);
+      errors.push(result.error!);
     }
   }
 
@@ -93,7 +102,7 @@ export function validateEnv(options = {}) {
   for (const varConfig of REQUIRED_ENV_VARS.database) {
     const result = validateVar(varConfig);
     if (!result.valid) {
-      errors.push(result.error);
+      errors.push(result.error!);
     }
   }
 
@@ -102,7 +111,7 @@ export function validateEnv(options = {}) {
     const result = validateVar(varConfig);
     if (!result.valid) {
       if (isProduction || strict) {
-        errors.push(result.error);
+        errors.push(result.error!);
       } else {
         warnings.push(
           `${varConfig.name} not configured - ${varConfig.description} (required in production)`
@@ -116,7 +125,7 @@ export function validateEnv(options = {}) {
     const result = validateVar(varConfig);
     if (!result.valid) {
       if (isProduction || strict) {
-        errors.push(result.error);
+        errors.push(result.error!);
       } else {
         warnings.push(
           `${varConfig.name} not configured - ${varConfig.description} (required in production)`
@@ -130,7 +139,7 @@ export function validateEnv(options = {}) {
     const result = validateVar(varConfig);
     if (!result.valid) {
       if (strict) {
-        errors.push(result.error);
+        errors.push(result.error!);
       } else {
         warnings.push(`${varConfig.name} not configured - ${varConfig.description}`);
       }
@@ -151,7 +160,7 @@ export function validateEnv(options = {}) {
  * @param {Object} options - Validation options
  * @param {boolean} options.strict - If true, also require recommended vars
  */
-export function validateEnvOrExit(options = {}) {
+export function validateEnvOrExit(options: { strict?: boolean } = {}) {
   const result = validateEnv(options);
 
   // Log warnings
