@@ -8,7 +8,7 @@
 // pool (max 50 / min 10) so capacity planning (the tight per-namespace quotas)
 // stays consistent across the cutover.
 import pg from 'pg';
-import { drizzle } from 'drizzle-orm/node-postgres';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { sql } from 'drizzle-orm';
 import dotenv from 'dotenv';
 import logger from './logger.js';
@@ -18,8 +18,8 @@ dotenv.config();
 
 const { Pool } = pg;
 
-let pool;
-let db;
+let pool: pg.Pool | undefined;
+let db: NodePgDatabase<typeof schema> | undefined;
 
 /** Lazily create (and cache) the pg Pool. Reads DATABASE_URL at call time. */
 export function getPool() {

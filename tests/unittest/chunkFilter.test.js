@@ -72,7 +72,10 @@ describe('Chunk Filter', () => {
       // Both docs share same heading - so tiny doc is NOT sole representative
       const docs = [
         createDoc('tiny', ['SharedSection'], { estimatedTokens: 10 }), // Too small
-        createDoc('This is a longer content that should definitely pass the token threshold check', ['SharedSection']),
+        createDoc(
+          'This is a longer content that should definitely pass the token threshold check',
+          ['SharedSection']
+        ),
       ];
 
       const result = filterLowQualityChunks(docs);
@@ -87,7 +90,9 @@ describe('Chunk Filter', () => {
       // Both docs share same heading - so tiny doc is NOT sole representative
       const docs = [
         createDoc('short content', ['SharedSection'], { estimatedTokens: 20 }),
-        createDoc('This content has plenty of tokens to meet the threshold', ['SharedSection'], { estimatedTokens: 100 }),
+        createDoc('This content has plenty of tokens to meet the threshold', ['SharedSection'], {
+          estimatedTokens: 100,
+        }),
       ];
 
       const result = filterLowQualityChunks(docs);
@@ -198,7 +203,9 @@ describe('Chunk Filter', () => {
       const docs = [
         createDoc('tiny', ['UniqueSection'], { estimatedTokens: 10 }), // Sole representative
         createDoc('another tiny chunk', ['AnotherSection'], { estimatedTokens: 15 }),
-        createDoc('long enough content to pass the token threshold test', ['AnotherSection'], { estimatedTokens: 100 }),
+        createDoc('long enough content to pass the token threshold test', ['AnotherSection'], {
+          estimatedTokens: 100,
+        }),
       ];
 
       const result = filterLowQualityChunks(docs);
@@ -213,8 +220,14 @@ describe('Chunk Filter', () => {
     it('should filter tiny docs if section has other representatives', () => {
       const docs = [
         createDoc('tiny', ['SharedSection'], { estimatedTokens: 10 }),
-        createDoc('Long enough content that passes threshold in shared section', ['SharedSection'], { estimatedTokens: 100 }),
-        createDoc('Another good doc in different section that also passes', ['OtherSection'], { estimatedTokens: 80 }),
+        createDoc(
+          'Long enough content that passes threshold in shared section',
+          ['SharedSection'],
+          { estimatedTokens: 100 }
+        ),
+        createDoc('Another good doc in different section that also passes', ['OtherSection'], {
+          estimatedTokens: 80,
+        }),
       ];
 
       const result = filterLowQualityChunks(docs);
@@ -266,10 +279,7 @@ describe('Chunk Filter', () => {
     });
 
     it('should return first doc as fallback when no scores available', () => {
-      const docs = [
-        createDoc('[Table of Contents]', ['A']),
-        createDoc('---', ['B']),
-      ];
+      const docs = [createDoc('[Table of Contents]', ['A']), createDoc('---', ['B'])];
 
       const result = filterLowQualityChunks(docs);
 
@@ -281,9 +291,15 @@ describe('Chunk Filter', () => {
   describe('normal operation', () => {
     it('should pass through normal-sized docs unchanged', () => {
       const docs = [
-        createDoc('This is a perfectly normal document with plenty of content', ['A'], { estimatedTokens: 150 }),
-        createDoc('Another normal document that should pass all quality checks', ['B'], { estimatedTokens: 200 }),
-        createDoc('Third document with good content and sufficient length', ['C'], { estimatedTokens: 100 }),
+        createDoc('This is a perfectly normal document with plenty of content', ['A'], {
+          estimatedTokens: 150,
+        }),
+        createDoc('Another normal document that should pass all quality checks', ['B'], {
+          estimatedTokens: 200,
+        }),
+        createDoc('Third document with good content and sufficient length', ['C'], {
+          estimatedTokens: 100,
+        }),
       ];
 
       const result = filterLowQualityChunks(docs);
@@ -300,9 +316,15 @@ describe('Chunk Filter', () => {
 
     it('should preserve document order for passing docs', () => {
       const docs = [
-        createDoc('First doc content with enough tokens to pass through', ['A'], { estimatedTokens: 100 }),
-        createDoc('Second doc content also with sufficient token count', ['B'], { estimatedTokens: 100 }),
-        createDoc('Third doc content meeting all the quality criteria', ['C'], { estimatedTokens: 100 }),
+        createDoc('First doc content with enough tokens to pass through', ['A'], {
+          estimatedTokens: 100,
+        }),
+        createDoc('Second doc content also with sufficient token count', ['B'], {
+          estimatedTokens: 100,
+        }),
+        createDoc('Third doc content meeting all the quality criteria', ['C'], {
+          estimatedTokens: 100,
+        }),
       ];
 
       const result = filterLowQualityChunks(docs);
@@ -332,9 +354,7 @@ describe('Chunk Filter', () => {
 
   describe('options parameter', () => {
     it('should accept options parameter for future extensibility', () => {
-      const docs = [
-        createDoc('Content that is long enough to pass the quality filter', ['A']),
-      ];
+      const docs = [createDoc('Content that is long enough to pass the quality filter', ['A'])];
 
       // Should not throw when options are passed
       const result = filterLowQualityChunks(docs, { someOption: true });
@@ -358,7 +378,11 @@ describe('Chunk Filter', () => {
     it('should filter code chunks when query has no programming keywords', () => {
       const docs = [
         createCodeDoc('function authenticate() { return true; }', ['Auth']),
-        createDoc('The approval rules require two signatures for invoices over $1000', ['Finance'], { estimatedTokens: 100 }),
+        createDoc(
+          'The approval rules require two signatures for invoices over $1000',
+          ['Finance'],
+          { estimatedTokens: 100 }
+        ),
       ];
 
       const result = filterLowQualityChunks(docs, { query: 'What are the approval rules?' });
@@ -371,10 +395,14 @@ describe('Chunk Filter', () => {
     it('should include code chunks when query mentions programming', () => {
       const docs = [
         createCodeDoc('function authenticate() { return jwt.verify(token); }', ['Auth']),
-        createDoc('Regular documentation content with enough tokens to pass', ['Docs'], { estimatedTokens: 100 }),
+        createDoc('Regular documentation content with enough tokens to pass', ['Docs'], {
+          estimatedTokens: 100,
+        }),
       ];
 
-      const result = filterLowQualityChunks(docs, { query: 'Show me the Python authentication code' });
+      const result = filterLowQualityChunks(docs, {
+        query: 'Show me the Python authentication code',
+      });
 
       // Code doc should be included for programming query
       expect(result).toHaveLength(2);
@@ -383,20 +411,20 @@ describe('Chunk Filter', () => {
     it('should include code chunks for "implementation" queries', () => {
       const docs = [
         createCodeDoc('async function fetchData() { return await api.get(); }', ['API']),
-        createDoc('Overview of the API endpoint structure documentation here', ['Overview'], { estimatedTokens: 100 }),
+        createDoc('Overview of the API endpoint structure documentation here', ['Overview'], {
+          estimatedTokens: 100,
+        }),
       ];
 
       const result = filterLowQualityChunks(docs, { query: 'How is the API implemented?' });
 
       // "implement" keyword should include code
       expect(result).toHaveLength(2);
-      expect(result.some(d => d.metadata.is_code)).toBe(true);
+      expect(result.some((d) => d.metadata.is_code)).toBe(true);
     });
 
     it('should include code chunks for "how to" queries', () => {
-      const docs = [
-        createCodeDoc('const config = { timeout: 5000 };', ['Config']),
-      ];
+      const docs = [createCodeDoc('const config = { timeout: 5000 };', ['Config'])];
 
       const result = filterLowQualityChunks(docs, { query: 'How to configure the timeout?' });
 
@@ -404,19 +432,15 @@ describe('Chunk Filter', () => {
     });
 
     it('should include code chunks for "example" queries', () => {
-      const docs = [
-        createCodeDoc('// Example usage\nconst client = new Client();', ['Examples']),
-      ];
+      const docs = [createCodeDoc('// Example usage\nconst client = new Client();', ['Examples'])];
 
       const result = filterLowQualityChunks(docs, { query: 'Show me an example of client usage' });
 
       expect(result).toHaveLength(1);
     });
 
-    it('should include code chunks for language-specific queries', () => {
-      const docs = [
-        createCodeDoc('def main(): print("Hello")', ['Python']),
-      ];
+    it('should include code chunks for language-specific queries', async () => {
+      const docs = [createCodeDoc('def main(): print("Hello")', ['Python'])];
 
       const queries = [
         'How does the JavaScript authentication work?',
@@ -429,7 +453,9 @@ describe('Chunk Filter', () => {
         vi.resetModules();
         process.env.ENABLE_CHUNK_FILTER = 'true';
         process.env.ENABLE_CODE_FILTER = 'true';
-        const module = require('../../services/rag/chunkFilter.js');
+        // `import` (vitest-transformed) not `require` — the latter uses native ESM resolution
+        // which can't map the `.js` specifier of a now-.ts dependency (config/logger).
+        const module = await import('../../services/rag/chunkFilter.js');
         const result = module.filterLowQualityChunks(docs, { query });
         expect(result.length).toBe(1);
       }
@@ -444,7 +470,9 @@ describe('Chunk Filter', () => {
 
       const docs = [
         createCodeDoc('function test() {}', ['Code']),
-        createDoc('Regular content that passes the quality checks', ['Docs'], { estimatedTokens: 100 }),
+        createDoc('Regular content that passes the quality checks', ['Docs'], {
+          estimatedTokens: 100,
+        }),
       ];
 
       // Even non-programming query should include code when filter is disabled
@@ -491,7 +519,7 @@ describe('Chunk Filter', () => {
       const result = filterLowQualityChunks(docs, { query: 'What is the HR policy?' });
 
       // Only non-code docs should remain
-      expect(result.every(d => !d.metadata.is_code)).toBe(true);
+      expect(result.every((d) => !d.metadata.is_code)).toBe(true);
     });
   });
 });
