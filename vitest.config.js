@@ -23,10 +23,10 @@ export default defineConfig({
       // concentration module controller). Type-only files carry no executable
       // logic, so they're excluded from the coverage denominator.
       include: [
-        'utils/**/*.js',
+        // `{js,ts}` — utils + services convert to .ts through RTV-22..24; keep them counted.
+        'utils/**/*.{js,ts}',
         'controllers/**/*.{js,ts}',
         'middleware/**/*.{js,ts}',
-        // `{js,ts}` — the domain services convert to .ts through RTV-22..24; keep them counted.
         'services/**/*.{js,ts}',
         'modules/**/*.controller.ts',
       ],
