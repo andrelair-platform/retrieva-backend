@@ -26,7 +26,26 @@ const OLLAMA_AUTH_HEADERS = OLLAMA_API_KEY
 // Models that require task-specific prefixes for optimal performance.
 // =============================================================================
 
-const MODEL_PREFIXES = {
+interface EmbeddingContext {
+  workspaceId?: string;
+  trustLevel?: string;
+  cloudConsent?: boolean;
+  preferCloud?: boolean;
+  fallbackToCloud?: boolean;
+}
+
+interface WorkspaceLike {
+  workspaceId?: string;
+  _id?: { toString(): string };
+  trustLevel?: string;
+  embeddingSettings?: {
+    cloudConsent?: boolean;
+    preferCloud?: boolean;
+    fallbackToCloud?: boolean;
+  };
+}
+
+const MODEL_PREFIXES: Record<string, { document: string; query: string }> = {
   'bge-m3': { document: '', query: '' },
   'bge-m3:latest': { document: '', query: '' },
 };
@@ -55,7 +74,7 @@ export function getEmbeddingPrefixes() {
 export const EmbeddingProvider = {
   LOCAL: 'local',
   CLOUD: 'cloud',
-};
+} as const;
 
 // Trust levels determine cloud eligibility
 export const TrustLevel = {
@@ -69,10 +88,10 @@ export const TrustLevel = {
 // =============================================================================
 
 const auditLog = {
-  entries: [],
+  entries: [] as Array<Record<string, unknown>>,
   maxEntries: 1000,
 
-  log(entry) {
+  log(entry: Record<string, unknown>) {
     this.entries.push({
       timestamp: new Date().toISOString(),
       ...entry,
@@ -92,7 +111,7 @@ const auditLog = {
     return this.entries.slice(-count);
   },
 
-  getByWorkspace(workspaceId, count = 50) {
+  getByWorkspace(workspaceId: string, count = 50) {
     return this.entries.filter((e) => e.workspaceId === workspaceId).slice(-count);
   },
 };
@@ -103,7 +122,16 @@ export { auditLog };
 // EMBEDDING METRICS BY PROVIDER
 // =============================================================================
 
-const providerMetrics = {
+interface ProviderMetric {
+  totalCalls: number;
+  totalChunks: number;
+  totalTimeMs: number;
+  errors: number;
+  lastError: string | null;
+  estimatedCost?: number;
+}
+
+const providerMetrics: { local: ProviderMetric; cloud: ProviderMetric } = {
   local: {
     totalCalls: 0,
     totalChunks: 0,
@@ -151,7 +179,7 @@ export function resetProviderMetrics() {
 // =============================================================================
 
 // Local Ollama provider (singleton)
-let localProvider = null;
+let localProvider: OllamaEmbeddings | null = null;
 function getLocalProvider() {
   if (!localProvider) {
     localProvider = new OllamaEmbeddings({
@@ -164,7 +192,7 @@ function getLocalProvider() {
 }
 
 // Cloud provider (singleton) - OpenAI only
-let cloudProvider = null;
+let cloudProvider: OpenAIEmbeddings | null = null;
 function getCloudProvider() {
   if (cloudProvider) return cloudProvider;
 
@@ -217,8 +245,8 @@ export function getCloudProviderType() {
  * @param {EmbeddingContext} context - Embedding context
  * @returns {string} Provider type (local or cloud)
  */
-export function selectProvider(context) {
-  const { trustLevel, cloudConsent, preferCloud, _fallbackToCloud } = context;
+export function selectProvider(context: EmbeddingContext): 'local' | 'cloud' {
+  const { trustLevel, cloudConsent, preferCloud } = context;
 
   // Regulated data must always use local
   if (trustLevel === TrustLevel.REGULATED) {
@@ -250,12 +278,12 @@ export function selectProvider(context) {
  * @param {EmbeddingContext} context - Embedding context
  * @returns {Promise<Object>} Embedding result with metadata
  */
-export async function embedTexts(texts, context) {
+export async function embedTexts(texts: string[], context: EmbeddingContext) {
   const startTime = Date.now();
   const selectedProvider = selectProvider(context);
-  let usedProvider = selectedProvider;
-  let embeddings;
-  let error = null;
+  let usedProvider: 'local' | 'cloud' = selectedProvider;
+  let embeddings: number[][] = [];
+  let error: Error | null = null;
 
   try {
     if (selectedProvider === EmbeddingProvider.CLOUD) {
@@ -264,7 +292,7 @@ export async function embedTexts(texts, context) {
       embeddings = await embedWithLocal(texts, context);
     }
   } catch (err) {
-    error = err;
+    error = err as Error;
 
     // Fallback logic
     if (
@@ -276,7 +304,7 @@ export async function embedTexts(texts, context) {
       logger.warn('Local embedding failed, falling back to cloud', {
         service: 'embedding-router',
         workspaceId: context.workspaceId,
-        error: err.message,
+        error: (err as Error).message,
       });
 
       usedProvider = EmbeddingProvider.CLOUD;
@@ -286,7 +314,7 @@ export async function embedTexts(texts, context) {
       logger.warn('Cloud embedding failed, falling back to local', {
         service: 'embedding-router',
         workspaceId: context.workspaceId,
-        error: err.message,
+        error: (err as Error).message,
       });
 
       usedProvider = EmbeddingProvider.LOCAL;
@@ -324,7 +352,7 @@ export async function embedTexts(texts, context) {
     totalTimeMs: totalTime,
     trustLevel: context.trustLevel,
     fallbackUsed: metadata.fallbackUsed,
-    error: error?.message || null,
+    error: (error as Error | null)?.message ?? null,
   });
 
   return {
@@ -336,7 +364,7 @@ export async function embedTexts(texts, context) {
 /**
  * Embed texts using local Ollama
  */
-async function embedWithLocal(texts, context) {
+async function embedWithLocal(texts: string[], context: EmbeddingContext): Promise<number[][]> {
   const startTime = Date.now();
   const provider = getLocalProvider();
 
@@ -359,7 +387,7 @@ async function embedWithLocal(texts, context) {
     return embeddings;
   } catch (error) {
     providerMetrics.local.errors++;
-    providerMetrics.local.lastError = error.message;
+    providerMetrics.local.lastError = (error as Error).message;
     throw error;
   }
 }
@@ -367,7 +395,7 @@ async function embedWithLocal(texts, context) {
 /**
  * Embed texts using cloud OpenAI
  */
-async function embedWithCloud(texts, context) {
+async function embedWithCloud(texts: string[], context: EmbeddingContext): Promise<number[][]> {
   const startTime = Date.now();
   const provider = getCloudProvider();
 
@@ -380,14 +408,14 @@ async function embedWithCloud(texts, context) {
     const timeMs = Date.now() - startTime;
 
     // Estimate cost (text-embedding-3-small: $0.02 per 1M tokens)
-    const estimatedTokens = texts.reduce((sum, t) => sum + Math.ceil(t.length / 4), 0);
+    const estimatedTokens = texts.reduce((sum: number, t: string) => sum + Math.ceil(t.length / 4), 0);
     const estimatedCost = (estimatedTokens / 1000000) * 0.02;
 
     // Update metrics
     providerMetrics.cloud.totalCalls++;
     providerMetrics.cloud.totalChunks += texts.length;
     providerMetrics.cloud.totalTimeMs += timeMs;
-    providerMetrics.cloud.estimatedCost += estimatedCost;
+    providerMetrics.cloud.estimatedCost = (providerMetrics.cloud.estimatedCost ?? 0) + estimatedCost;
 
     logger.debug('Cloud embedding complete', {
       service: 'embedding-cloud',
@@ -400,7 +428,7 @@ async function embedWithCloud(texts, context) {
     return embeddings;
   } catch (error) {
     providerMetrics.cloud.errors++;
-    providerMetrics.cloud.lastError = error.message;
+    providerMetrics.cloud.lastError = (error as Error).message;
     throw error;
   }
 }
@@ -408,7 +436,7 @@ async function embedWithCloud(texts, context) {
 /**
  * Embed a single query
  */
-export async function embedQuery(text, context) {
+export async function embedQuery(text: string, context: EmbeddingContext) {
   const selectedProvider = selectProvider(context);
   const provider =
     selectedProvider === EmbeddingProvider.CLOUD ? getCloudProvider() : getLocalProvider();
@@ -475,7 +503,7 @@ export function getCloudConsentDisclosure() {
 /**
  * Check if workspace can use cloud embeddings
  */
-export function canUseCloudEmbeddings(workspace) {
+export function canUseCloudEmbeddings(workspace: WorkspaceLike | null | undefined) {
   if (!workspace) return false;
   if (!isCloudAvailable()) return false;
   if (workspace.trustLevel === TrustLevel.REGULATED) return false;
@@ -488,7 +516,7 @@ export function canUseCloudEmbeddings(workspace) {
 /**
  * Create embedding context from workspace
  */
-export function createEmbeddingContext(workspace) {
+export function createEmbeddingContext(workspace: WorkspaceLike): EmbeddingContext {
   return {
     workspaceId: workspace.workspaceId || workspace._id?.toString(),
     trustLevel: workspace.trustLevel || TrustLevel.INTERNAL,

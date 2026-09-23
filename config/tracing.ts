@@ -50,7 +50,8 @@ const langfuseEnabled = !!(LF_PUBLIC && LF_SECRET);
 // langfuse is imported DYNAMICALLY (top-level await) so a missing/optional dependency never breaks
 // module load — tracing simply stays disabled. In production the package is present (backend image),
 // so the client initialises at boot; if it can't be resolved, we log and degrade to no-op.
-let langfuse = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- external Langfuse SDK (dynamically imported)
+let langfuse: any = null;
 if (langfuseEnabled) {
   try {
     const { Langfuse } = await import('langfuse');
@@ -62,7 +63,9 @@ if (langfuseEnabled) {
     });
     logger.info('Langfuse tracing enabled', { baseUrl: LF_BASEURL || 'cloud', environment: LF_ENV });
   } catch (e) {
-    logger.warn('Langfuse SDK unavailable — tracing disabled', { error: e.message });
+    logger.warn('Langfuse SDK unavailable — tracing disabled', {
+      error: e instanceof Error ? e.message : String(e),
+    });
     langfuse = null;
   }
 }
@@ -91,7 +94,16 @@ const NULL_TRACE = { id: null, span: () => NULL_OBS, generation: () => NULL_OBS,
  *   t.update({ output }); await t.flush();
  * When Langfuse is disabled every call is a no-op.
  */
-export function startTrace({ name, sessionId, userId, input, tags, metadata } = {}) {
+interface StartTraceArgs {
+  name?: string;
+  sessionId?: string;
+  userId?: string;
+  input?: unknown;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export function startTrace({ name, sessionId, userId, input, tags, metadata }: StartTraceArgs = {}) {
   if (!langfuse) return NULL_TRACE;
   try {
     const trace = langfuse.trace({
@@ -107,19 +119,19 @@ export function startTrace({ name, sessionId, userId, input, tags, metadata } = 
     });
     return {
       id: trace.id,
-      span: (opts) => trace.span(opts),
-      generation: (opts) => trace.generation(opts),
-      update: (u) => trace.update(u),
+      span: (opts: unknown) => trace.span(opts),
+      generation: (opts: unknown) => trace.generation(opts),
+      update: (u: unknown) => trace.update(u),
       flush: async () => {
         try {
           await langfuse.flushAsync();
         } catch (e) {
-          logger.warn('Langfuse flush failed', { error: e.message });
+          logger.warn('Langfuse flush failed', { error: e instanceof Error ? e.message : String(e) });
         }
       },
     };
   } catch (e) {
-    logger.warn('Langfuse startTrace failed', { error: e.message });
+    logger.warn('Langfuse startTrace failed', { error: e instanceof Error ? e.message : String(e) });
     return NULL_TRACE;
   }
 }
@@ -139,7 +151,10 @@ export function startTrace({ name, sessionId, userId, input, tags, metadata } = 
  * @param {number} [opts.cacheTtlSeconds] SDK client-side cache (default 60s)
  * @returns {Promise<object|null>}
  */
-export async function getLangfusePrompt(name, { label, cacheTtlSeconds = 60 } = {}) {
+export async function getLangfusePrompt(
+  name: string,
+  { label, cacheTtlSeconds = 60 }: { label?: string; cacheTtlSeconds?: number } = {}
+) {
   if (!langfuse) return null;
   try {
     return await langfuse.getPrompt(name, undefined, {
@@ -149,7 +164,11 @@ export async function getLangfusePrompt(name, { label, cacheTtlSeconds = 60 } = 
       fallback: undefined,
     });
   } catch (e) {
-    logger.warn('Langfuse getPrompt failed — using Git fallback', { name, label, error: e.message });
+    logger.warn('Langfuse getPrompt failed — using Git fallback', {
+      name,
+      label,
+      error: e instanceof Error ? e.message : String(e),
+    });
     return null;
   }
 }
@@ -158,11 +177,19 @@ export async function getLangfusePrompt(name, { label, cacheTtlSeconds = 60 } = 
  * LangChain callbacks for chain .invoke() — LangSmith only (Langfuse traces are built manually via
  * startTrace, since langfuse-langchain does not support LangChain v1).
  */
-export function getCallbacks(options = {}) {
+interface GetCallbacksOptions {
+  runName?: string;
+  userId?: string;
+  workspaceId?: string;
+  sessionId?: string;
+  feature?: string;
+}
+
+export function getCallbacks(options: GetCallbacksOptions = {}) {
   if (!langsmithEnabled) return [];
   const { runName, userId, workspaceId, sessionId, feature = 'unknown' } = options;
   const tracer = new LangChainTracer({
-    client: langsmithClient,
+    client: langsmithClient!,
     projectName: LANGSMITH_PROJECT,
     ...(runName ? { runName } : {}),
     tags: [`feature:${feature}`, `env:${process.env.NODE_ENV || 'development'}`],
@@ -179,20 +206,25 @@ export function getCallbacks(options = {}) {
 /**
  * Map a user rating (👍/👎 or 0–1) back to its trace. Works for both backends.
  */
-export async function logFeedback(traceId, score, comment) {
+export async function logFeedback(traceId: string, score: number, comment?: string) {
   if (!traceId) return;
   if (langfuse) {
     try {
       langfuse.score({ traceId, name: 'user_rating', value: score, comment: comment || undefined });
     } catch (e) {
-      logger.warn('Langfuse score failed', { error: e.message });
+      logger.warn('Langfuse score failed', { error: e instanceof Error ? e.message : String(e) });
     }
   }
   if (langsmithEnabled) {
     try {
-      await langsmithClient.createFeedback(traceId, 'user_rating', { score, comment: comment || undefined });
+      await langsmithClient!.createFeedback(traceId, 'user_rating', {
+        score,
+        comment: comment || undefined,
+      });
     } catch (e) {
-      logger.warn('LangSmith feedback failed', { error: e.message });
+      logger.warn('LangSmith feedback failed', {
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 }
