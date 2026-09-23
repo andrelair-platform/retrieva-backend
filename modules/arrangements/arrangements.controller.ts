@@ -102,7 +102,7 @@ export const createArrangement = catchAsync(async (req, res) => {
 export const getArrangement = catchAsync(async (req, res) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
-  const arrangement = await arrangementRepository.findByIdInOrg(organizationId, req.params.id);
+  const arrangement = await arrangementRepository.findByIdInOrg(organizationId, String(req.params.id));
   if (!arrangement) return sendError(res, 404, 'Arrangement not found');
   const maps = await loadDimensionMaps(organizationId);
   sendSuccess(res, 200, 'Arrangement', { arrangement: enrichArrangement(arrangement, maps) });
@@ -112,7 +112,7 @@ export const getArrangement = catchAsync(async (req, res) => {
 export const getLifecycle = catchAsync(async (req, res) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
-  const arrangement = await arrangementRepository.findByIdInOrg(organizationId, req.params.id);
+  const arrangement = await arrangementRepository.findByIdInOrg(organizationId, String(req.params.id));
   if (!arrangement) return sendError(res, 404, 'Arrangement not found');
   sendSuccess(res, 200, 'Arrangement lifecycle', {
     status: arrangement.lifecycleStatus,
@@ -128,7 +128,7 @@ export const transitionLifecycle = catchAsync(async (req, res) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   const { transition } = req.body ?? {};
-  const arrangement = await arrangementRepository.findByIdInOrg(organizationId, req.params.id);
+  const arrangement = await arrangementRepository.findByIdInOrg(organizationId, String(req.params.id));
   if (!arrangement) return sendError(res, 404, 'Arrangement not found');
 
   const from = arrangement.lifecycleStatus;
@@ -170,7 +170,10 @@ export const transitionLifecycle = catchAsync(async (req, res) => {
 export const listArrangementEvidence = catchAsync(async (req, res) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
-  const evidence = await evidenceRepository.resolveForArrangement(organizationId, req.params.id);
+  const evidence = await evidenceRepository.resolveForArrangement(
+    organizationId,
+    String(req.params.id)
+  );
   sendSuccess(res, 200, 'Evidence', { evidence });
 });
 
@@ -186,7 +189,7 @@ export const attachArrangementEvidence = catchAsync(async (req, res) => {
   const evidence = await evidenceRepository.createDeduped({
     organizationId,
     scope: 'arrangement',
-    arrangementId: req.params.id,
+    arrangementId: String(req.params.id),
     document,
     source,
     version,
@@ -213,7 +216,7 @@ export const ingestArrangementEvidence = catchAsync(async (req, res) => {
   const evidence = await evidenceRepository.createDeduped({
     organizationId,
     scope: 'arrangement',
-    arrangementId: req.params.id,
+    arrangementId: String(req.params.id),
     document: req.file.originalname,
     source: 'uploaded document',
     hash: sha256(text),
@@ -232,7 +235,7 @@ export const attachProviderEvidence = catchAsync(async (req, res) => {
   const evidence = await evidenceRepository.createDeduped({
     organizationId,
     scope: 'provider',
-    providerId: req.params.providerId,
+    providerId: String(req.params.providerId),
     document,
     source,
     version,

@@ -5,16 +5,16 @@
  * use jsonb operators. Additive; not wired yet.
  */
 import { and, eq, gte, lte, isNotNull, inArray, sql, desc } from 'drizzle-orm';
-import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
+import { BaseDrizzleRepository, type OrderBy } from './BaseDrizzleRepository.js';
 import { workspaces } from '../../db/schema/index.js';
 import { entityScopeCondition } from '../../services/security/entityScope.js';
 
 export class WorkspaceRepository extends BaseDrizzleRepository {
-  constructor(opts = {}) {
+  constructor(opts: { db?: unknown } = {}) {
     super(workspaces, opts);
   }
 
-  async findByOrganization(organizationId, { orderBy } = {}) {
+  async findByOrganization(organizationId: string, { orderBy }: { orderBy?: OrderBy } = {}) {
     return this.find(
       and(
         eq(workspaces.organizationId, organizationId),
@@ -30,7 +30,7 @@ export class WorkspaceRepository extends BaseDrizzleRepository {
   }
 
   /** Workspaces where any certification's validUntil is on/before the threshold. */
-  async findWithExpiringCertifications(thresholdDate) {
+  async findWithExpiringCertifications(thresholdDate: string) {
     const iso = new Date(thresholdDate).toISOString();
     return this.find(
       sql`exists (
@@ -40,7 +40,7 @@ export class WorkspaceRepository extends BaseDrizzleRepository {
     );
   }
 
-  async findByContractEndingSoon(from, to) {
+  async findByContractEndingSoon(from: Date, to: Date) {
     return this.find(
       and(
         isNotNull(workspaces.contractEnd),
@@ -56,23 +56,23 @@ export class WorkspaceRepository extends BaseDrizzleRepository {
     );
   }
 
-  async setNextReviewDate(id, nextReviewDate) {
+  async setNextReviewDate(id: string, nextReviewDate: string) {
     return this.updateById(id, { nextReviewDate });
   }
 
-  async findByOrgAndName(organizationId, name) {
+  async findByOrgAndName(organizationId: string, name: string) {
     return this.findOne(
       and(eq(workspaces.organizationId, organizationId), eq(workspaces.name, name))
     );
   }
 
-  async findByIds(ids) {
+  async findByIds(ids: string[]) {
     if (!ids || ids.length === 0) return [];
     return this.find(inArray(workspaces.id, ids.map(String)));
   }
 
   /** Merge one key into the alertsSentAt JSONB map (dedup bookkeeping). */
-  async setAlertSentAt(workspaceId, alertKey, date = new Date()) {
+  async setAlertSentAt(workspaceId: string, alertKey: string, date = new Date()) {
     return this.updateById(workspaceId, {
       alertsSentAt: sql`coalesce(${workspaces.alertsSentAt}, '{}'::jsonb) || jsonb_build_object(${alertKey}::text, to_jsonb(${date.toISOString()}::text))`,
     });

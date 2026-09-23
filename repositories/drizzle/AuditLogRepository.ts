@@ -7,16 +7,16 @@
  */
 import { and, eq, desc } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
-import { auditLog } from '../../db/schema/index.js';
+import { auditLog, type AuditLogInsert } from '../../db/schema/index.js';
 import { entityScopeCondition } from '../../services/security/entityScope.js';
 
 export class AuditLogRepository extends BaseDrizzleRepository {
-  constructor(opts = {}) {
+  constructor(opts: { db?: unknown } = {}) {
     super(auditLog, opts);
   }
 
   /** Append one audit entry (the only write path). */
-  async append(entry) {
+  async append(entry: AuditLogInsert) {
     return this.create(entry);
   }
 
@@ -35,7 +35,7 @@ export class AuditLogRepository extends BaseDrizzleRepository {
     throw new Error('audit_log is append-only: delete is not permitted');
   }
 
-  async listByOrg(organizationId, { limit = 100 } = {}) {
+  async listByOrg(organizationId: string, { limit = 100 }: { limit?: number } = {}) {
     return this.find(
       and(
         eq(auditLog.organizationId, organizationId),
@@ -45,7 +45,12 @@ export class AuditLogRepository extends BaseDrizzleRepository {
     );
   }
 
-  async listByTarget(organizationId, targetType, targetId, { limit = 100 } = {}) {
+  async listByTarget(
+    organizationId: string,
+    targetType: string,
+    targetId: string,
+    { limit = 100 }: { limit?: number } = {}
+  ) {
     return this.find(
       and(
         eq(auditLog.organizationId, organizationId),

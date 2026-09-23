@@ -5,19 +5,16 @@
  */
 import { and, eq, asc } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
-import { findings } from '../../db/schema/index.js';
+import { findings, type FindingInsert } from '../../db/schema/index.js';
 import { entityScopeCondition } from '../../services/security/entityScope.js';
 
 export class FindingRepository extends BaseDrizzleRepository {
-  constructor(opts = {}) {
+  constructor(opts: { db?: unknown } = {}) {
     super(findings, opts);
   }
 
-  /**
-   * Insert or update the current finding for a control on an arrangement (one per control).
-   * @param {object} values full finding columns (organizationId, arrangementId, controlId, …)
-   */
-  async upsertForControl(values) {
+  /** Insert or update the current finding for a control on an arrangement (one per control). */
+  async upsertForControl(values: FindingInsert) {
     const [row] = await this.db
       .insert(findings)
       .values(values)
@@ -39,7 +36,7 @@ export class FindingRepository extends BaseDrizzleRepository {
     return row;
   }
 
-  async listByArrangement(organizationId, arrangementId) {
+  async listByArrangement(organizationId: string, arrangementId: string) {
     return this.find(
       and(
         eq(findings.organizationId, organizationId),
@@ -50,7 +47,7 @@ export class FindingRepository extends BaseDrizzleRepository {
     );
   }
 
-  async findByIdInOrg(organizationId, id) {
+  async findByIdInOrg(organizationId: string, id: string) {
     return this.findOne(
       and(
         eq(findings.id, id),
@@ -61,7 +58,7 @@ export class FindingRepository extends BaseDrizzleRepository {
   }
 
   /** Set a finding's status (draft|approved|rejected) — the human-in-the-loop decision (RTV-55). */
-  async setDecision(organizationId, id, status) {
+  async setDecision(organizationId: string, id: string, status: string) {
     const [row] = await this.db
       .update(findings)
       .set({ status, updatedAt: new Date() })

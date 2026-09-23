@@ -13,7 +13,7 @@ export class LegalEntityRepository extends BaseDrizzleRepository {
     super(legalEntities, opts);
   }
 
-  async listByOrg(organizationId) {
+  async listByOrg(organizationId: string) {
     return this.find(
       and(
         eq(legalEntities.organizationId, organizationId),

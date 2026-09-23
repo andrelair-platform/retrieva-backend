@@ -66,6 +66,6 @@ export const updateMember = catchAsync(async (req, res) => {
 });
 
 export const getComplianceScore = catchAsync(async (req, res) => {
-  const score = await assessmentRepository.getComplianceScore(req.params.workspaceId);
+  const score = await assessmentRepository.getComplianceScore(String(req.params.workspaceId));
   sendSuccess(res, 200, 'Compliance score retrieved', { score });
 });

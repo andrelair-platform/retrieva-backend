@@ -9,10 +9,18 @@
  */
 import bcrypt from 'bcryptjs';
 import { eq, and, sql } from 'drizzle-orm';
-import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
+import { BaseDrizzleRepository, type Row } from './BaseDrizzleRepository.js';
 import { users } from '../../db/schema/index.js';
 import { safeEncrypt, safeDecrypt } from '../../utils/security/fieldEncryption.js';
 import { sha256, generateToken } from '../../utils/security/crypto.js';
+
+type UserRow = Record<string, unknown>;
+interface RefreshToken {
+  tokenHash: string;
+  deviceInfo: string;
+  createdAt: string;
+  expiresAt: string;
+}
 
 const BCRYPT_ROUNDS = 12;
 const MAX_SESSIONS = 5; // active refresh tokens per user
@@ -39,34 +47,40 @@ export class UserRepository extends BaseDrizzleRepository {
     super(users, opts);
   }
 
-  isLocked(row) {
-    return !!(row?.lockUntil && new Date(row.lockUntil).getTime() > Date.now());
+  isLocked(row: UserRow | null | undefined) {
+    return !!(row?.lockUntil && new Date(row.lockUntil as string).getTime() > Date.now());
   }
 
   /** Strip secrets + decrypt `name` + derive `isLocked` for safe return. */
-  _sanitize(row) {
+  _sanitize(row: UserRow | null | undefined) {
     if (!row) return null;
-    const out = { ...row };
+    const out: UserRow = { ...row };
     for (const k of SECRET_KEYS) delete out[k];
-    out.name = safeDecrypt(row.name);
+    out.name = safeDecrypt(row.name as string);
     out.isLocked = this.isLocked(row);
     return out;
   }
 
-  async _rawById(id) {
+  async _rawById(id: string) {
     return super.findById(id);
   }
 
-  async _rawByEmail(email) {
+  async _rawByEmail(email: string) {
     return super.findOne(eq(users.email, String(email).toLowerCase()));
   }
 
-  async _hashPassword(plain) {
+  async _hashPassword(plain: string) {
     return bcrypt.hash(plain, await bcrypt.genSalt(BCRYPT_ROUNDS));
   }
 
   // ── account lifecycle ──────────────────────────────────────────────────────
-  async create({ email, password, name, role = 'user' }) {
+  async create(input: Row) {
+    const { email, password, name, role = 'user' } = input as {
+      email: string;
+      password: string;
+      name: string;
+      role?: string;
+    };
     const row = await super.create({
       email: String(email).toLowerCase(),
       password: await this._hashPassword(password),
@@ -76,44 +90,44 @@ export class UserRepository extends BaseDrizzleRepository {
     return this._sanitize(row);
   }
 
-  async findById(id) {
+  async findById(id: string) {
     return this._sanitize(await this._rawById(id));
   }
 
-  async findByEmail(email) {
+  async findByEmail(email: string) {
     return this._sanitize(await this._rawByEmail(email));
   }
 
-  async setOrganization(userId, organizationId) {
+  async setOrganization(userId: string, organizationId: string) {
     return this._sanitize(await super.updateById(userId, { organizationId }));
   }
 
   // ── password ───────────────────────────────────────────────────────────────
-  async verifyPassword(userId, candidate) {
+  async verifyPassword(userId: string, candidate: string) {
     const row = await this._rawById(userId);
     if (!row) return false;
     return bcrypt.compare(candidate, row.password);
   }
 
   /** Set a new password; revokes all sessions by default (force re-login). */
-  async setPassword(userId, newPassword, { revokeSessions = true } = {}) {
-    const patch = { password: await this._hashPassword(newPassword) };
+  async setPassword(userId: string, newPassword: string, { revokeSessions = true } = {}) {
+    const patch: Row = { password: await this._hashPassword(newPassword) };
     if (revokeSessions) patch.refreshTokens = [];
     return this._sanitize(await super.updateById(userId, patch));
   }
 
   /** Update the display name (re-encrypted at rest). */
-  async setName(userId, name) {
+  async setName(userId: string, name: string) {
     return this._sanitize(await super.updateById(userId, { name: safeEncrypt(name) }));
   }
 
   /** Activate/deactivate an account. */
-  async setActive(userId, isActive) {
+  async setActive(userId: string, isActive: string) {
     return this._sanitize(await super.updateById(userId, { isActive }));
   }
 
   // ── login attempts / lockout ────────────────────────────────────────────────
-  async incLoginAttempts(userId) {
+  async incLoginAttempts(userId: string) {
     const row = await this._rawById(userId);
     if (!row) return null;
     let attempts;
@@ -131,23 +145,25 @@ export class UserRepository extends BaseDrizzleRepository {
     return this._sanitize(await super.updateById(userId, { loginAttempts: attempts, lockUntil }));
   }
 
-  async resetLoginAttempts(userId) {
+  async resetLoginAttempts(userId: string) {
     return this._sanitize(
       await super.updateById(userId, { loginAttempts: 0, lockUntil: null, lastLogin: new Date() })
     );
   }
 
-  async updateLastLogin(userId) {
+  async updateLastLogin(userId: string) {
     return this._sanitize(await super.updateById(userId, { lastLogin: new Date() }));
   }
 
   // ── refresh tokens (jsonb array of {tokenHash,deviceInfo,createdAt,expiresAt}) ─
-  async addRefreshToken(userId, tokenHash, deviceInfo = 'unknown', expiryDays = REFRESH_TTL_DAYS) {
+  async addRefreshToken(userId: string, tokenHash: string, deviceInfo = 'unknown', expiryDays = REFRESH_TTL_DAYS) {
     const row = await this._rawById(userId);
     if (!row) return;
-    const tokens = (row.refreshTokens || []).filter((t) => new Date(t.expiresAt) > new Date());
+    const tokens: RefreshToken[] = ((row.refreshTokens as RefreshToken[]) || []).filter(
+      (t) => new Date(t.expiresAt) > new Date()
+    );
     if (tokens.length >= MAX_SESSIONS) {
-      tokens.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      tokens.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
       tokens.shift(); // evict oldest
     }
     tokens.push({
@@ -160,10 +176,10 @@ export class UserRepository extends BaseDrizzleRepository {
   }
 
   /** Consume (rotate) a refresh token. @returns {boolean} whether it was valid. */
-  async consumeRefreshToken(userId, tokenHash) {
+  async consumeRefreshToken(userId: string, tokenHash: string) {
     const row = await this._rawById(userId);
     if (!row) return false;
-    const tokens = row.refreshTokens || [];
+    const tokens: RefreshToken[] = (row.refreshTokens as RefreshToken[]) || [];
     const idx = tokens.findIndex(
       (t) => t.tokenHash === tokenHash && new Date(t.expiresAt) > new Date()
     );
@@ -173,12 +189,12 @@ export class UserRepository extends BaseDrizzleRepository {
     return true;
   }
 
-  async clearRefreshTokens(userId) {
+  async clearRefreshTokens(userId: string) {
     await super.updateById(userId, { refreshTokens: [] });
   }
 
   // ── password reset ───────────────────────────────────────────────────────────
-  async setPasswordResetToken(userId) {
+  async setPasswordResetToken(userId: string) {
     const raw = generateToken(32);
     await super.updateById(userId, {
       passwordResetToken: sha256(raw),
@@ -188,7 +204,7 @@ export class UserRepository extends BaseDrizzleRepository {
   }
 
   /** @returns {{raw, safe}|null} the raw row (for mutation) + a sanitized copy. */
-  async findByValidPasswordResetToken(rawToken) {
+  async findByValidPasswordResetToken(rawToken: string) {
     const row = await super.findOne(
       and(
         eq(users.passwordResetToken, sha256(rawToken)),
@@ -198,12 +214,12 @@ export class UserRepository extends BaseDrizzleRepository {
     return row ? { raw: row, safe: this._sanitize(row) } : null;
   }
 
-  async clearPasswordResetToken(userId) {
+  async clearPasswordResetToken(userId: string) {
     await super.updateById(userId, { passwordResetToken: null, passwordResetExpires: null });
   }
 
   // ── email verification ───────────────────────────────────────────────────────
-  async setEmailVerificationToken(userId) {
+  async setEmailVerificationToken(userId: string) {
     const raw = generateToken(32);
     await super.updateById(userId, {
       emailVerificationToken: sha256(raw),
@@ -213,7 +229,7 @@ export class UserRepository extends BaseDrizzleRepository {
     return raw;
   }
 
-  async findByValidEmailVerificationToken(rawToken) {
+  async findByValidEmailVerificationToken(rawToken: string) {
     return super.findOne(
       and(
         eq(users.emailVerificationToken, sha256(rawToken)),
@@ -222,7 +238,7 @@ export class UserRepository extends BaseDrizzleRepository {
     );
   }
 
-  async markEmailVerified(userId) {
+  async markEmailVerified(userId: string) {
     return this._sanitize(
       await super.updateById(userId, {
         isEmailVerified: true,
@@ -233,22 +249,22 @@ export class UserRepository extends BaseDrizzleRepository {
   }
 
   // ── MFA (TOTP) — secret + recovery codes encrypted/stored ────────────────────
-  async setMfaSecret(userId, secret) {
+  async setMfaSecret(userId: string, secret: string) {
     await super.updateById(userId, { mfaSecret: safeEncrypt(secret) });
   }
 
-  async getMfaSecret(userId) {
+  async getMfaSecret(userId: string) {
     const row = await this._rawById(userId);
     return row?.mfaSecret ? safeDecrypt(row.mfaSecret) : null;
   }
 
-  async enableMfa(userId, hashedRecoveryCodes) {
+  async enableMfa(userId: string, hashedRecoveryCodes: string) {
     return this._sanitize(
       await super.updateById(userId, { mfaEnabled: true, mfaRecoveryCodes: hashedRecoveryCodes })
     );
   }
 
-  async disableMfa(userId) {
+  async disableMfa(userId: string) {
     return this._sanitize(
       await super.updateById(userId, {
         mfaEnabled: false,
@@ -258,30 +274,33 @@ export class UserRepository extends BaseDrizzleRepository {
     );
   }
 
-  async getRecoveryCodes(userId) {
+  async getRecoveryCodes(userId: string) {
     const row = await this._rawById(userId);
     return row?.mfaRecoveryCodes || [];
   }
 
-  async setRecoveryCodes(userId, codes) {
+  async setRecoveryCodes(userId: string, codes: string) {
     await super.updateById(userId, { mfaRecoveryCodes: codes });
   }
 
   // ── onboarding ───────────────────────────────────────────────────────────────
-  async markAssessmentCreated(userId) {
+  async markAssessmentCreated(userId: string) {
     const row = await this._rawById(userId);
     if (!row) return null;
     const checklist = { ...(row.onboardingChecklist || {}), assessmentCreated: true };
     return this._sanitize(await super.updateById(userId, { onboardingChecklist: checklist }));
   }
 
-  async updateOnboarding(userId, { completed, checklist } = {}) {
+  async updateOnboarding(
+    userId: string,
+    { completed, checklist }: { completed?: boolean; checklist?: Record<string, unknown> } = {}
+  ) {
     const row = await this._rawById(userId);
     if (!row) return null;
-    const patch = {};
+    const patch: Row = {};
     if (completed !== undefined) patch.onboardingCompleted = completed;
     if (checklist && typeof checklist === 'object') {
-      patch.onboardingChecklist = { ...(row.onboardingChecklist || {}), ...checklist };
+      patch.onboardingChecklist = { ...((row.onboardingChecklist as object) || {}), ...checklist };
     }
     if (Object.keys(patch).length === 0) return this._sanitize(row);
     return this._sanitize(await super.updateById(userId, patch));

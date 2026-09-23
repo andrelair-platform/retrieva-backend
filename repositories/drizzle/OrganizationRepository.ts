@@ -11,7 +11,7 @@ export class OrganizationRepository extends BaseDrizzleRepository {
     super(organizations, opts);
   }
 
-  async findByStripeCustomerId(stripeCustomerId) {
+  async findByStripeCustomerId(stripeCustomerId: string) {
     return this.findOne(eq(organizations.stripeCustomerId, stripeCustomerId));
   }
 }

@@ -14,23 +14,30 @@ import { entityScopeCondition } from '../../services/security/entityScope.js';
 import { sha256 } from '../../utils/security/crypto.js';
 
 export class EvidenceRepository extends BaseDrizzleRepository {
-  constructor(opts = {}) {
+  constructor(opts: { db?: unknown } = {}) {
     super(evidence, opts);
   }
 
   /**
    * Create an evidence record, hashing content on ingest and deduping per (org, target, hash).
-   * @param {object} values evidence columns; pass `content` (string|Buffer) to auto-hash, or `hash`.
-   * @returns {Promise<object>} the created (or pre-existing, if duplicate) row.
+   * `values` = evidence columns; pass `content` (string|Buffer) to auto-hash, or `hash`.
    */
-  async createDeduped(values) {
+  async createDeduped(values: {
+    content?: string | Buffer;
+    hash?: string;
+    scope?: string;
+    providerId?: string;
+    arrangementId?: string;
+    organizationId: string;
+    [k: string]: unknown;
+  }) {
     const { content, ...rest } = values;
     const hasContent = content !== undefined && content !== null;
-    const hash = rest.hash || (hasContent ? sha256(content) : null);
+    const hash = rest.hash || (hasContent ? sha256(content as string) : null);
     if (!hash) throw new Error('evidence requires a hash or content to hash');
 
     const targetCol = rest.scope === 'provider' ? evidence.providerId : evidence.arrangementId;
-    const targetId = rest.scope === 'provider' ? rest.providerId : rest.arrangementId;
+    const targetId = (rest.scope === 'provider' ? rest.providerId : rest.arrangementId) as string;
     const existing = await this.findOne(
       and(
         eq(evidence.organizationId, rest.organizationId),
@@ -44,7 +51,7 @@ export class EvidenceRepository extends BaseDrizzleRepository {
     return this.create({ ...rest, hash });
   }
 
-  async listByProvider(organizationId, providerId) {
+  async listByProvider(organizationId: string, providerId: string) {
     return this.find(
       and(
         eq(evidence.organizationId, organizationId),
@@ -56,7 +63,7 @@ export class EvidenceRepository extends BaseDrizzleRepository {
     );
   }
 
-  async listByArrangement(organizationId, arrangementId) {
+  async listByArrangement(organizationId: string, arrangementId: string) {
     return this.find(
       and(
         eq(evidence.organizationId, organizationId),
@@ -73,7 +80,7 @@ export class EvidenceRepository extends BaseDrizzleRepository {
    * provider-global evidence of the arrangement's provider (shared/inherited). Returns [] if the
    * arrangement isn't visible in scope.
    */
-  async resolveForArrangement(organizationId, arrangementId) {
+  async resolveForArrangement(organizationId: string, arrangementId: string) {
     const [arr] = await this.db
       .select({ providerId: arrangements.providerId })
       .from(arrangements)

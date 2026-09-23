@@ -11,23 +11,26 @@ import { conversations } from '../../db/schema/index.js';
 import { escapeRegExp } from '../../utils/core/escapeRegExp.js';
 
 export class ConversationRepository extends TenantScopedRepository {
-  constructor(opts = {}) {
+  constructor(opts: { db?: unknown } = {}) {
     super(conversations, { tenantKey: 'workspaceId', ...opts });
   }
 
   /** create() (base) stamps workspace_id from context — don't pass it here. */
-  async createConversation({ title, userId } = {}) {
+  async createConversation({ title, userId }: { title?: string; userId?: string | null } = {}) {
     return this.create({ title: title || 'New Conversation', userId: userId ?? null });
   }
 
-  async findByUser(userId, { limit } = {}) {
+  async findByUser(userId: string, { limit }: { limit?: number } = {}) {
     return this.find(eq(conversations.userId, userId), {
       orderBy: desc(conversations.updatedAt),
       limit,
     });
   }
 
-  async findByUserPaginated(userId, { page = 1, limit = 20 } = {}) {
+  async findByUserPaginated(
+    userId: string,
+    { page = 1, limit = 20 }: { page?: number; limit?: number } = {}
+  ) {
     return this.findPaginated(eq(conversations.userId, userId), {
       page,
       limit,
@@ -35,12 +38,12 @@ export class ConversationRepository extends TenantScopedRepository {
     });
   }
 
-  async updateTitle(id, title) {
+  async updateTitle(id: string, title: string) {
     return this.updateById(id, { title: String(title).trim() });
   }
 
   /** messageCount += count, lastMessageAt = now — tenant+id scoped. */
-  async incrementMessageCount(id, count = 1) {
+  async incrementMessageCount(id: string, count = 1) {
     const [row] = await this.updateWhere(eq(conversations.id, id), {
       messageCount: sql`${conversations.messageCount} + ${count}`,
       lastMessageAt: new Date(),
@@ -48,18 +51,18 @@ export class ConversationRepository extends TenantScopedRepository {
     return row ?? null;
   }
 
-  async touchLastMessage(id) {
+  async touchLastMessage(id: string) {
     return this.updateById(id, { lastMessageAt: new Date() });
   }
 
-  async getRecentConversations(userId, limit = 10) {
+  async getRecentConversations(userId: string, limit = 10) {
     return this.find(eq(conversations.userId, userId), {
       orderBy: desc(conversations.updatedAt),
       limit,
     });
   }
 
-  async searchByTitle(userId, searchTerm) {
+  async searchByTitle(userId: string, searchTerm: string) {
     const term = escapeRegExp(String(searchTerm).slice(0, 200));
     return this.find(
       and(eq(conversations.userId, userId), ilike(conversations.title, `%${term}%`)),
@@ -69,7 +72,7 @@ export class ConversationRepository extends TenantScopedRepository {
     );
   }
 
-  async getActiveConversations(userId, daysActive = 7) {
+  async getActiveConversations(userId: string, daysActive = 7) {
     const cutoff = new Date(Date.now() - daysActive * 24 * 60 * 60 * 1000);
     return this.find(
       and(eq(conversations.userId, userId), gte(conversations.lastMessageAt, cutoff)),
@@ -79,25 +82,25 @@ export class ConversationRepository extends TenantScopedRepository {
     );
   }
 
-  async deleteConversation(id) {
+  async deleteConversation(id: string) {
     return this.deleteById(id);
   }
 
-  async deleteUserConversations(userId) {
+  async deleteUserConversations(userId: string) {
     return this.deleteWhere(eq(conversations.userId, userId));
   }
 
-  async countByUser(userId) {
+  async countByUser(userId: string) {
     return this.count(eq(conversations.userId, userId));
   }
 
-  async getEmptyConversations(userId) {
+  async getEmptyConversations(userId: string) {
     return this.find(and(eq(conversations.userId, userId), eq(conversations.messageCount, 0)), {
       orderBy: desc(conversations.createdAt),
     });
   }
 
-  async cleanupEmptyConversations(userId, daysOld = 7) {
+  async cleanupEmptyConversations(userId: string, daysOld = 7) {
     const cutoff = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
     return this.deleteWhere(
       and(
@@ -109,7 +112,7 @@ export class ConversationRepository extends TenantScopedRepository {
   }
 
   /** Per-user stats (tenant-scoped) — replaces the Mongo $group aggregation. */
-  async getUserStats(userId) {
+  async getUserStats(userId: string) {
     const [r] = await this.db
       .select({
         totalConversations: sql`count(*)::int`,

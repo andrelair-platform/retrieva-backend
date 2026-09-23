@@ -5,7 +5,7 @@
  */
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
-import { organizationMembers } from '../../db/schema/index.js';
+import { organizationMembers, type OrganizationMemberRow } from '../../db/schema/index.js';
 import { sha256, generateToken } from '../../utils/security/crypto.js';
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -15,13 +15,16 @@ export class OrganizationMemberRepository extends BaseDrizzleRepository {
     super(organizationMembers, opts);
   }
 
-  async findActiveByUserId(userId) {
+  async findActiveByUserId(userId: string) {
     return this.findOne(
       and(eq(organizationMembers.userId, userId), eq(organizationMembers.status, 'active'))
     );
   }
 
-  async findByOrganization(organizationId, status = 'active') {
+  async findByOrganization(
+    organizationId: string,
+    status: OrganizationMemberRow['status'] = 'active'
+  ) {
     return this.find(
       and(
         eq(organizationMembers.organizationId, organizationId),
@@ -31,7 +34,7 @@ export class OrganizationMemberRepository extends BaseDrizzleRepository {
   }
 
   /** An active member matching an org + email — the duplicate-invite guard. */
-  async findActiveByOrgAndEmail(organizationId, email) {
+  async findActiveByOrgAndEmail(organizationId: string, email: string) {
     return this.findOne(
       and(
         eq(organizationMembers.organizationId, organizationId),
@@ -46,7 +49,7 @@ export class OrganizationMemberRepository extends BaseDrizzleRepository {
    * the Drizzle relational replacement for the Mongoose `.populate('userId', 'name email')`.
    * Decrypt `user.name` at the caller (it's stored encrypted).
    */
-  async findByOrganizationWithUser(organizationId) {
+  async findByOrganizationWithUser(organizationId: string) {
     return this.db.query.organizationMembers.findMany({
       where: and(
         eq(organizationMembers.organizationId, organizationId),
@@ -56,14 +59,14 @@ export class OrganizationMemberRepository extends BaseDrizzleRepository {
     });
   }
 
-  async revokeMembership(memberId) {
+  async revokeMembership(memberId: string) {
     return this.updateById(memberId, { status: 'revoked' });
   }
 
   /** Count org admins. NOTE: the enum value is `org_admin` (the Mongoose code queried
    *  'admin', which never matched the ['org_admin','analyst','viewer'] enum → always 0;
    *  corrected here to the real value). */
-  async countAdmins(organizationId) {
+  async countAdmins(organizationId: string) {
     return this.count(
       and(
         eq(organizationMembers.organizationId, organizationId),
@@ -75,7 +78,7 @@ export class OrganizationMemberRepository extends BaseDrizzleRepository {
 
   // ── invite tokens (ported from the model statics) ───────────────────────────
   /** Create/refresh an invite (upsert on org+email); returns { member, rawToken }. */
-  async createInvite(organizationId, email, role, invitedBy) {
+  async createInvite(organizationId: string, email: string, role: string, invitedBy: string) {
     const rawToken = generateToken(32);
     const values = {
       organizationId,
@@ -104,7 +107,7 @@ export class OrganizationMemberRepository extends BaseDrizzleRepository {
   }
 
   /** Find a pending, unexpired member by raw invite token. */
-  async findByToken(rawToken) {
+  async findByToken(rawToken: string) {
     return this.findOne(
       and(
         eq(organizationMembers.inviteTokenHash, sha256(rawToken)),
@@ -115,7 +118,7 @@ export class OrganizationMemberRepository extends BaseDrizzleRepository {
   }
 
   /** Activate: status=active, set userId + joinedAt, clear the token. */
-  async activate(memberId, userId) {
+  async activate(memberId: string, userId: string) {
     return this.updateById(memberId, {
       status: 'active',
       userId,

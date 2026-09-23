@@ -7,13 +7,6 @@
     "checkJs": false,
     "noEmit": true
   },
-  "include": [
-    "db/schema/**/*.ts",
-    "db/entityContext.ts",
-    "db/migrate.ts",
-    "db/queries/**/*.ts",
-    "repositories/drizzle/BaseDrizzleRepository.ts",
-    "types/**/*.d.ts"
-  ],
+  "include": ["db/**/*.ts", "repositories/**/*.ts", "types/**/*.d.ts"],
   "exclude": ["node_modules", "dist", "coverage", "tests", "website", "seeds", "data"]
 }
