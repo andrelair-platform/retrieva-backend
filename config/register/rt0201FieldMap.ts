@@ -19,8 +19,12 @@
 
 export const REGISTER_TEMPLATE_VERSION = 'eba-its-2024.2956-v1';
 
-const val = (v) => (v === undefined || v === null || v === '' ? null : v);
-const list = (a) => (Array.isArray(a) && a.length ? a.join('; ') : null);
+// The assembled register read-model row — a heterogeneous projection over the arrangement graph.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous register read-model row
+type RegisterRow = Record<string, any>;
+
+const val = (v: unknown) => (v === undefined || v === null || v === '' ? null : v);
+const list = (a: unknown) => (Array.isArray(a) && a.length ? a.join('; ') : null);
 
 /**
  * Template definitions. Order matters — it is the column order in CSV/XLSX exports.
@@ -37,26 +41,26 @@ export const RT0201_TEMPLATES = {
         code: 'B_01.01.0010',
         label: 'LEI of the entity',
         required: true,
-        source: (r) => val(r.lei),
+        source: (r: RegisterRow) => val(r.lei),
       },
       {
         code: 'B_01.01.0020',
         label: 'Name of the entity',
         required: true,
-        source: (r) => val(r.name),
+        source: (r: RegisterRow) => val(r.name),
       },
-      { code: 'B_01.01.0030', label: 'Country', required: true, source: (r) => val(r.country) },
+      { code: 'B_01.01.0030', label: 'Country', required: true, source: (r: RegisterRow) => val(r.country) },
       {
         code: 'B_01.01.0040',
         label: 'Entity type (group / standalone)',
         required: false,
-        source: (r) => (r.isGroupEntity ? 'group' : 'standalone'),
+        source: (r: RegisterRow) => (r.isGroupEntity ? 'group' : 'standalone'),
       },
       {
         code: 'B_01.03.0010',
         label: 'Parent entity (hierarchy)',
         required: false,
-        source: (r) => val(r.parentName),
+        source: (r: RegisterRow) => val(r.parentName),
       },
     ],
   },
@@ -71,31 +75,31 @@ export const RT0201_TEMPLATES = {
         code: 'B_02.01.0010',
         label: 'Arrangement reference number',
         required: true,
-        source: (r) => val(r.reference),
+        source: (r: RegisterRow) => val(r.reference),
       },
       {
         code: 'B_02.01.0020',
         label: 'Type of arrangement',
         required: true,
-        source: (r) => val(r.arrangementType),
+        source: (r: RegisterRow) => val(r.arrangementType),
       },
       {
         code: 'B_02.01.0030',
         label: 'Legal entity (LEI)',
         required: true,
-        source: (r) => val(r.entityLei),
+        source: (r: RegisterRow) => val(r.entityLei),
       },
       {
         code: 'B_02.02.0010',
         label: 'Function supported',
         required: true,
-        source: (r) => val(r.functionName),
+        source: (r: RegisterRow) => val(r.functionName),
       },
       {
         code: 'B_02.02.0020',
         label: 'Critical or important function',
         required: true,
-        source: (r) =>
+        source: (r: RegisterRow) =>
           r.criticalOrImportant === null || r.criticalOrImportant === undefined
             ? null
             : r.criticalOrImportant
@@ -106,57 +110,57 @@ export const RT0201_TEMPLATES = {
         code: 'B_02.02.0030',
         label: 'ICT provider',
         required: true,
-        source: (r) => val(r.providerName),
+        source: (r: RegisterRow) => val(r.providerName),
       },
       {
         code: 'B_02.02.0040',
         label: 'ICT service',
         required: false,
-        source: (r) => val(r.serviceName),
+        source: (r: RegisterRow) => val(r.serviceName),
       },
       {
         code: 'B_02.03.0010',
         label: 'Criticality (CIF)',
         required: false,
-        source: (r) => val(r.criticality),
+        source: (r: RegisterRow) => val(r.criticality),
       },
       {
         code: 'B_02.03.0020',
         label: 'Data classes processed',
         required: false,
-        source: (r) => list(r.dataClasses),
+        source: (r: RegisterRow) => list(r.dataClasses),
       },
       {
         code: 'B_02.03.0030',
         label: 'Data residency',
         required: false,
-        source: (r) => val(r.dataResidency),
+        source: (r: RegisterRow) => val(r.dataResidency),
       },
       {
         code: 'B_02.03.0040',
         label: 'Dependency level',
         required: false,
-        source: (r) => val(r.dependency),
+        source: (r: RegisterRow) => val(r.dependency),
       },
       {
         code: 'B_02.03.0050',
         label: 'Exit difficulty',
         required: false,
-        source: (r) => val(r.exitDifficulty),
+        source: (r: RegisterRow) => val(r.exitDifficulty),
       },
       // RTV-31 — the Register reflects the arrangement's current lifecycle state.
       {
         code: 'B_02.04.0010',
         label: 'Lifecycle status',
         required: false,
-        source: (r) => val(r.lifecycleStatus),
+        source: (r: RegisterRow) => val(r.lifecycleStatus),
       },
       // Supplied by the assessment engine (RTV-30/40) — a gap until then.
       {
         code: 'B_07.01.0010',
         label: 'Latest assessment status',
         required: true,
-        source: (r) => val(r.assessmentStatus),
+        source: (r: RegisterRow) => val(r.assessmentStatus),
       },
     ],
   },
@@ -171,25 +175,25 @@ export const RT0201_TEMPLATES = {
         code: 'B_03.01.0010',
         label: 'Arrangement reference number',
         required: true,
-        source: (r) => val(r.reference),
+        source: (r: RegisterRow) => val(r.reference),
       },
       {
         code: 'B_03.01.0020',
         label: 'Legal entity (LEI)',
         required: true,
-        source: (r) => val(r.entityLei),
+        source: (r: RegisterRow) => val(r.entityLei),
       },
       {
         code: 'B_03.01.0030',
         label: 'Intra-group provider',
         required: true,
-        source: (r) => val(r.providerName),
+        source: (r: RegisterRow) => val(r.providerName),
       },
       {
         code: 'B_03.01.0040',
         label: 'Function supported',
         required: true,
-        source: (r) => val(r.functionName),
+        source: (r: RegisterRow) => val(r.functionName),
       },
     ],
   },
@@ -200,19 +204,19 @@ export const RT0201_TEMPLATES = {
     sheet: 'B_05.01 Providers',
     title: 'B_05 — ICT third-party service providers',
     columns: [
-      { code: 'B_05.01.0010', label: 'Provider LEI', required: true, source: (r) => val(r.lei) },
-      { code: 'B_05.01.0020', label: 'Provider name', required: true, source: (r) => val(r.name) },
+      { code: 'B_05.01.0010', label: 'Provider LEI', required: true, source: (r: RegisterRow) => val(r.lei) },
+      { code: 'B_05.01.0020', label: 'Provider name', required: true, source: (r: RegisterRow) => val(r.name) },
       {
         code: 'B_05.01.0030',
         label: 'Country of provider',
         required: true,
-        source: (r) => val(r.country),
+        source: (r: RegisterRow) => val(r.country),
       },
       {
         code: 'B_05.01.0040',
         label: 'Provider type',
         required: false,
-        source: (r) => val(r.providerType),
+        source: (r: RegisterRow) => val(r.providerType),
       },
     ],
   },
@@ -227,25 +231,25 @@ export const RT0201_TEMPLATES = {
         code: 'B_05.02.0010',
         label: 'Provider',
         required: true,
-        source: (r) => val(r.providerName),
+        source: (r: RegisterRow) => val(r.providerName),
       },
       {
         code: 'B_05.02.0020',
         label: 'Subcontractor',
         required: true,
-        source: (r) => val(r.subcontractorName),
+        source: (r: RegisterRow) => val(r.subcontractorName),
       },
       {
         code: 'B_05.02.0030',
         label: 'Relationship',
         required: false,
-        source: (r) => val(r.relationship),
+        source: (r: RegisterRow) => val(r.relationship),
       },
       {
         code: 'B_05.02.0040',
         label: 'Confirmed',
         required: false,
-        source: (r) => (r.confirmed ? 'yes' : 'no'),
+        source: (r: RegisterRow) => (r.confirmed ? 'yes' : 'no'),
       },
     ],
   },

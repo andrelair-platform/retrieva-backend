@@ -1,11 +1,15 @@
 import 'dotenv/config';
-import { Queue } from 'bullmq';
+import { Queue, type ConnectionOptions } from 'bullmq';
 import { redisConnection } from './redis.js';
 import logger from './logger.js';
 
-const MONITORING_INTERVAL_HOURS = parseInt(process.env.MONITORING_INTERVAL_HOURS) || 24;
+// BullMQ bundles its own copy of ioredis, so the top-level ioredis instance is a
+// structurally-distinct (but runtime-identical) type — cast at this single boundary.
+const connection = redisConnection as unknown as ConnectionOptions;
+
+const MONITORING_INTERVAL_HOURS = parseInt(process.env.MONITORING_INTERVAL_HOURS || '', 10) || 24;
 const REASSESSMENT_SCAN_INTERVAL_HOURS =
-  parseInt(process.env.REASSESSMENT_SCAN_INTERVAL_HOURS) || 24;
+  parseInt(process.env.REASSESSMENT_SCAN_INTERVAL_HOURS || '', 10) || 24;
 
 /**
  * Queue for assessment file indexing and gap analysis jobs
@@ -14,7 +18,7 @@ const REASSESSMENT_SCAN_INTERVAL_HOURS =
  * - Running the DORA gap analysis agent after indexing
  */
 export const assessmentQueue = new Queue('assessmentJobs', {
-  connection: redisConnection,
+  connection,
   defaultJobOptions: {
     attempts: 3,
     backoff: {
@@ -36,7 +40,7 @@ export const assessmentQueue = new Queue('assessmentJobs', {
  * Handles LLM-based per-question scoring and executive summary generation
  */
 export const questionnaireQueue = new Queue('questionnaireJobs', {
-  connection: redisConnection,
+  connection,
   defaultJobOptions: {
     attempts: 3,
     backoff: {
@@ -62,7 +66,7 @@ export const questionnaireQueue = new Queue('questionnaireJobs', {
  * - Assessment overdue alerts (12 months)
  */
 export const monitoringQueue = new Queue('monitoringJobs', {
-  connection: redisConnection,
+  connection,
   defaultJobOptions: {
     attempts: 2,
     backoff: {
@@ -81,17 +85,17 @@ export const monitoringQueue = new Queue('monitoringJobs', {
 /**
  * Helper: wrap a promise with a timeout
  */
-function withTimeout(promise, ms) {
-  let timer;
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
   return Promise.race([
     promise,
-    new Promise((_, reject) => {
+    new Promise<T>((_, reject) => {
       timer = setTimeout(() => reject(new Error(`Operation timed out after ${ms}ms`)), ms);
     }),
   ]).finally(() => clearTimeout(timer));
 }
 
-const QUEUE_OP_TIMEOUT = parseInt(process.env.QUEUE_OP_TIMEOUT_MS) || 10000;
+const QUEUE_OP_TIMEOUT = parseInt(process.env.QUEUE_OP_TIMEOUT_MS || '', 10) || 10000;
 
 /**
  * Schedule weekly digest email job
@@ -190,23 +194,28 @@ export async function schedulePeriodicReassessmentJob() {
 }
 
 // ISSUE #34 FIX: Store event listener references for cleanup
-const queueEventListeners = {
+type QueueErrorListener = (error: Error) => void;
+const queueEventListeners: {
+  assessmentJobs: QueueErrorListener | null;
+  questionnaireJobs: QueueErrorListener | null;
+  monitoringJobs: QueueErrorListener | null;
+} = {
   assessmentJobs: null,
   questionnaireJobs: null,
   monitoringJobs: null,
 };
 
-queueEventListeners.assessmentJobs = (error) => {
+queueEventListeners.assessmentJobs = (error: Error) => {
   logger.error('Assessment jobs queue error:', { error: error.message, stack: error.stack });
 };
 assessmentQueue.on('error', queueEventListeners.assessmentJobs);
 
-queueEventListeners.questionnaireJobs = (error) => {
+queueEventListeners.questionnaireJobs = (error: Error) => {
   logger.error('Questionnaire jobs queue error:', { error: error.message, stack: error.stack });
 };
 questionnaireQueue.on('error', queueEventListeners.questionnaireJobs);
 
-queueEventListeners.monitoringJobs = (error) => {
+queueEventListeners.monitoringJobs = (error: Error) => {
   logger.error('Monitoring jobs queue error:', { error: error.message, stack: error.stack });
 };
 monitoringQueue.on('error', queueEventListeners.monitoringJobs);

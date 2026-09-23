@@ -70,7 +70,7 @@ const pinoLogger = pino({
 // A Winston-compatible wrapper over pino (level methods assigned dynamically). This is the
 // canonical logger type for the whole app — the former config/logger.d.ts sidecar folded in here
 // when logger.js became TypeScript.
-type LogFn = (msgOrObj: string | Record<string, unknown>, meta?: Record<string, unknown>) => void;
+type LogFn = (msgOrObj: string | Record<string, unknown>, meta?: unknown) => void;
 export interface Logger {
   trace: LogFn;
   debug: LogFn;

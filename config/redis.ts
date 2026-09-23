@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import logger from './logger.js';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6378';
@@ -12,7 +12,7 @@ export const createRedisConnection = () => {
   const redis = new Redis(REDIS_URL, {
     maxRetriesPerRequest: null, // Required for BullMQ
     enableReadyCheck: false,
-    retryStrategy(times) {
+    retryStrategy(times: number) {
       const delay = Math.min(times * 50, 2000);
       logger.warn(`Redis connection retry attempt ${times}, waiting ${delay}ms`);
       return delay;
@@ -27,7 +27,7 @@ export const createRedisConnection = () => {
     logger.info('Redis client ready');
   });
 
-  redis.on('error', (error) => {
+  redis.on('error', (error: Error) => {
     logger.error('Redis connection error:', error);
   });
 

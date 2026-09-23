@@ -16,7 +16,7 @@ import { parseControlLibrary } from './schema.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '../../data/compliance/control-library');
 
-function load(version) {
+function load(version: string) {
   const raw = JSON.parse(readFileSync(path.join(DATA_DIR, `v${version}.json`), 'utf-8'));
   const lib = parseControlLibrary(raw); // validate on load — fail fast on a bad shape
   if (lib.libraryVersion !== version) {

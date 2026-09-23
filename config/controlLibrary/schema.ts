@@ -8,7 +8,7 @@ import { z } from 'zod';
 //  - baseline       → applies to every arrangement
 //  - cif_mandatory  → applies (required) only when the arrangement supports a critical/important function
 //  - cif_enhanced   → an enhanced obligation that applies only for CIF arrangements
-export const CONTROL_APPLICABILITY = ['baseline', 'cif_mandatory', 'cif_enhanced'];
+export const CONTROL_APPLICABILITY = ['baseline', 'cif_mandatory', 'cif_enhanced'] as const;
 
 export const controlSchema = z.object({
   id: z.string().min(1), // stable control id, e.g. "DORA-28.4-DUE-DILIGENCE"
@@ -28,7 +28,9 @@ export const controlLibrarySchema = z.object({
   controls: z.array(controlSchema).min(1),
 });
 
+export type ControlLibrary = z.infer<typeof controlLibrarySchema>;
+
 /** Parse + validate a raw library object; throws a readable error on a bad shape. */
-export function parseControlLibrary(raw) {
+export function parseControlLibrary(raw: unknown): ControlLibrary {
   return controlLibrarySchema.parse(raw);
 }
