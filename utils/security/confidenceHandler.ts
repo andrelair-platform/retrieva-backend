@@ -38,7 +38,7 @@ export const ConfidenceLevel = {
  * @param {number} confidence - Confidence score (0-1)
  * @returns {string} Confidence level
  */
-export function getConfidenceLevel(confidence) {
+export function getConfidenceLevel(confidence: number) {
   if (confidence < confidenceConfig.blockThreshold) {
     return ConfidenceLevel.BLOCKED;
   }
@@ -59,7 +59,7 @@ export function getConfidenceLevel(confidence) {
  * @param {string} level - Confidence level
  * @returns {string|null} Message to include, or null if none needed
  */
-export function getConfidenceMessage(level) {
+export function getConfidenceMessage(level: string) {
   switch (level) {
     case ConfidenceLevel.BLOCKED:
       return confidenceConfig.messages.blocked;
@@ -80,7 +80,17 @@ export function getConfidenceMessage(level) {
  * @param {Object} options - Processing options
  * @returns {Object} Processed result with confidence handling applied
  */
-export function processConfidence(result, options = {}) {
+type ResultLike = {
+  validation?: { confidence?: number };
+  answer?: string;
+  question?: string;
+  [k: string]: unknown;
+};
+
+export function processConfidence(
+  result: ResultLike,
+  options: { enableBlocking?: boolean; addWarnings?: boolean; logLowConfidence?: boolean } = {}
+) {
   const {
     enableBlocking = confidenceConfig.enableBlocking,
     addWarnings = true,
@@ -155,7 +165,7 @@ export function processConfidence(result, options = {}) {
  * @param {number} confidence - Confidence score
  * @returns {boolean} Whether to block the response
  */
-export function shouldBlockResponse(confidence) {
+export function shouldBlockResponse(confidence: number) {
   return confidenceConfig.enableBlocking && confidence < confidenceConfig.blockThreshold;
 }
 
@@ -176,7 +186,7 @@ export function getConfidenceConfig() {
  * @param {number} confidence - Confidence score (0-1)
  * @returns {string} Confidence band label
  */
-export function getConfidenceBand(confidence) {
+export function getConfidenceBand(confidence: number) {
   if (confidence >= 0.8) return '0.8-1.0 (high)';
   if (confidence >= 0.6) return '0.6-0.8 (good)';
   if (confidence >= 0.4) return '0.4-0.6 (moderate)';
@@ -188,7 +198,7 @@ export function getConfidenceBand(confidence) {
  * Middleware-style function to apply confidence handling to RAG result
  * Use in the RAG pipeline after answer generation
  */
-export function applyConfidenceHandling(result) {
+export function applyConfidenceHandling(result: ResultLike) {
   return processConfidence(result, {
     enableBlocking: confidenceConfig.enableBlocking,
     addWarnings: true,

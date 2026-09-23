@@ -68,7 +68,7 @@ const HARMFUL_CONTENT_PATTERNS = [
  * @param {string} text - Text to check
  * @returns {Object} - { hasInjection: boolean, patterns: string[] }
  */
-export function detectInjectionPatterns(text) {
+export function detectInjectionPatterns(text: string) {
   if (!text || typeof text !== 'string') {
     return { hasInjection: false, patterns: [] };
   }
@@ -94,7 +94,7 @@ export function detectInjectionPatterns(text) {
  * @param {string} text - Text to check
  * @returns {Object} - { hasHarmful: boolean, issues: string[] }
  */
-export function detectHarmfulContent(text) {
+export function detectHarmfulContent(text: string) {
   if (!text || typeof text !== 'string') {
     return { hasHarmful: false, issues: [] };
   }
@@ -119,7 +119,7 @@ export function detectHarmfulContent(text) {
  * @param {string} text - Text to sanitize
  * @returns {string} - Sanitized text
  */
-export function sanitizeText(text) {
+export function sanitizeText(text: string) {
   if (!text || typeof text !== 'string') {
     return '';
   }
@@ -155,7 +155,9 @@ export function sanitizeText(text) {
  * @param {Object} doc - Document object with pageContent
  * @returns {Object} - Sanitized document
  */
-export function sanitizeDocument(doc) {
+type DocLike = { pageContent?: string; metadata?: Record<string, unknown> } | null | undefined;
+
+export function sanitizeDocument(doc: DocLike) {
   if (!doc || !doc.pageContent) {
     return doc;
   }
@@ -192,7 +194,7 @@ export function sanitizeDocument(doc) {
  * @param {Array} docs - Array of document objects
  * @returns {Array} - Array of sanitized documents
  */
-export function sanitizeDocuments(docs) {
+export function sanitizeDocuments(docs: DocLike[]) {
   if (!Array.isArray(docs)) {
     return [];
   }
@@ -201,7 +203,7 @@ export function sanitizeDocuments(docs) {
 
   // Log summary
   const flaggedCount = sanitized.filter(
-    (d) => d.metadata?._hadInjectionPatterns || d.metadata?._hadHarmfulContent
+    (d) => d?.metadata?._hadInjectionPatterns || d?.metadata?._hadHarmfulContent
   ).length;
 
   if (flaggedCount > 0) {
@@ -221,7 +223,7 @@ export function sanitizeDocuments(docs) {
  * @param {string} context - Formatted context string
  * @returns {string} - Sanitized context
  */
-export function sanitizeFormattedContext(context) {
+export function sanitizeFormattedContext(context: string) {
   if (!context || typeof context !== 'string') {
     return '';
   }

@@ -16,7 +16,7 @@ import crypto from 'crypto';
  * @param {string} data - Data to hash
  * @returns {string} Hex-encoded SHA256 hash
  */
-export const sha256 = (data) => {
+export const sha256 = (data: string) => {
   return crypto.createHash('sha256').update(data).digest('hex');
 };
 
@@ -47,7 +47,7 @@ export const generateTokenPair = (bytes = 32) => {
  * @param {string} hashedToken - Stored hashed token
  * @returns {boolean} Whether tokens match
  */
-export const verifyToken = (rawToken, hashedToken) => {
+export const verifyToken = (rawToken: string, hashedToken: string) => {
   const computedHash = sha256(rawToken);
   return timingSafeEqual(computedHash, hashedToken);
 };
@@ -58,7 +58,7 @@ export const verifyToken = (rawToken, hashedToken) => {
  * @param {string} b - Second string
  * @returns {boolean} Whether strings are equal
  */
-export const timingSafeEqual = (a, b) => {
+export const timingSafeEqual = (a: unknown, b: unknown) => {
   if (typeof a !== 'string' || typeof b !== 'string') {
     return false;
   }
@@ -74,7 +74,7 @@ export const timingSafeEqual = (a, b) => {
  * @param {string} content - Content to hash
  * @returns {string} SHA256 hash of normalized content
  */
-export const contentHash = (content) => {
+export const contentHash = (content: unknown) => {
   if (!content || typeof content !== 'string') {
     return sha256('');
   }

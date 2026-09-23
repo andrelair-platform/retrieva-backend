@@ -5,6 +5,7 @@
  *
  * @module utils/cookieConfig
  */
+import type { Request, Response, CookieOptions } from 'express';
 
 /**
  * Environment detection
@@ -22,7 +23,7 @@ const sameSitePolicy = isProduction ? 'strict' : 'lax';
  * Cookie configuration for access token
  * Short-lived token for API authentication
  */
-export const ACCESS_TOKEN_COOKIE_OPTIONS = {
+export const ACCESS_TOKEN_COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true, // Not accessible via JavaScript (XSS protection)
   secure: isProduction, // HTTPS only in production
   sameSite: sameSitePolicy, // CSRF protection (lax in dev for cross-port)
@@ -34,7 +35,7 @@ export const ACCESS_TOKEN_COOKIE_OPTIONS = {
  * Cookie configuration for refresh token
  * Longer-lived token, only sent to refresh endpoint
  */
-export const REFRESH_TOKEN_COOKIE_OPTIONS = {
+export const REFRESH_TOKEN_COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
   secure: isProduction,
   sameSite: sameSitePolicy, // CSRF protection (lax in dev for cross-port)
@@ -58,7 +59,7 @@ export const COOKIE_NAMES = {
  * @param {string} tokens.accessToken - JWT access token
  * @param {string} tokens.refreshToken - JWT refresh token
  */
-export function setAuthCookies(res, tokens) {
+export function setAuthCookies(res: Response, tokens: { accessToken: string; refreshToken: string }) {
   res.cookie(COOKIE_NAMES.ACCESS_TOKEN, tokens.accessToken, ACCESS_TOKEN_COOKIE_OPTIONS);
 
   res.cookie(COOKIE_NAMES.REFRESH_TOKEN, tokens.refreshToken, REFRESH_TOKEN_COOKIE_OPTIONS);
@@ -70,7 +71,7 @@ export function setAuthCookies(res, tokens) {
  * @param {import('express').Response} res - Express response object
  * @param {string} accessToken - JWT access token
  */
-export function setAccessTokenCookie(res, accessToken) {
+export function setAccessTokenCookie(res: Response, accessToken: string) {
   res.cookie(COOKIE_NAMES.ACCESS_TOKEN, accessToken, ACCESS_TOKEN_COOKIE_OPTIONS);
 }
 
@@ -79,7 +80,7 @@ export function setAccessTokenCookie(res, accessToken) {
  *
  * @param {import('express').Response} res - Express response object
  */
-export function clearAuthCookies(res) {
+export function clearAuthCookies(res: Response) {
   res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, {
     httpOnly: true,
     secure: isProduction,
@@ -103,7 +104,7 @@ export function clearAuthCookies(res) {
  * @param {import('express').Request} req - Express request object
  * @returns {string|null} - Access token or null
  */
-export function getAccessToken(req) {
+export function getAccessToken(req: Request) {
   // First check cookies (primary method)
   if (req.cookies && req.cookies[COOKIE_NAMES.ACCESS_TOKEN]) {
     return req.cookies[COOKIE_NAMES.ACCESS_TOKEN];
@@ -124,7 +125,7 @@ export function getAccessToken(req) {
  * @param {import('express').Request} req - Express request object
  * @returns {string|null} - Refresh token or null
  */
-export function getRefreshToken(req) {
+export function getRefreshToken(req: Request) {
   // First check cookies
   if (req.cookies && req.cookies[COOKIE_NAMES.REFRESH_TOKEN]) {
     return req.cookies[COOKIE_NAMES.REFRESH_TOKEN];

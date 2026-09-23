@@ -10,13 +10,14 @@
  * - Names (basic detection)
  */
 
+import type { Request, Response, NextFunction } from 'express';
 import logger from '../../config/logger.js';
 
 // PII masking config (inline — guardrails.js removed in MVP)
 const piiConfig = { enabled: true };
 
 // Additional patterns for detection
-const PII_PATTERNS = {
+const PII_PATTERNS: Record<string, { pattern: RegExp; mask: string; type: string }> = {
   // Emails
   email: {
     pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/gi,
@@ -108,13 +109,18 @@ const PII_PATTERNS = {
  * @param {string} text - Text to analyze
  * @returns {Object} Detection results
  */
-export function detectPII(text) {
+export function detectPII(text: unknown) {
   if (!text || typeof text !== 'string') {
     return { hasPII: false, detections: [], summary: {} };
   }
 
-  const detections = [];
-  const summary = {};
+  const detections: Array<{
+    type: string;
+    patternName: string;
+    count: number;
+    positions: Array<{ start: number; end: number }>;
+  }> = [];
+  const summary: Record<string, number> = {};
 
   for (const [name, config] of Object.entries(PII_PATTERNS)) {
     // Reset pattern state for global patterns
@@ -156,9 +162,9 @@ export function detectPII(text) {
 /**
  * Find positions of pattern matches (for highlighting)
  */
-function findPositions(text, pattern) {
-  const positions = [];
-  let match;
+function findPositions(text: string, pattern: RegExp) {
+  const positions: Array<{ start: number; end: number }> = [];
+  let match: RegExpExecArray | null;
 
   // Reset for global patterns
   pattern.lastIndex = 0;
@@ -179,7 +185,7 @@ function findPositions(text, pattern) {
  * @param {Object} options - Masking options
  * @returns {Object} Masked text and detection info
  */
-export function maskPII(text, options = {}) {
+export function maskPII(text: unknown, options: { types?: string[] | null; partialMask?: boolean } = {}) {
   if (!piiConfig.enabled) {
     return { text, masked: false, detections: [] };
   }
@@ -242,7 +248,7 @@ export function maskPII(text, options = {}) {
  * @param {Array} fieldsToCheck - Specific fields to check (null = all string fields)
  * @returns {Object} Masked object
  */
-export function maskPIIInObject(obj, fieldsToCheck = null) {
+export function maskPIIInObject(obj: unknown, fieldsToCheck: string[] | null = null): unknown {
   if (!piiConfig.enabled) {
     return obj;
   }
@@ -251,8 +257,8 @@ export function maskPIIInObject(obj, fieldsToCheck = null) {
     return obj;
   }
 
-  const masked = Array.isArray(obj) ? [] : {};
-  const piiFound = [];
+  const masked: Record<string, unknown> = (Array.isArray(obj) ? [] : {}) as Record<string, unknown>;
+  const piiFound: Array<{ field: string; types: string[] }> = [];
 
   for (const [key, value] of Object.entries(obj)) {
     // Skip if specific fields requested and this isn't one
@@ -289,7 +295,7 @@ export function maskPIIInObject(obj, fieldsToCheck = null) {
  * @param {string} text - Text to validate
  * @returns {Object} Validation result
  */
-export function validateNoPII(text) {
+export function validateNoPII(text: unknown) {
   const detection = detectPII(text);
 
   if (detection.hasPII) {
@@ -307,13 +313,14 @@ export function validateNoPII(text) {
  * Middleware to detect PII in request body
  */
 export function piiDetectionMiddleware(fieldsToCheck = ['question', 'content', 'message']) {
-  return (req, res, next) => {
+  return (req: Request, res: Response, next: NextFunction) => {
     if (!piiConfig.enabled) {
       return next();
     }
+    const r = req as Request & { piiDetected?: boolean; piiInfo?: unknown };
 
     let piiDetected = false;
-    const detectedIn = [];
+    const detectedIn: Array<{ field: string; types: string[] }> = [];
 
     for (const field of fieldsToCheck) {
       if (req.body?.[field]) {
@@ -329,8 +336,8 @@ export function piiDetectionMiddleware(fieldsToCheck = ['question', 'content', '
     }
 
     // Attach detection info to request
-    req.piiDetected = piiDetected;
-    req.piiInfo = detectedIn;
+    r.piiDetected = piiDetected;
+    r.piiInfo = detectedIn;
 
     if (piiDetected) {
       logger.warn('PII detected in request', {
@@ -350,7 +357,7 @@ export function piiDetectionMiddleware(fieldsToCheck = ['question', 'content', '
 /**
  * Mask PII in response data
  */
-export function maskPIIInResponse(data, options = {}) {
+export function maskPIIInResponse(data: unknown, options: { fields?: string[] } = {}) {
   if (!piiConfig.enabled) {
     return data;
   }
@@ -493,7 +500,10 @@ const PROMPT_LEAK_PATTERNS = [
  * @param {Object} options - Scanning options
  * @returns {Object} Scan results with detected issues and sanitized text
  */
-export function scanOutputForSensitiveInfo(output, options = {}) {
+export function scanOutputForSensitiveInfo(
+  output: unknown,
+  options: { maskSensitive?: boolean; logDetections?: boolean; strictMode?: boolean } = {}
+) {
   if (!output || typeof output !== 'string') {
     return {
       clean: true,
@@ -510,7 +520,7 @@ export function scanOutputForSensitiveInfo(output, options = {}) {
   } = options;
 
   let processedText = output;
-  const detections = [];
+  const detections: Array<{ category: string; count?: number; [k: string]: unknown }> = [];
   let promptLeakDetected = false;
   let hasCriticalLeak = false;
 
@@ -524,7 +534,7 @@ export function scanOutputForSensitiveInfo(output, options = {}) {
     });
 
     if (maskSensitive) {
-      processedText = maskPII(processedText).text;
+      processedText = String(maskPII(processedText).text);
     }
   }
 
@@ -602,25 +612,26 @@ export function scanOutputForSensitiveInfo(output, options = {}) {
 /**
  * SECURITY FIX (LLM06): Middleware to scan and sanitize response data
  */
-export function outputScanMiddleware(options = {}) {
-  return (_req, res, next) => {
+export function outputScanMiddleware(options: { strictMode?: boolean } = {}) {
+  return (_req: Request, res: Response, next: NextFunction) => {
     if (!piiConfig.enabled) {
       return next();
     }
 
     // Wrap res.json to scan output
     const originalJson = res.json.bind(res);
-    res.json = function (data) {
-      if (data && typeof data === 'object') {
+    res.json = function (data: unknown) {
+      const body = data as { data?: Record<string, unknown> };
+      if (body && typeof body === 'object' && body.data) {
         // Scan specific fields in response
         const fieldsToScan = ['answer', 'formattedAnswer', 'content', 'message', 'text'];
 
         for (const field of fieldsToScan) {
-          if (data.data && typeof data.data[field] === 'string') {
-            const scanResult = scanOutputForSensitiveInfo(data.data[field], options);
+          if (typeof body.data[field] === 'string') {
+            const scanResult = scanOutputForSensitiveInfo(body.data[field], options);
             if (!scanResult.clean) {
-              data.data[field] = scanResult.text;
-              data.data._sensitiveContentFiltered = true;
+              body.data[field] = scanResult.text;
+              body.data._sensitiveContentFiltered = true;
             }
           }
         }

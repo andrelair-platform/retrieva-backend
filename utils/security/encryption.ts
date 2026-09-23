@@ -7,12 +7,12 @@ const ALGORITHM = 'aes-256-gcm';
 // Key Version Management (ISSUE #7: Key Rotation Support)
 // =============================================================================
 // Current key version - increment this when rotating keys
-const CURRENT_KEY_VERSION = parseInt(process.env.ENCRYPTION_KEY_VERSION) || 1;
+const CURRENT_KEY_VERSION = parseInt(process.env.ENCRYPTION_KEY_VERSION || '', 10) || 1;
 
 // Key registry: maps version -> key hex string
 // - ENCRYPTION_KEY: Always the current/latest key
 // - ENCRYPTION_KEY_V{n}: Historical keys for decryption during migration
-const keyRegistry = new Map();
+const keyRegistry = new Map<number, string>();
 
 /**
  * Initialize the key registry from environment variables
@@ -53,7 +53,7 @@ initializeKeyRegistry();
  * @param {number} version - Key version for error messages
  * @returns {Buffer} Key buffer
  */
-function getKeyBuffer(keyHex, version = CURRENT_KEY_VERSION) {
+function getKeyBuffer(keyHex: string, version = CURRENT_KEY_VERSION) {
   try {
     const buffer = Buffer.from(keyHex, 'hex');
     if (buffer.length !== 32) {
@@ -61,7 +61,8 @@ function getKeyBuffer(keyHex, version = CURRENT_KEY_VERSION) {
     }
     return buffer;
   } catch (error) {
-    throw new Error(`Invalid ENCRYPTION_KEY (v${version}) format: ${error.message}`);
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new Error(`Invalid ENCRYPTION_KEY (v${version}) format: ${msg}`);
   }
 }
 
@@ -70,7 +71,7 @@ function getKeyBuffer(keyHex, version = CURRENT_KEY_VERSION) {
  * @param {number} version - Key version
  * @returns {Buffer} Key buffer
  */
-function getKeyForVersion(version) {
+function getKeyForVersion(version: number) {
   const keyHex = keyRegistry.get(version);
   if (!keyHex) {
     throw new Error(
@@ -91,7 +92,7 @@ export const getCurrentKeyVersion = () => CURRENT_KEY_VERSION;
  * @param {string} encryptedData - Encrypted data to check
  * @returns {boolean} True if data uses old key version
  */
-export const needsKeyRotation = (encryptedData) => {
+export const needsKeyRotation = (encryptedData: string | null | undefined) => {
   if (!encryptedData) return false;
   const version = parseVersion(encryptedData);
   return version < CURRENT_KEY_VERSION;
@@ -104,7 +105,7 @@ export const needsKeyRotation = (encryptedData) => {
  * @param {string} encryptedData - Encrypted data
  * @returns {number} Version number
  */
-function parseVersion(encryptedData) {
+function parseVersion(encryptedData: string | null | undefined) {
   if (!encryptedData) return 1;
 
   // Check for versioned format: v{n}:iv:authTag:encrypted
@@ -128,7 +129,7 @@ function parseVersion(encryptedData) {
  * @param {string} text - Plain text to encrypt
  * @returns {string} Encrypted text in format: v{version}:iv:authTag:encrypted
  */
-export const encrypt = (text) => {
+export const encrypt = (text: string | null | undefined) => {
   if (!text) {
     throw new Error('Text to encrypt cannot be empty');
   }
@@ -153,7 +154,7 @@ export const encrypt = (text) => {
  * @param {string} encryptedData - Encrypted text
  * @returns {string} Decrypted plain text
  */
-export const decrypt = (encryptedData) => {
+export const decrypt = (encryptedData: string | null | undefined) => {
   if (!encryptedData) {
     throw new Error('Encrypted data cannot be empty');
   }
@@ -199,7 +200,7 @@ export const decrypt = (encryptedData) => {
  * @param {string} encryptedData - Data encrypted with any version
  * @returns {string} Data re-encrypted with current version
  */
-export const rotateEncryption = (encryptedData) => {
+export const rotateEncryption = (encryptedData: string) => {
   const plaintext = decrypt(encryptedData);
   return encrypt(plaintext);
 };
@@ -209,7 +210,7 @@ export const rotateEncryption = (encryptedData) => {
  * @param {string} encryptedData - Encrypted data
  * @returns {number} Key version used
  */
-export const getEncryptionVersion = (encryptedData) => {
+export const getEncryptionVersion = (encryptedData: string | null | undefined) => {
   return parseVersion(encryptedData);
 };
 
@@ -227,7 +228,12 @@ export const generateEncryptionKey = () => {
  * @returns {Object} Status of key availability
  */
 export const getKeyRotationStatus = () => {
-  const status = {
+  const status: {
+    currentVersion: number;
+    availableVersions: number[];
+    missingVersions: number[];
+    canDecryptAll: boolean;
+  } = {
     currentVersion: CURRENT_KEY_VERSION,
     availableVersions: Array.from(keyRegistry.keys()).sort((a, b) => a - b),
     missingVersions: [],
