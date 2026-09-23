@@ -17,7 +17,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // ISSUE #11 FIX: Embedding timeout configuration
-const EMBEDDING_TIMEOUT_MS = parseInt(process.env.EMBEDDING_TIMEOUT_MS) || 120000; // 2 minutes default
+const EMBEDDING_TIMEOUT_MS = parseInt(process.env.EMBEDDING_TIMEOUT_MS || '', 10) || 120000; // 2 minutes default
 
 // Environment flag to enable/disable tenant isolation enforcement (default: enabled)
 const ENFORCE_TENANT_ISOLATION = process.env.ENFORCE_TENANT_ISOLATION !== 'false';
@@ -27,11 +27,11 @@ const QDRANT_API_KEY = process.env.QDRANT_API_KEY;
 const COLLECTION_NAME = process.env.QDRANT_COLLECTION_NAME || 'langchain-rag';
 
 // Qdrant client for direct operations
-let qdrantClient = null;
+let qdrantClient: QdrantClient | null = null;
 
-function getQdrantClient() {
+function getQdrantClient(): QdrantClient {
   if (!qdrantClient) {
-    const options = { url: QDRANT_URL };
+    const options: { url: string; apiKey?: string } = { url: QDRANT_URL };
     if (QDRANT_API_KEY) {
       options.apiKey = QDRANT_API_KEY;
     }
@@ -48,7 +48,14 @@ function getQdrantClient() {
  * @param {Object} options - Options including workspace for hybrid embeddings
  * @returns {Promise<Object>} Tenant-isolated vector store
  */
-export const getVectorStore = async (docs, options = {}) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- LangChain document / progress shapes
+type IndexOptions = { onProgress?: (p: any) => void; workspace?: any };
+
+export const getVectorStore = async (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- LangChain documents
+  docs?: any[],
+  options: IndexOptions = {}
+) => {
   // If docs provided, use the optimized batch indexing
   // Note: Indexing doesn't need tenant isolation (workspaceId is in metadata)
   if (docs && docs.length > 0) {
@@ -58,7 +65,8 @@ export const getVectorStore = async (docs, options = {}) => {
   // Return existing store for queries - wrapped with tenant isolation
   // IMPORTANT: contentPayloadKey must match how we store documents (payload.pageContent)
   // ISSUE #10 FIX: Wrap in try-catch with meaningful error handling
-  let vectorStore;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain vector store
+  let vectorStore: any;
   try {
     vectorStore = await QdrantVectorStore.fromExistingCollection(embeddings, {
       url: QDRANT_URL,
@@ -67,13 +75,14 @@ export const getVectorStore = async (docs, options = {}) => {
       contentPayloadKey: 'pageContent', // Match the key used during indexing
     });
   } catch (error) {
+    const err = error as Error & { code?: string };
     // Provide meaningful error messages for common issues
-    if (error.message?.includes('Not found') || error.message?.includes("doesn't exist")) {
+    if (err.message?.includes('Not found') || err.message?.includes("doesn't exist")) {
       logger.error('Qdrant collection not found', {
         service: 'vector-store',
         collection: COLLECTION_NAME,
         qdrantUrl: QDRANT_URL,
-        error: error.message,
+        error: err.message,
       });
       throw new Error(
         `Vector store collection "${COLLECTION_NAME}" not found. ` +
@@ -81,11 +90,11 @@ export const getVectorStore = async (docs, options = {}) => {
       );
     }
 
-    if (error.code === 'ECONNREFUSED' || error.message?.includes('ECONNREFUSED')) {
+    if (err.code === 'ECONNREFUSED' || err.message?.includes('ECONNREFUSED')) {
       logger.error('Qdrant connection refused', {
         service: 'vector-store',
         qdrantUrl: QDRANT_URL,
-        error: error.message,
+        error: err.message,
       });
       throw new Error(
         `Cannot connect to Qdrant at ${QDRANT_URL}. ` + `Ensure Qdrant is running and accessible.`
@@ -96,9 +105,9 @@ export const getVectorStore = async (docs, options = {}) => {
     logger.error('Failed to connect to vector store', {
       service: 'vector-store',
       collection: COLLECTION_NAME,
-      error: error.message,
+      error: err.message,
     });
-    throw new Error(`Vector store connection failed: ${error.message}`);
+    throw new Error(`Vector store connection failed: ${err.message}`);
   }
 
   // DEFENSE-IN-DEPTH: Wrap with tenant isolation enforcement
@@ -127,7 +136,11 @@ export const getVectorStore = async (docs, options = {}) => {
  * @param {Object} options.workspace - Workspace for hybrid embedding routing
  * @returns {Promise<Object>} Indexing results
  */
-export async function indexDocumentsBatched(docs, options = {}) {
+export async function indexDocumentsBatched(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- LangChain documents
+  docs: any[],
+  options: IndexOptions = {}
+) {
   const { onProgress, workspace } = options;
   const startTime = Date.now();
 
@@ -152,12 +165,12 @@ export async function indexDocumentsBatched(docs, options = {}) {
   // Pass workspace for hybrid embedding (local/cloud) routing
   // ISSUE #11 FIX: Add timeout to prevent indefinite hangs
   const embedStartTime = Date.now();
-  let vectors;
+  let vectors: number[][];
   try {
     vectors = await promiseWithTimeout(
       embeddings.embedDocuments(texts, {
         workspace, // Pass workspace for hybrid embedding system
-        onProgress: (batchNum, totalBatches, chunksProcessed) => {
+        onProgress: (batchNum: number, totalBatches: number, chunksProcessed: number) => {
           if (onProgress) {
             onProgress({
               phase: 'embedding',
@@ -174,13 +187,14 @@ export async function indexDocumentsBatched(docs, options = {}) {
         `Consider reducing batch size or checking embedding service health.`
     );
   } catch (error) {
+    const message = (error as Error).message;
     // Log and re-throw with context
     logger.error('Embedding operation failed', {
       service: 'vector-store',
       documentCount: docs.length,
       timeoutMs: EMBEDDING_TIMEOUT_MS,
-      error: error.message,
-      isTimeout: error.message?.includes('timed out'),
+      error: message,
+      isTimeout: message?.includes('timed out'),
     });
     throw error;
   }
@@ -209,7 +223,7 @@ export async function indexDocumentsBatched(docs, options = {}) {
   await ensureCollection(client, vectors[0].length);
 
   // Sanitize text to remove invalid Unicode surrogates
-  const sanitizeText = (text) => {
+  const sanitizeText = (text: unknown) => {
     if (typeof text !== 'string') return text;
     // Remove lone surrogates that cause JSON encoding issues
     return text.replace(
@@ -270,7 +284,8 @@ export async function indexDocumentsBatched(docs, options = {}) {
 
   // Return a vector store instance for compatibility
   // IMPORTANT: contentPayloadKey must match how we store documents (payload.pageContent)
-  let vectorStore = await QdrantVectorStore.fromExistingCollection(embeddings, {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain vector store
+  let vectorStore: any = await QdrantVectorStore.fromExistingCollection(embeddings, {
     url: QDRANT_URL,
     apiKey: QDRANT_API_KEY,
     collectionName: COLLECTION_NAME,
@@ -291,7 +306,7 @@ export async function indexDocumentsBatched(docs, options = {}) {
 /**
  * Ensure Qdrant collection exists with correct configuration
  */
-async function ensureCollection(client, vectorSize) {
+async function ensureCollection(client: QdrantClient, vectorSize: number) {
   try {
     await client.getCollection(COLLECTION_NAME);
   } catch {
@@ -334,18 +349,19 @@ export async function getIndexStats() {
     return {
       collection: COLLECTION_NAME,
       pointsCount: collection.points_count,
-      vectorsCount: collection.vectors_count,
+      // vectors_count is present at runtime but absent from the client's response type.
+      vectorsCount: (collection as { vectors_count?: number }).vectors_count,
       indexedVectorsCount: collection.indexed_vectors_count,
       status: collection.status,
     };
   } catch (error) {
-    logger.error('Failed to get index stats', { error: error.message });
+    logger.error('Failed to get index stats', { error: (error as Error).message });
     return null;
   }
 }
 
 // Remove lone Unicode surrogates that break JSON encoding (shared by upserts).
-function sanitizeText(text) {
+function sanitizeText(text: unknown) {
   if (typeof text !== 'string') return text;
   return text.replace(
     /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
@@ -355,7 +371,7 @@ function sanitizeText(text) {
 
 // Deterministic UUID from a stable key → re-indexing the same chunk overwrites
 // instead of duplicating.
-function deterministicPointId(key) {
+function deterministicPointId(key: string) {
   const h = createHash('sha256').update(key).digest('hex');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
 }
@@ -377,7 +393,18 @@ function deterministicPointId(key) {
  * the payload shape + deterministic ids can be unit-tested without a live client.
  * Returns [] when nothing should be written (missing chunks/vectors/workspaceId).
  */
-export function buildWorkspacePoints({ chunks, vectors, metadata }) {
+interface WorkspacePointsArgs {
+  chunks?: string[];
+  vectors?: number[][];
+  metadata?: {
+    workspaceId?: string;
+    assessmentId?: string;
+    fileName?: string;
+    [key: string]: unknown;
+  };
+}
+
+export function buildWorkspacePoints({ chunks, vectors, metadata }: WorkspacePointsArgs) {
   if (!chunks?.length || !vectors?.length || !metadata?.workspaceId) return [];
   return chunks.map((chunk, i) => ({
     id: deterministicPointId(
@@ -391,7 +418,11 @@ export function buildWorkspacePoints({ chunks, vectors, metadata }) {
   }));
 }
 
-export async function upsertChunksToWorkspaceCollection({ chunks, vectors, metadata }) {
+export async function upsertChunksToWorkspaceCollection({
+  chunks,
+  vectors,
+  metadata,
+}: WorkspacePointsArgs) {
   const points = buildWorkspacePoints({ chunks, vectors, metadata });
   if (points.length === 0) {
     return { upserted: 0 };
@@ -410,8 +441,8 @@ export async function upsertChunksToWorkspaceCollection({ chunks, vectors, metad
 
   logger.info('Dual-write to workspace collection complete', {
     service: 'vector-store',
-    workspaceId: metadata.workspaceId,
-    assessmentId: metadata.assessmentId,
+    workspaceId: metadata?.workspaceId,
+    assessmentId: metadata?.assessmentId,
     upserted: points.length,
   });
 
@@ -423,7 +454,7 @@ export async function upsertChunksToWorkspaceCollection({ chunks, vectors, metad
  * assessment deletion so the chat doesn't keep retrieving deleted documents.
  * Best-effort; never throws into the delete flow.
  */
-export async function deleteAssessmentChunksFromWorkspace(assessmentId) {
+export async function deleteAssessmentChunksFromWorkspace(assessmentId?: string) {
   if (!assessmentId) return;
   try {
     const client = getQdrantClient();
@@ -437,7 +468,7 @@ export async function deleteAssessmentChunksFromWorkspace(assessmentId) {
     logger.warn('Failed to delete assessment chunks from workspace collection', {
       service: 'vector-store',
       assessmentId,
-      error: error.message,
+      error: (error as Error).message,
     });
   }
 }
@@ -447,7 +478,7 @@ export async function deleteAssessmentChunksFromWorkspace(assessmentId) {
  * vendor workspace is deleted so its indexed documents don't linger (#417,
  * GDPR erasure / clean offboarding). Best-effort; never throws into the caller.
  */
-export async function deleteWorkspaceChunks(workspaceId) {
+export async function deleteWorkspaceChunks(workspaceId?: string) {
   if (!workspaceId) return;
   try {
     const client = getQdrantClient();
@@ -461,7 +492,7 @@ export async function deleteWorkspaceChunks(workspaceId) {
     logger.warn('Failed to delete workspace chunks from collection', {
       service: 'vector-store',
       workspaceId,
-      error: error.message,
+      error: (error as Error).message,
     });
   }
 }

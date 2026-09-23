@@ -43,7 +43,7 @@ export const LLM_PURPOSES = ['chat', 'analysis', 'judge', 'formatter'];
 // AI gateway endpoint + key. Canonical: LITELLM_BASE_URL / LITELLM_API_KEY. For a smooth cutover we
 // also accept the pre-existing AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_API_KEY (they already pointed at
 // the gateway) and a generic OPENAI_API_BASE / OPENAI_API_KEY. baseURL is normalised to end in /v1.
-function normaliseGatewayUrl(u) {
+function normaliseGatewayUrl(u: string | undefined) {
   if (!u) return u;
   const trimmed = u.replace(/\/+$/, '');
   return /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
@@ -56,7 +56,7 @@ const GATEWAY_API_KEY =
 
 // Per-purpose model resolution: LLM_<PURPOSE>_MODEL overrides the global LLM_MODEL. These are gateway
 // model names / intent aliases (e.g. prod: tier-premium + JUDGE=tier-standard; dev: ollama-cloud).
-function resolveModelForPurpose(purpose) {
+function resolveModelForPurpose(purpose: string) {
   const upper = purpose.toUpperCase();
   return process.env[`LLM_${upper}_MODEL`] || process.env.LLM_MODEL;
 }
@@ -80,7 +80,7 @@ const providerConfigSchema = z.object({
 const llmResponseSchema = z
   .object({
     content: z.string(),
-    response_metadata: z.record(z.unknown()).optional(),
+    response_metadata: z.record(z.string(), z.unknown()).optional(),
   })
   .passthrough();
 
@@ -96,7 +96,19 @@ export function getCurrentProvider() {
  * ONE client, no per-provider branching / key rotation / fallback here — the gateway owns all of
  * that. `model` is a gateway model name or intent alias (tier-premium, tier-standard, ollama-cloud…).
  */
-async function createGatewayLLM(config) {
+interface LLMConfig {
+  purpose?: string;
+  provider?: string;
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  baseUrl?: string;
+  apiKey?: string;
+  seed?: number | null;
+}
+
+async function createGatewayLLM(config: LLMConfig) {
   const { ChatOpenAI } = await import('@langchain/openai');
   if (!GATEWAY_BASE_URL) {
     throw new Error(
@@ -145,7 +157,7 @@ async function createGatewayLLM(config) {
  * @param {string} [config.apiKey]
  * @returns {Promise<Object>} LLM instance (may be a withFallbacks chain)
  */
-export async function createLLM(config = {}) {
+export async function createLLM(config: LLMConfig = {}) {
   const { purpose = 'analysis', ...rest } = config;
   const model = rest.model || resolveModelForPurpose(purpose);
   const resolvedConfig = { ...rest, provider: LLM_PROVIDERS.LITELLM, model };
@@ -153,7 +165,7 @@ export async function createLLM(config = {}) {
   // Validate config (non-fatal — surfaces a bad model/config in logs)
   const validationResult = providerConfigSchema.safeParse(resolvedConfig);
   if (!validationResult.success) {
-    logger.warn('Invalid LLM config', { errors: validationResult.error.errors });
+    logger.warn('Invalid LLM config', { errors: validationResult.error.issues });
   }
 
   // Single path: everything goes through the AI gateway. The gateway handles provider routing,
@@ -175,8 +187,10 @@ export function getActiveLLMMeta(purpose = 'analysis') {
  * Create the default LLM instance based on environment configuration
  * This is the main entry point for the application
  */
-let defaultLLM = null;
-let judgeLLM = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain chat model instance
+let defaultLLM: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain chat model instance
+let judgeLLM: any = null;
 
 export async function getDefaultLLM() {
   if (!defaultLLM) {
@@ -217,13 +231,13 @@ export function resetLLMInstances() {
 /**
  * Validate LLM response
  */
-export function validateLLMResponse(response) {
+export function validateLLMResponse(response: unknown) {
   const parseResult = llmResponseSchema.safeParse(response);
 
   if (!parseResult.success) {
     logger.warn('LLM response validation failed', {
-      errors: parseResult.error.errors,
-      responseKeys: response ? Object.keys(response) : [],
+      errors: parseResult.error.issues,
+      responseKeys: response ? Object.keys(response as object) : [],
     });
     throw new Error('Invalid response structure from LLM');
   }
@@ -238,7 +252,12 @@ export function validateLLMResponse(response) {
 /**
  * Invoke LLM with timeout and proper cancellation
  */
-export async function invokeWithTimeout(llmInstance, input, options = {}) {
+export async function invokeWithTimeout(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain chat model instance
+  llmInstance: any,
+  input: unknown,
+  options: { timeout?: number; [key: string]: unknown } = {}
+) {
   const { timeout = guardrailsConfig.generation.timeout, ...restOptions } = options;
 
   const controller = new AbortController();
@@ -255,7 +274,7 @@ export async function invokeWithTimeout(llmInstance, input, options = {}) {
     return result;
   } catch (error) {
     clearTimeout(timeoutId);
-    if (error.name === 'AbortError' || signal.aborted) {
+    if ((error as Error).name === 'AbortError' || signal.aborted) {
       throw new Error(`LLM call timed out after ${timeout}ms`);
     }
     throw error;
@@ -265,7 +284,12 @@ export async function invokeWithTimeout(llmInstance, input, options = {}) {
 /**
  * Create cancellable LLM call
  */
-export function createCancellableLLMCall(llmInstance, input, options = {}) {
+export function createCancellableLLMCall(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain chat model instance
+  llmInstance: any,
+  input: unknown,
+  options: Record<string, unknown> = {}
+) {
   const controller = new AbortController();
 
   const promise = llmInstance.invoke(input, {

@@ -40,8 +40,8 @@ const ENABLE_HYBRID_EMBEDDINGS = false;
  * - charsPerToken: Estimation ratio for token calculation
  */
 export const BATCH_CONFIG = {
-  maxChunks: parseInt(process.env.EMBEDDING_BATCH_MAX_CHUNKS) || 50,
-  maxTokens: parseInt(process.env.EMBEDDING_BATCH_MAX_TOKENS) || 8192,
+  maxChunks: parseInt(process.env.EMBEDDING_BATCH_MAX_CHUNKS || '', 10) || 50,
+  maxTokens: parseInt(process.env.EMBEDDING_BATCH_MAX_TOKENS || '', 10) || 8192,
   charsPerToken: 4,
   get maxCharsPerBatch() {
     return this.maxTokens * this.charsPerToken;
@@ -53,7 +53,7 @@ export const BATCH_CONFIG = {
   get maxCharsPerChunk() {
     const explicit = process.env.MAX_EMBEDDING_CHARS;
     if (explicit) return parseInt(explicit, 10);
-    const ctxTokens = parseInt(process.env.EMBEDDING_CONTEXT_TOKENS, 10) || 8192;
+    const ctxTokens = parseInt(process.env.EMBEDDING_CONTEXT_TOKENS || '', 10) || 8192;
     return Math.floor(ctxTokens * 0.9 * this.charsPerToken);
   },
 };
@@ -166,8 +166,19 @@ logger.info('Embeddings configured', { service: 'embeddings', ...embeddingsMeta 
  * - Detailed metrics tracking
  * - Progress callbacks for long-running operations
  */
+interface EmbedDocumentsOptions {
+  onProgress?: (batchNum: number, totalBatches: number, chunksProcessed: number) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- workspace shape resolved by embeddingProvider
+  workspace?: any;
+}
+
 class BatchedEmbeddings {
-  constructor(baseEmbeddings, config) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain embeddings client
+  baseEmbeddings: any;
+  config: typeof BATCH_CONFIG;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain embeddings client
+  constructor(baseEmbeddings: any, config: typeof BATCH_CONFIG) {
     this.baseEmbeddings = baseEmbeddings;
     this.config = config;
   }
@@ -175,14 +186,14 @@ class BatchedEmbeddings {
   /**
    * Estimate token count for text
    */
-  estimateTokens(text) {
+  estimateTokens(text: string) {
     return Math.ceil(text.length / this.config.charsPerToken);
   }
 
   /**
    * Truncate text to safe length for embedding model
    */
-  truncateText(text) {
+  truncateText(text: string) {
     if (text.length <= this.config.maxCharsPerChunk) {
       return text;
     }
@@ -204,7 +215,7 @@ class BatchedEmbeddings {
    * Embed a single text with progressive truncation on context length errors
    * Retries with 50%, 25%, then 10% of original length
    */
-  async embedWithRetry(text) {
+  async embedWithRetry(text: string) {
     const truncationFactors = [1.0, 0.5, 0.25, 0.1];
     for (const factor of truncationFactors) {
       const truncatedText =
@@ -223,8 +234,9 @@ class BatchedEmbeddings {
         }
         return result;
       } catch (error) {
+        const message = (error as Error).message;
         const isContextError =
-          error.message?.includes('context length') || error.message?.includes('input length');
+          message?.includes('context length') || message?.includes('input length');
 
         if (!isContextError || factor === truncationFactors[truncationFactors.length - 1]) {
           metrics.errors++;
@@ -232,7 +244,7 @@ class BatchedEmbeddings {
             service: 'embeddings',
             textLength: truncatedText.length,
             factor,
-            error: error.message,
+            error: message,
           });
           throw error;
         }
@@ -251,9 +263,9 @@ class BatchedEmbeddings {
   /**
    * Split texts into optimal batches based on chunk count AND token count
    */
-  createBatches(texts) {
-    const batches = [];
-    let currentBatch = [];
+  createBatches(texts: string[]) {
+    const batches: string[][] = [];
+    let currentBatch: string[] = [];
     let currentTokens = 0;
 
     for (const text of texts) {
@@ -283,7 +295,7 @@ class BatchedEmbeddings {
   /**
    * Embed a single query with safety truncation
    */
-  async embedQuery(text) {
+  async embedQuery(text: string) {
     const safeText = this.truncateText(text);
     const startTime = Date.now();
 
@@ -308,7 +320,7 @@ class BatchedEmbeddings {
    * @param {Object} options.workspace - Workspace for hybrid embedding (Phase 2)
    * @returns {Promise<number[][]>} Array of embedding vectors
    */
-  async embedDocuments(texts, options = {}) {
+  async embedDocuments(texts: string[], options: EmbedDocumentsOptions = {}) {
     const { onProgress, workspace } = options;
     const startTime = Date.now();
 
@@ -334,7 +346,7 @@ class BatchedEmbeddings {
       },
     });
 
-    const allEmbeddings = [];
+    const allEmbeddings: number[][] = [];
     let chunksProcessed = 0;
 
     for (let i = 0; i < batches.length; i++) {
@@ -369,8 +381,9 @@ class BatchedEmbeddings {
           onProgress(i + 1, batches.length, chunksProcessed);
         }
       } catch (error) {
+        const message = (error as Error).message;
         const isContextLengthError =
-          error.message?.includes('context length') || error.message?.includes('input length');
+          message?.includes('context length') || message?.includes('input length');
 
         if (isContextLengthError && batch.length > 0) {
           // Context length exceeded - retry each text individually with progressive truncation
@@ -399,7 +412,7 @@ class BatchedEmbeddings {
             service: 'embeddings',
             batch: i + 1,
             batchSize: batch.length,
-            error: error.message,
+            error: message,
           });
           throw error;
         }
@@ -422,7 +435,7 @@ class BatchedEmbeddings {
    * Phase 2: Embed documents using hybrid provider system
    * Routes to cloud or local based on workspace settings
    */
-  async embedDocumentsHybrid(texts, options = {}) {
+  async embedDocumentsHybrid(texts: string[], options: EmbedDocumentsOptions = {}) {
     const { onProgress, workspace } = options;
     const startTime = Date.now();
     const context = createEmbeddingContext(workspace);
@@ -439,8 +452,8 @@ class BatchedEmbeddings {
       preferCloud: context.preferCloud,
     });
 
-    const allEmbeddings = [];
-    const allMetadata = [];
+    const allEmbeddings: number[][] = [];
+    const allMetadata: unknown[] = [];
     let chunksProcessed = 0;
 
     for (let i = 0; i < batches.length; i++) {
@@ -481,7 +494,7 @@ class BatchedEmbeddings {
           service: 'embeddings-hybrid',
           batch: i + 1,
           batchSize: batch.length,
-          error: error.message,
+          error: (error as Error).message,
         });
         throw error;
       }
