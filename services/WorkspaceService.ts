@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- injectable repos/services stored as fields;
+   workspace/member/user rows + request payloads are heterogeneous. */
 import { AppError } from '../utils/index.js';
 import { workspaceRepository } from '../repositories/drizzle/WorkspaceRepository.js';
 import { workspaceMemberRepository } from '../repositories/drizzle/WorkspaceMemberRepository.js';
@@ -10,7 +12,7 @@ import * as storageModule from '../config/storage.js';
 import logger from '../config/logger.js';
 import { emailService } from './emailService.js';
 
-export function serializeWorkspace(ws, extras = {}) {
+export function serializeWorkspace(ws: any, extras: any = {}) {
   return {
     id: ws.id.toString(),
     name: ws.name,
@@ -33,7 +35,17 @@ export function serializeWorkspace(ws, extras = {}) {
 }
 
 class WorkspaceService {
-  constructor(deps = {}) {
+  workspaceRepo: any;
+  memberRepo: any;
+  orgMemberRepo: any;
+  userRepo: any;
+  assessmentRepo: any;
+  deleteAssessmentCollection: any;
+  storage: any;
+  logger: any;
+  emailService: any;
+
+  constructor(deps: Record<string, any> = {}) {
     this.workspaceRepo = deps.workspaceRepo || workspaceRepository;
     this.memberRepo = deps.memberRepo || workspaceMemberRepository;
     this.orgMemberRepo = deps.orgMemberRepo || organizationMemberRepository;
@@ -45,7 +57,7 @@ class WorkspaceService {
     this.emailService = deps.emailService || emailService;
   }
 
-  async createWorkspace(userId, data) {
+  async createWorkspace(userId: string, data: any) {
     const {
       name,
       description,
@@ -88,7 +100,7 @@ class WorkspaceService {
     return serializeWorkspace(workspace);
   }
 
-  async getWorkspace(workspaceId, userId) {
+  async getWorkspace(workspaceId: string, userId: string) {
     const membership = await this.memberRepo.findMembership(workspaceId, userId);
     if (!membership) throw new AppError('You are not a member of this workspace', 403);
 
@@ -101,7 +113,7 @@ class WorkspaceService {
     });
   }
 
-  async updateWorkspace(workspaceId, userId, data) {
+  async updateWorkspace(workspaceId: string, userId: string, data: any) {
     const membership = await this.memberRepo.findOwnerMembership(workspaceId, userId);
     if (!membership) throw new AppError('Only workspace owners can update workspace details', 403);
 
@@ -123,7 +135,7 @@ class WorkspaceService {
       vendorFunctions,
     } = data;
 
-    const patch = {};
+    const patch: Record<string, any> = {};
     if (name?.trim()) patch.name = name.trim();
     if (description !== undefined) patch.description = description?.trim() || '';
     if (vendorTier !== undefined) patch.vendorTier = vendorTier || null;
@@ -147,7 +159,7 @@ class WorkspaceService {
     return serializeWorkspace(updated);
   }
 
-  async deleteWorkspace(workspaceId, userId) {
+  async deleteWorkspace(workspaceId: string, userId: string) {
     const membership = await this.memberRepo.findOwnerMembership(workspaceId, userId);
     if (!membership) throw new AppError('Only workspace owners can delete a workspace', 403);
 
@@ -165,18 +177,18 @@ class WorkspaceService {
    * Qdrant chunks/collections + stored files. The Postgres rows are removed by FK cascade
    * when the workspace is deleted. Best-effort; each step isolated.
    */
-  async _purgeWorkspaceData(workspaceId) {
+  async _purgeWorkspaceData(workspaceId: string) {
     const wid = String(workspaceId);
 
     // Gather assessments (unscoped — explicit workspace) for their ids + file keys.
-    let assessments = [];
+    let assessments: any[] = [];
     try {
       const res = await this.assessmentRepo.findByWorkspaces([wid], { limit: 10000 });
       assessments = res.assessments;
     } catch (err) {
       this.logger.warn('Purge: failed to list assessments', {
         workspaceId: wid,
-        error: err.message,
+        error: err instanceof Error ? err.message : String(err),
       });
     }
 
@@ -187,7 +199,7 @@ class WorkspaceService {
     } catch (err) {
       this.logger.warn('Purge: failed to delete workspace vectors', {
         workspaceId: wid,
-        error: err.message,
+        error: err instanceof Error ? err.message : String(err),
       });
     }
 
@@ -198,7 +210,7 @@ class WorkspaceService {
       } catch (err) {
         this.logger.warn('Purge: failed to delete assessment collection', {
           assessmentId: String(a.id),
-          error: err.message,
+          error: err instanceof Error ? err.message : String(err),
         });
       }
       for (const doc of a.documents || []) {
@@ -208,7 +220,7 @@ class WorkspaceService {
         } catch (err) {
           this.logger.warn('Purge: failed to delete file', {
             key: doc.storageKey,
-            error: err.message,
+            error: err instanceof Error ? err.message : String(err),
           });
         }
       }
@@ -221,17 +233,17 @@ class WorkspaceService {
     });
   }
 
-  async getMyWorkspaces(userId) {
+  async getMyWorkspaces(userId: string) {
     const orgMembership = await this.orgMemberRepo.findActiveByUserId(userId);
 
     if (orgMembership) {
       const orgWorkspaces = await this.workspaceRepo.findByOrganization(
         orgMembership.organizationId
       );
-      const roleMap = { org_admin: 'owner', analyst: 'member', viewer: 'viewer' };
+      const roleMap: Record<string, string> = { org_admin: 'owner', analyst: 'member', viewer: 'viewer' };
       const myRole = roleMap[orgMembership.role] || 'member';
       const canInvite = orgMembership.role === 'org_admin';
-      return orgWorkspaces.map((ws) =>
+      return orgWorkspaces.map((ws: any) =>
         serializeWorkspace(ws, {
           myRole,
           permissions: { canQuery: true, canViewSources: true, canInvite },
@@ -242,8 +254,8 @@ class WorkspaceService {
 
     const memberships = await this.memberRepo.findActiveWithWorkspace(userId);
     return memberships
-      .filter((m) => m.workspace)
-      .map((m) =>
+      .filter((m: any) => m.workspace)
+      .map((m: any) =>
         serializeWorkspace(m.workspace, {
           myRole: m.role,
           permissions: m.permissions,
@@ -252,12 +264,12 @@ class WorkspaceService {
       );
   }
 
-  async getWorkspaceMembers(workspaceId, userId) {
+  async getWorkspaceMembers(workspaceId: string, userId: string) {
     const requesterMembership = await this.memberRepo.findMembership(workspaceId, userId);
     if (!requesterMembership) throw new AppError('You are not a member of this workspace', 403);
 
     const members = await this.memberRepo.findByWorkspaceWithUser(workspaceId);
-    return members.map((m) => ({
+    return members.map((m: any) => ({
       id: m.id.toString(),
       userId: m.user?.id?.toString(),
       user: m.user
@@ -270,7 +282,7 @@ class WorkspaceService {
     }));
   }
 
-  async inviteMember(workspaceId, inviterId, { email, role = 'member' }) {
+  async inviteMember(workspaceId: string, inviterId: string, { email, role = "member" }: any) {
     const userToInvite = await this.userRepo.findByEmail(email);
     if (!userToInvite) throw new AppError('User not found. They must register first.', 404);
 
@@ -288,7 +300,7 @@ class WorkspaceService {
     try {
       membership = await this.memberRepo.inviteMember(workspaceId, userToInvite.id, inviterId, role);
     } catch (err) {
-      if (err.message.includes('already a member')) {
+      if (err instanceof Error && err.message.includes('already a member')) {
         throw new AppError('User is already a member of this workspace', 409);
       }
       throw err;
@@ -313,10 +325,10 @@ class WorkspaceService {
         workspaceId: workspace.id.toString(),
         role,
       })
-      .catch((err) => {
+      .catch((err: any) => {
         this.logger.error('Invitation email error', {
           service: 'workspace-member',
-          error: err.message,
+          error: err instanceof Error ? err.message : String(err),
         });
       });
 
@@ -334,7 +346,7 @@ class WorkspaceService {
     };
   }
 
-  async revokeMember(workspaceId, requesterId, memberId) {
+  async revokeMember(workspaceId: string, requesterId: string, memberId: string) {
     const requesterMembership = await this.memberRepo.findOwnerMembership(workspaceId, requesterId);
     if (!requesterMembership) throw new AppError('Only workspace owners can revoke access', 403);
 
@@ -354,7 +366,7 @@ class WorkspaceService {
     });
   }
 
-  async updateMember(workspaceId, requesterId, memberId, { role, permissions } = {}) {
+  async updateMember(workspaceId: string, requesterId: string, memberId: string, { role, permissions }: any = {}) {
     const requesterMembership = await this.memberRepo.findOwnerMembership(workspaceId, requesterId);
     if (!requesterMembership)
       throw new AppError('Only workspace owners can update member permissions', 403);
@@ -365,7 +377,7 @@ class WorkspaceService {
     }
     if (member.role === 'owner') throw new AppError('Cannot modify owner permissions', 400);
 
-    const patch = {};
+    const patch: Record<string, any> = {};
     const nextRole = role && ['member', 'viewer'].includes(role) ? role : member.role;
     if (role && ['member', 'viewer'].includes(role)) patch.role = role;
 

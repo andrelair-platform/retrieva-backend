@@ -85,7 +85,7 @@ export const getConversations = catchAsync(async (req, res) => {
  * GET /api/v1/conversations/:id
  */
 export const getConversation = catchAsync(async (req, res) => {
-  const { id } = req.params;
+  const id = String(req.params.id);
   const { limit, skip } = parsePagination(req.query, { defaultLimit: 100, maxLimit: 500 });
   const userId = getUserId(req);
 
@@ -129,7 +129,7 @@ export const getConversation = catchAsync(async (req, res) => {
  * POST /api/v1/conversations/:id/ask
  */
 export const askQuestion = catchAsync(async (req, res) => {
-  const { id } = req.params;
+  const id = String(req.params.id);
   const { question, filters } = req.body;
   const userId = getUserId(req);
 
@@ -156,7 +156,7 @@ export const askQuestion = catchAsync(async (req, res) => {
  * PATCH /api/v1/conversations/:id
  */
 export const updateConversation = catchAsync(async (req, res) => {
-  const { id } = req.params;
+  const id = String(req.params.id);
   const { title } = req.body;
   const userId = getUserId(req);
 
@@ -183,7 +183,7 @@ export const updateConversation = catchAsync(async (req, res) => {
  * DELETE /api/v1/conversations/:id
  */
 export const deleteConversation = catchAsync(async (req, res) => {
-  const { id } = req.params;
+  const id = String(req.params.id);
   const userId = getUserId(req);
 
   await conversationService.deleteConversation(id, userId);

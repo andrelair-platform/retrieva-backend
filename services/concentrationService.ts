@@ -9,6 +9,8 @@
  * without a DB; analyzeOrganization is the thin data-loading wrapper.
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- graph nodes/edges + injectable repos are
+   heterogeneous; the concentration algorithm walks an untyped provider graph. */
 import { workspaceRepository } from '../repositories/drizzle/WorkspaceRepository.js';
 import { criticalFunctionRepository } from '../repositories/drizzle/CriticalFunctionRepository.js';
 import { providerGraphRepository } from '../repositories/drizzle/ProviderGraphRepository.js';
@@ -18,12 +20,12 @@ import logger from '../config/logger.js';
 const CRITICALITY_WEIGHT = { critical: 2, important: 1 };
 const MAX_DEPTH = 12; // cycle/blowup guard for chain traversal
 
-const norm = (s) => String(s || '').trim().toLowerCase();
-const wKey = (id) => `w:${String(id)}`;
-const xKey = (name) => `x:${norm(name)}`;
+const norm = (s: unknown) => String(s || '').trim().toLowerCase();
+const wKey = (id: unknown) => `w:${String(id)}`;
+const xKey = (name: unknown) => `x:${norm(name)}`;
 
 /** Node key for an edge endpoint (workspace by id, else external by normalised name). */
-function nodeKey(node) {
+function nodeKey(node: any) {
   if (node?.kind === 'workspace' && node.workspaceId) return wKey(node.workspaceId);
   return xKey(node?.name);
 }
@@ -37,10 +39,14 @@ function nodeKey(node) {
  * @param {Array<{parent:object,child:object}>} g.edges                        confirmed nth-party edges
  * @returns {{ providerConcentration:Array, sharedSubstrate:Array, singlePointsOfFailure:Array, coverage:object }}
  */
-export function computeConcentration({ providers = [], criticalFunctions = [], edges = [] } = {}) {
+export function computeConcentration({
+  providers = [],
+  criticalFunctions = [],
+  edges = [],
+}: any = {}) {
   // adjacency: nodeKey → Set(childKey)
-  const adj = new Map();
-  const displayName = new Map(); // key → human name
+  const adj = new Map<string, Set<string>>();
+  const displayName = new Map<string, string>(); // key → human name
   for (const p of providers) {
     displayName.set(wKey(p.id), p.name);
   }
@@ -48,17 +54,19 @@ export function computeConcentration({ providers = [], criticalFunctions = [], e
     const pk = nodeKey(e.parent);
     const ck = nodeKey(e.child);
     if (!adj.has(pk)) adj.set(pk, new Set());
-    adj.get(pk).add(ck);
+    adj.get(pk)!.add(ck);
     if (!displayName.has(pk)) displayName.set(pk, e.parent?.name || pk);
     if (!displayName.has(ck)) displayName.set(ck, e.child?.name || ck);
   }
 
   // reachable node set from a start key (includes itself), depth-capped, cycle-safe
-  function reach(startKey) {
-    const seen = new Set();
-    const stack = [[startKey, 0]];
+  function reach(startKey: string) {
+    const seen = new Set<string>();
+    const stack: Array<[string, number]> = [[startKey, 0]];
     while (stack.length) {
-      const [k, d] = stack.pop();
+      const top = stack.pop();
+      if (!top) break;
+      const [k, d] = top;
       if (seen.has(k) || d > MAX_DEPTH) continue;
       seen.add(k);
       for (const c of adj.get(k) || []) stack.push([c, d + 1]);
@@ -67,9 +75,9 @@ export function computeConcentration({ providers = [], criticalFunctions = [], e
   }
 
   // per-CIF: the full set of nodes it ultimately depends on (direct providers + chain)
-  const cifReach = new Map(); // cifId → Set(nodeKey)
+  const cifReach = new Map<string, Set<string>>(); // cifId → Set(nodeKey)
   for (const cf of criticalFunctions) {
-    const r = new Set();
+    const r = new Set<string>();
     for (const pid of cf.dependsOn || []) {
       for (const k of reach(wKey(pid))) r.add(k);
     }
@@ -77,8 +85,8 @@ export function computeConcentration({ providers = [], criticalFunctions = [], e
   }
 
   // per-node concentration: which CIFs depend on it (directly or transitively)
-  const perNode = new Map(); // key → { key, name, weighted, cifs:[], reachedByProviders:Set }
-  const ensure = (key) =>
+  const perNode = new Map<string, any>(); // key → { key, name, weighted, cifs:[], reachedByProviders:Set }
+  const ensure = (key: string) =>
     perNode.get(key) ||
     perNode.set(key, {
       key,
@@ -89,7 +97,7 @@ export function computeConcentration({ providers = [], criticalFunctions = [], e
     }).get(key);
 
   for (const cf of criticalFunctions) {
-    const w = CRITICALITY_WEIGHT[cf.criticality] || 1;
+    const w = CRITICALITY_WEIGHT[cf.criticality as keyof typeof CRITICALITY_WEIGHT] || 1;
     const directProviderKeys = (cf.dependsOn || []).map(wKey);
     for (const key of cifReach.get(cf.id) || []) {
       const rec = ensure(key);
@@ -102,7 +110,7 @@ export function computeConcentration({ providers = [], criticalFunctions = [], e
     }
   }
 
-  const providerKeys = new Set(providers.map((p) => wKey(p.id)));
+  const providerKeys = new Set(providers.map((p: any) => wKey(p.id)));
   const nodes = [...perNode.values()].map((n) => ({
     key: n.key,
     name: n.name,
@@ -124,16 +132,20 @@ export function computeConcentration({ providers = [], criticalFunctions = [], e
     .sort((a, b) => b.reachedByProviderCount - a.reachedByProviderCount);
 
   // SPOF = a critical/important function depending on a single provider (no alternative)
-  const providerNameById = new Map(providers.map((p) => [String(p.id), p.name]));
+  const providerNameById = new Map(providers.map((p: any) => [String(p.id), p.name]));
   const singlePointsOfFailure = criticalFunctions
-    .filter((cf) => (cf.dependsOn || []).length === 1)
-    .map((cf) => ({
+    .filter((cf: any) => (cf.dependsOn || []).length === 1)
+    .map((cf: any) => ({
       functionId: cf.id,
       functionName: cf.name,
       criticality: cf.criticality,
       soleProvider: providerNameById.get(String(cf.dependsOn[0])) || String(cf.dependsOn[0]),
     }))
-    .sort((a, b) => (CRITICALITY_WEIGHT[b.criticality] || 0) - (CRITICALITY_WEIGHT[a.criticality] || 0));
+    .sort(
+      (a: any, b: any) =>
+        (CRITICALITY_WEIGHT[b.criticality as keyof typeof CRITICALITY_WEIGHT] || 0) -
+        (CRITICALITY_WEIGHT[a.criticality as keyof typeof CRITICALITY_WEIGHT] || 0)
+    );
 
   // coverage: how much of the graph is actually mapped (honest scoring, no false confidence)
   const providersUsed = new Set();
@@ -141,7 +153,9 @@ export function computeConcentration({ providers = [], criticalFunctions = [], e
   const coverage = {
     totalProviders: providers.length,
     providersMappedToFunctions: providersUsed.size,
-    unmappedProviders: providers.filter((p) => !providersUsed.has(String(p.id))).map((p) => p.name),
+    unmappedProviders: providers
+      .filter((p: any) => !providersUsed.has(String(p.id)))
+      .map((p: any) => p.name),
     criticalFunctionCount: criticalFunctions.length,
     nthPartyEdges: edges.length,
   };
@@ -153,7 +167,7 @@ export function computeConcentration({ providers = [], criticalFunctions = [], e
  * Load an organisation's graph and compute concentration. Thin DB wrapper — all logic
  * is in computeConcentration (pure). Injectable deps for testing.
  */
-export async function analyzeOrganization(organizationId, deps = {}) {
+export async function analyzeOrganization(organizationId: string, deps: any = {}) {
   const wsRepo = deps.workspaceRepo || workspaceRepository;
   const cfRepo = deps.criticalFunctionRepo || criticalFunctionRepository;
   const graphRepo = deps.providerGraphRepo || providerGraphRepository;
@@ -171,8 +185,8 @@ export async function analyzeOrganization(organizationId, deps = {}) {
     edges: edges.length,
   });
   return computeConcentration({
-    providers: workspaces.map((w) => ({ id: String(w.id), name: w.name, tier: w.vendorTier })),
-    criticalFunctions: cfs.map((c) => ({
+    providers: workspaces.map((w: any) => ({ id: String(w.id), name: w.name, tier: w.vendorTier })),
+    criticalFunctions: cfs.map((c: any) => ({
       id: String(c.id),
       name: c.name,
       criticality: c.criticality,
@@ -187,7 +201,7 @@ export async function analyzeOrganization(organizationId, deps = {}) {
  * the concentration score so the UI can size/colour them; edges include CIF→provider
  * dependencies + provider→sub-provider nth-party links.
  */
-export async function getGraph(organizationId, deps = {}) {
+export async function getGraph(organizationId: string, deps: any = {}) {
   const wsRepo = deps.workspaceRepo || workspaceRepository;
   const cfRepo = deps.criticalFunctionRepo || criticalFunctionRepository;
   const graphRepo = deps.providerGraphRepo || providerGraphRepository;
@@ -198,27 +212,27 @@ export async function getGraph(organizationId, deps = {}) {
     graphRepo.listDependencies(organizationId),
   ]);
   const analysis = computeConcentration({
-    providers: workspaces.map((w) => ({ id: String(w.id), name: w.name, tier: w.vendorTier })),
-    criticalFunctions: cfs.map((c) => ({
+    providers: workspaces.map((w: any) => ({ id: String(w.id), name: w.name, tier: w.vendorTier })),
+    criticalFunctions: cfs.map((c: any) => ({
       id: String(c.id),
       name: c.name,
       criticality: c.criticality,
       dependsOn: (c.dependsOn || []).map(String),
     })),
-    edges: edges.filter((e) => e.confirmed),
+    edges: edges.filter((e: any) => e.confirmed),
   });
   const scoreByWs = Object.fromEntries(
     (analysis.providerConcentration || []).map((p) => [p.key.replace(/^w:/, ''), p.weightedScore])
   );
 
   const nodes = [
-    ...cfs.map((c) => ({
+    ...cfs.map((c: any) => ({
       id: `cf:${c.id}`,
       type: 'function',
       label: c.name,
       criticality: c.criticality,
     })),
-    ...workspaces.map((w) => ({
+    ...workspaces.map((w: any) => ({
       id: `w:${w.id}`,
       type: 'provider',
       label: w.name,
@@ -251,30 +265,30 @@ export async function getGraph(organizationId, deps = {}) {
 
 // ── Critical Function CRUD (firm-owned governance) ───────────────────────────
 
-export async function listCriticalFunctions(organizationId, deps = {}) {
+export async function listCriticalFunctions(organizationId: string, deps: any = {}) {
   const cfRepo = deps.criticalFunctionRepo || criticalFunctionRepository;
   return cfRepo.listByOrg(organizationId);
 }
 
-export async function upsertCriticalFunction(organizationId, payload, deps = {}) {
+export async function upsertCriticalFunction(organizationId: string, payload: any, deps: any = {}) {
   const cfRepo = deps.criticalFunctionRepo || criticalFunctionRepository;
   return cfRepo.upsert(organizationId, payload);
 }
 
-export async function deleteCriticalFunction(organizationId, id, deps = {}) {
+export async function deleteCriticalFunction(organizationId: string, id: string, deps: any = {}) {
   const cfRepo = deps.criticalFunctionRepo || criticalFunctionRepository;
   return cfRepo.deleteByIdAndOrg(organizationId, id);
 }
 
 // ── nth-party dependency edges ───────────────────────────────────────────────
 
-export async function listDependencies(organizationId, deps = {}) {
+export async function listDependencies(organizationId: string, deps: any = {}) {
   const graphRepo = deps.providerGraphRepo || providerGraphRepository;
   return graphRepo.listDependencies(organizationId);
 }
 
 /** Confirm (or reject) an AI-extracted edge — the human-in-the-loop gate. */
-export async function setDependencyConfirmed(organizationId, id, confirmed, deps = {}) {
+export async function setDependencyConfirmed(organizationId: string, id: string, confirmed: any, deps: any = {}) {
   const graphRepo = deps.providerGraphRepo || providerGraphRepository;
   return graphRepo.setConfirmed(organizationId, id, confirmed);
 }
@@ -291,7 +305,7 @@ const SUBPROVIDER_EXTRACT_PROMPT = `You are extracting the SUBPROCESSOR / sub-pr
  * @param {string} parentName     the vendor being extracted (self-reference filter)
  * @returns {Array<{name:string, service:string}>}
  */
-export function parseSubproviderExtraction(raw, parentName = '') {
+export function parseSubproviderExtraction(raw: any, parentName = "") {
   let obj;
   try {
     const m = String(raw).match(/\{[\s\S]*\}/); // tolerate prose around the JSON
@@ -322,7 +336,7 @@ export function parseSubproviderExtraction(raw, parentName = '') {
  *
  * @returns {Promise<{ created:number, candidates:Array }>}
  */
-export async function extractSubProvidersForWorkspace(organizationId, workspaceId, deps = {}) {
+export async function extractSubProvidersForWorkspace(organizationId: string, workspaceId: string, deps: any = {}) {
   const wsRepo = deps.workspaceRepo || workspaceRepository;
   const graphRepo = deps.providerGraphRepo || providerGraphRepository;
   const ws = await wsRepo.findById(workspaceId);
@@ -339,7 +353,7 @@ export async function extractSubProvidersForWorkspace(organizationId, workspaceI
   if (!chunks || !chunks.length) return { created: 0, candidates: [] };
   const context = chunks
     .slice(0, 12)
-    .map((c, i) => `[${i + 1}] ${c}`)
+    .map((c: any, i: number) => `[${i + 1}] ${c}`)
     .join('\n\n');
 
   let raw = '';
@@ -353,7 +367,7 @@ export async function extractSubProvidersForWorkspace(organizationId, workspaceI
     logger.warn('Sub-provider extraction LLM call failed', {
       service: 'concentration',
       workspaceId,
-      error: e.message,
+      error: e instanceof Error ? e.message : String(e),
     });
     return { created: 0, candidates: [] };
   }
@@ -395,15 +409,15 @@ export async function extractSubProvidersForWorkspace(organizationId, workspaceI
   return { created, candidates };
 }
 
-async function defaultSearch(workspaceId, deps = {}) {
+async function defaultSearch(workspaceId: string, deps: any = {}) {
   // Find the latest complete assessment for the workspace + reuse its chunk search.
   const asmtRepo = deps.assessmentRepo || assessmentRepository;
   const ingest = await import('./fileIngestionService.js');
   const a = await asmtRepo.findLatestByWorkspace(workspaceId);
   if (!a) return async () => [];
-  return async (q) => {
+  return async (q: string) => {
     const hits = await ingest.searchAssessmentChunks(String(a.id), q, 15);
-    return hits.map((h) => h.content);
+    return hits.map((h: any) => h.content);
   };
 }
 

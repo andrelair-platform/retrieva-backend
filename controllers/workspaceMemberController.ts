@@ -8,13 +8,13 @@ export const createWorkspace = catchAsync(async (req, res) => {
 });
 
 export const getWorkspace = catchAsync(async (req, res) => {
-  const workspace = await workspaceService.getWorkspace(req.params.workspaceId, req.user.userId);
+  const workspace = await workspaceService.getWorkspace(String(req.params.workspaceId), req.user.userId);
   sendSuccess(res, 200, 'Workspace retrieved', { workspace });
 });
 
 export const updateWorkspace = catchAsync(async (req, res) => {
   const workspace = await workspaceService.updateWorkspace(
-    req.params.workspaceId,
+    String(req.params.workspaceId),
     req.user.userId,
     req.body
   );
@@ -22,7 +22,7 @@ export const updateWorkspace = catchAsync(async (req, res) => {
 });
 
 export const deleteWorkspace = catchAsync(async (req, res) => {
-  await workspaceService.deleteWorkspace(req.params.workspaceId, req.user.userId);
+  await workspaceService.deleteWorkspace(String(req.params.workspaceId), req.user.userId);
   sendSuccess(res, 200, 'Workspace deleted');
 });
 
@@ -33,7 +33,7 @@ export const getMyWorkspaces = catchAsync(async (req, res) => {
 
 export const getWorkspaceMembers = catchAsync(async (req, res) => {
   const members = await workspaceService.getWorkspaceMembers(
-    req.params.workspaceId,
+    String(req.params.workspaceId),
     req.user.userId
   );
   sendSuccess(res, 200, 'Members retrieved', { members });
@@ -41,7 +41,7 @@ export const getWorkspaceMembers = catchAsync(async (req, res) => {
 
 export const inviteMember = catchAsync(async (req, res) => {
   const result = await workspaceService.inviteMember(
-    req.params.workspaceId,
+    String(req.params.workspaceId),
     req.user.userId,
     req.body
   );
@@ -51,21 +51,21 @@ export const inviteMember = catchAsync(async (req, res) => {
 });
 
 export const revokeMember = catchAsync(async (req, res) => {
-  await workspaceService.revokeMember(req.params.workspaceId, req.user.userId, req.params.memberId);
+  await workspaceService.revokeMember(String(req.params.workspaceId), req.user.userId, String(req.params.memberId));
   sendSuccess(res, 200, 'Access revoked successfully');
 });
 
 export const updateMember = catchAsync(async (req, res) => {
   const member = await workspaceService.updateMember(
-    req.params.workspaceId,
+    String(req.params.workspaceId),
     req.user.userId,
-    req.params.memberId,
+    String(req.params.memberId),
     req.body
   );
   sendSuccess(res, 200, 'Member updated successfully', { member });
 });
 
 export const getComplianceScore = catchAsync(async (req, res) => {
-  const score = await assessmentRepository.getComplianceScore(String(req.params.workspaceId));
+  const score = await assessmentRepository.getComplianceScore(String(String(req.params.workspaceId)));
   sendSuccess(res, 200, 'Compliance score retrieved', { score });
 });

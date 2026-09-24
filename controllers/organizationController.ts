@@ -65,7 +65,9 @@ export const getMyOrganization = catchAsync(async (req, res) => {
  * GET /api/v1/organizations/invite-info?token=XXX  (PUBLIC — no auth)
  */
 export const getInviteInfo = catchAsync(async (req, res) => {
-  const info = await organizationService.getInviteInfo(req.query.token);
+  // Cast (not String()) — the token is optional; the service does its own `if (!token)` check,
+  // so the raw undefined must pass through rather than becoming the string "undefined".
+  const info = await organizationService.getInviteInfo(req.query.token as string);
   sendSuccess(res, 200, 'Invite info retrieved', info);
 });
 
@@ -124,6 +126,6 @@ export const getMembers = catchAsync(async (req, res) => {
  * DELETE /api/v1/organizations/members/:memberId
  */
 export const removeMember = catchAsync(async (req, res) => {
-  await organizationService.removeMember(req.user.userId, req.params.memberId);
+  await organizationService.removeMember(req.user.userId, String(req.params.memberId));
   sendSuccess(res, 200, 'Member removed');
 });

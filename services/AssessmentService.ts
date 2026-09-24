@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- injectable repos/queues/services stored as
+   fields; assessment rows, files and request payloads are heterogeneous. */
 import path from 'path';
 import { AppError } from '../utils/index.js';
 import { assessmentRepository } from '../repositories/drizzle/AssessmentRepository.js';
@@ -11,10 +13,21 @@ import logger from '../config/logger.js';
 
 // Preserve the legacy `_id` field in API responses (value = the uuid `id`) so existing
 // frontend consumers keep working through the Postgres cutover (RTV-49).
-const withId = (a) => (a ? { ...a, _id: a.id } : a);
+const withId = (a: any) => (a ? { ...a, _id: a.id } : a);
 
 class AssessmentService {
-  constructor(deps = {}) {
+  assessmentRepo: any;
+  workspaceRepo: any;
+  userRepo: any;
+  assessmentQueue: any;
+  monitoringQueue: any;
+  storage: any;
+  generateReport: any;
+  deleteAssessmentCollection: any;
+  deleteAssessmentChunksFromWorkspace: any;
+  logger: any;
+
+  constructor(deps: Record<string, any> = {}) {
     this.assessmentRepo = deps.assessmentRepo || assessmentRepository;
     this.workspaceRepo = deps.workspaceRepo || workspaceRepository;
     this.userRepo = deps.userRepo || userRepository;
@@ -25,14 +38,14 @@ class AssessmentService {
     this.deleteAssessmentCollection = deps.deleteAssessmentCollection || deleteAssessmentCollection;
     this.deleteAssessmentChunksFromWorkspace =
       deps.deleteAssessmentChunksFromWorkspace ||
-      (async (assessmentId) => {
+      (async (assessmentId: any) => {
         const { deleteAssessmentChunksFromWorkspace } = await import('../config/vectorStore.js');
         return deleteAssessmentChunksFromWorkspace(assessmentId);
       });
     this.logger = deps.logger || logger;
   }
 
-  async createAssessment(userId, organizationId, data, files) {
+  async createAssessment(userId: string, organizationId: string, data: any, files: any) {
     const { name, vendorName, framework = 'DORA', workspaceId } = data;
 
     let categories = [];
@@ -45,7 +58,7 @@ class AssessmentService {
       }
     }
 
-    const documents = files.map((f, i) => ({
+    const documents = files.map((f: any, i: number) => ({
       fileName: f.originalname,
       fileType: path.extname(f.originalname).replace('.', '').toLowerCase(),
       fileSize: f.size,
@@ -77,7 +90,7 @@ class AssessmentService {
 
     if (this.storage.isStorageConfigured() && organizationId) {
       await Promise.all(
-        files.map(async (file, i) => {
+        files.map(async (file: any, i: number) => {
           const key = this.storage.buildAssessmentFileKey(
             organizationId.toString(),
             workspaceId,
@@ -87,24 +100,24 @@ class AssessmentService {
           );
           const storageKey = await this.storage
             .uploadFile(key, file.buffer, file.mimetype)
-            .catch((err) => {
+            .catch((err: any) => {
               this.logger.warn('Assessment file upload to Spaces failed (non-critical)', {
                 service: 'assessment',
                 assessmentId: assessment.id,
                 fileIndex: i,
-                error: err.message,
+                error: err instanceof Error ? err.message : String(err),
               });
               return null;
             });
           if (storageKey) documents[i].storageKey = storageKey;
         })
       );
-      if (documents.some((d) => d.storageKey)) {
+      if (documents.some((d: any) => d.storageKey)) {
         await this.assessmentRepo.updateByIdUnscoped(assessment.id, { documents });
       }
     }
 
-    const fileJobs = files.map((file, i) =>
+    const fileJobs = files.map((file: any, i: number) =>
       this.assessmentQueue.add(
         'fileIndex',
         {
@@ -146,7 +159,7 @@ class AssessmentService {
     };
   }
 
-  async listAssessments(authorizedWorkspaceIds, query = {}) {
+  async listAssessments(authorizedWorkspaceIds: any, query: any = {}) {
     const { workspaceId, status, page = 1, limit = 20 } = query;
     // Explicit cross-workspace org query (unscoped by design — see AssessmentRepository).
     const res = await this.assessmentRepo.findByWorkspaces(authorizedWorkspaceIds, {
@@ -158,7 +171,7 @@ class AssessmentService {
     return { assessments: res.assessments.map(withId), pagination: res.pagination };
   }
 
-  async getAssessment(id, authorizedWorkspaceIds) {
+  async getAssessment(id: string, authorizedWorkspaceIds: any) {
     const assessment = await this.assessmentRepo.findByIdUnscoped(id);
     if (!assessment) throw new AppError('Assessment not found', 404);
     if (!authorizedWorkspaceIds.includes(assessment.workspaceId.toString())) {
@@ -167,7 +180,7 @@ class AssessmentService {
     return withId(assessment);
   }
 
-  async getReportBuffer(id, userId, authorizedWorkspaceIds) {
+  async getReportBuffer(id: string, userId: string, authorizedWorkspaceIds: any) {
     const assessment = await this.assessmentRepo.findByIdUnscoped(id);
     if (!assessment) throw new AppError('Assessment not found', 404);
     if (!authorizedWorkspaceIds.includes(assessment.workspaceId.toString())) {
@@ -198,7 +211,7 @@ class AssessmentService {
     return { buffer, filename };
   }
 
-  async setRiskDecision(id, userId, authorizedWorkspaceIds, { decision, rationale }) {
+  async setRiskDecision(id: string, userId: string, authorizedWorkspaceIds: any, { decision, rationale }: any) {
     const assessment = await this.assessmentRepo.findByIdUnscoped(id);
     if (!assessment) throw new AppError('Assessment not found', 404);
     if (!authorizedWorkspaceIds.includes(assessment.workspaceId.toString())) {
@@ -249,7 +262,7 @@ class AssessmentService {
         this.logger.warn('Failed to schedule review reminder (non-critical)', {
           service: 'assessment',
           workspaceId: assessment.workspaceId,
-          error: err.message,
+          error: err instanceof Error ? err.message : String(err),
         });
       }
     }
@@ -257,7 +270,7 @@ class AssessmentService {
     return riskDecision;
   }
 
-  async setClauseSignoff(id, userId, authorizedWorkspaceIds, { clauseRef, status, note }) {
+  async setClauseSignoff(id: string, userId: string, authorizedWorkspaceIds: any, { clauseRef, status, note }: any) {
     const assessment = await this.assessmentRepo.findByIdUnscoped(id);
     if (!assessment) throw new AppError('Assessment not found', 404);
     if (!authorizedWorkspaceIds.includes(assessment.workspaceId.toString())) {
@@ -293,7 +306,7 @@ class AssessmentService {
     return signoffs;
   }
 
-  async getAssessmentFileDownload(id, docIndex, authorizedWorkspaceIds) {
+  async getAssessmentFileDownload(id: string, docIndex: any, authorizedWorkspaceIds: any) {
     const assessment = await this.assessmentRepo.findByIdUnscoped(id);
     if (!assessment) throw new AppError('Assessment not found', 404);
     if (!authorizedWorkspaceIds.includes(assessment.workspaceId.toString())) {
@@ -311,7 +324,7 @@ class AssessmentService {
     return { stream, fileName };
   }
 
-  async deleteAssessment(id, userId, authorizedWorkspaceIds) {
+  async deleteAssessment(id: string, userId: string, authorizedWorkspaceIds: any) {
     const assessment = await this.assessmentRepo.findByIdUnscoped(id);
     if (!assessment) throw new AppError('Assessment not found', 404);
     if (!authorizedWorkspaceIds.includes(assessment.workspaceId.toString())) {
@@ -321,13 +334,13 @@ class AssessmentService {
       throw new AppError('Only the creator can delete an assessment', 403);
     }
 
-    Promise.resolve(this.deleteAssessmentCollection(id)).catch((err) =>
+    Promise.resolve(this.deleteAssessmentCollection(id)).catch((err: any) =>
       this.logger.warn('Failed to delete assessment Qdrant collection', {
         assessmentId: id,
         error: err?.message,
       })
     );
-    Promise.resolve(this.deleteAssessmentChunksFromWorkspace(id)).catch((err) =>
+    Promise.resolve(this.deleteAssessmentChunksFromWorkspace(id)).catch((err: any) =>
       this.logger.warn('Failed to delete assessment chunks from workspace collection', {
         assessmentId: id,
         error: err?.message,

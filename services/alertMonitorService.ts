@@ -10,6 +10,8 @@
  * are explicit cross-workspace/org (unscoped) reads.
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- monitoring runs over unscoped, untyped repo
+   rows (workspaces/orgs/certifications/assessments) across the whole platform. */
 import {
   workspaceRepository,
   assessmentRepository,
@@ -53,7 +55,8 @@ async function checkCertificationExpiry() {
     for (const cert of workspace.certifications) {
       if (!cert.validUntil) continue;
 
-      const daysUntilExpiry = (new Date(cert.validUntil) - now) / (24 * 60 * 60 * 1000);
+      const daysUntilExpiry =
+        (new Date(cert.validUntil).getTime() - now.getTime()) / (24 * 60 * 60 * 1000);
 
       let threshold = null;
       if (daysUntilExpiry > 0 && daysUntilExpiry <= 7) threshold = 7;
@@ -128,7 +131,7 @@ async function checkAssessmentOverdue() {
   const workspaces = await workspaceRepository.find();
   const twelveMonthsAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
 
-  const perWorkspace = workspaces.map(async (workspace) => {
+  const perWorkspace = workspaces.map(async (workspace: any) => {
     const latest = await assessmentRepository.findLatestByWorkspace(workspace.id);
 
     const isOverdue = !latest || new Date(latest.createdAt) < twelveMonthsAgo;
@@ -156,7 +159,7 @@ async function checkConcentrationRisk() {
   const { analyzeOrganization } = await import('./concentrationService.js');
   const orgs = await organizationRepository.find();
 
-  const perOrg = orgs.map(async (org) => {
+  const perOrg = orgs.map(async (org: any) => {
     let analysis;
     try {
       analysis = await analyzeOrganization(org.id);
@@ -207,7 +210,7 @@ async function checkConcentrationRisk() {
  * Sends a 30-day review reminder to all workspace owners.
  * Called by monitoringWorker when the delayed 'review-reminder' job fires.
  */
-export async function sendReviewReminderAlert(workspaceId) {
+export async function sendReviewReminderAlert(workspaceId: any) {
   const workspace = await workspaceRepository.findById(workspaceId);
   if (!workspace) {
     logger.warn('Review reminder: workspace not found', { service: 'alertMonitor', workspaceId });
@@ -221,17 +224,17 @@ export async function sendReviewReminderAlert(workspaceId) {
 }
 
 // Shared helpers
-function formatDate(d) {
+function formatDate(d: any) {
   return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-function isWithinDedupWindow(workspace, alertKey) {
+function isWithinDedupWindow(workspace: any, alertKey: any) {
   const lastSent = workspace.alertsSentAt?.[alertKey];
   if (!lastSent) return false;
   return Date.now() - new Date(lastSent).getTime() < DEDUP_WINDOW_MS;
 }
 
-async function sendAlertToOwners(workspace, alertType, details) {
+async function sendAlertToOwners(workspace: any, alertType: any, details: any) {
   const members = await workspaceMemberRepository.findOwnersWithUser(workspace.id);
 
   for (const member of members) {
@@ -253,7 +256,7 @@ async function sendAlertToOwners(workspace, alertType, details) {
         userId: user.id,
         workspaceId: workspace.id,
         alertType,
-        error: err.message,
+        error: err instanceof Error ? err.message : String(err),
       });
     }
   }
@@ -268,7 +271,7 @@ export async function runWeeklyDigest() {
   let sent = 0;
   for (const { userId, workspaceIds } of ownerGroups) {
     try {
-      const user = await userRepository.findById(userId); // sanitized: email, decrypted name, prefs
+      const user: any = await userRepository.findById(userId); // sanitized: email, decrypted name, prefs
       if (!user) continue;
       if (user.notificationPreferences?.email?.weekly_digest === false) continue;
 
@@ -278,7 +281,7 @@ export async function runWeeklyDigest() {
       const cutoff30 = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
       const items = await Promise.all(
-        workspaces.map(async (ws) => {
+        workspaces.map(async (ws: any) => {
           const score = await assessmentRepository.getComplianceScore(ws.id);
           const reviewDue =
             ws.nextReviewDate && new Date(ws.nextReviewDate) < cutoff30
@@ -305,7 +308,7 @@ export async function runWeeklyDigest() {
       logger.error('Failed to send weekly digest', {
         service: 'alertMonitor',
         userId,
-        error: err.message,
+        error: err instanceof Error ? err.message : String(err),
       });
     }
   }
