@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 /**
  * Middleware to load workspace by ID
  * Adds workspace to req.workspace for use in subsequent handlers
@@ -15,7 +16,7 @@ import logger from '../config/logger.js';
  * Expects :id parameter in route
  * SECURITY FIX: Verifies user owns or is member of workspace
  */
-export const loadWorkspace = async (req, res, next) => {
+export const loadWorkspace = async (req: Request, res: Response, next: NextFunction) => {
   const { id } = req.params;
   const userId = req.user?.userId;
 
@@ -33,7 +34,7 @@ export const loadWorkspace = async (req, res, next) => {
     return sendError(res, 401, 'Authentication required');
   }
 
-  const workspace = await workspaceRepository.findById(id);
+  const workspace = await workspaceRepository.findById(String(id));
 
   if (!workspace) {
     return sendError(res, 404, 'Workspace not found');
@@ -41,7 +42,7 @@ export const loadWorkspace = async (req, res, next) => {
 
   // SECURITY FIX (BOLA): Verify user has access to this workspace
   // Check if user is workspace owner OR active member
-  const membership = await workspaceMemberRepository.findMembership(id, userId);
+  const membership = await workspaceMemberRepository.findMembership(String(id), userId);
 
   const isOwner = workspace.userId && String(workspace.userId) === String(userId);
 
@@ -66,7 +67,7 @@ export const loadWorkspace = async (req, res, next) => {
  * Use this when you don't need the decrypted token
  * SECURITY FIX: Includes same authorization check as loadWorkspace
  */
-export const loadWorkspaceSafe = async (req, res, next) => {
+export const loadWorkspaceSafe = async (req: Request, res: Response, next: NextFunction) => {
   const { id } = req.params;
   const userId = req.user?.userId;
 
@@ -84,14 +85,14 @@ export const loadWorkspaceSafe = async (req, res, next) => {
     return sendError(res, 401, 'Authentication required');
   }
 
-  const workspace = await workspaceRepository.findById(id);
+  const workspace = await workspaceRepository.findById(String(id));
 
   if (!workspace) {
     return sendError(res, 404, 'Workspace not found');
   }
 
   // SECURITY FIX (BOLA): Verify user has access to this workspace
-  const membership = await workspaceMemberRepository.findMembership(id, userId);
+  const membership = await workspaceMemberRepository.findMembership(String(id), userId);
 
   const isOwner = workspace.userId && workspace.userId.toString() === userId.toString();
 

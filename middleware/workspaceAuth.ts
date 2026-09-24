@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 /**
  * Workspace Authorization Middleware
  *
@@ -17,7 +18,7 @@ import logger from '../config/logger.js';
  * Require workspace membership for RAG queries
  * User must be a member of at least one workspace to query
  */
-export const requireWorkspaceAccess = async (req, res, next) => {
+export const requireWorkspaceAccess = async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Must be authenticated (no anonymous)
     if (!req.user?.userId) {
@@ -49,8 +50,8 @@ export const requireWorkspaceAccess = async (req, res, next) => {
 
     // Filter to active workspaces only
     const activeWorkspaces = memberships
-      .filter((m) => m.workspace && m.workspace.syncStatus !== 'error')
-      .map((m) => ({
+      .filter((m: any) => m.workspace && m.workspace.syncStatus !== 'error')
+      .map((m: any) => ({
         _id: m.workspace.id,
         workspaceId: m.workspace.id.toString(),
         workspaceName: m.workspace.name,
@@ -76,7 +77,7 @@ export const requireWorkspaceAccess = async (req, res, next) => {
     const requestedWorkspaceId =
       req.headers?.['x-workspace-id'] || req.body?.workspaceId || req.query?.workspaceId;
     if (requestedWorkspaceId) {
-      const isMember = activeWorkspaces.some((w) => w.workspaceId === String(requestedWorkspaceId));
+      const isMember = activeWorkspaces.some((w: any) => w.workspaceId === String(requestedWorkspaceId));
       if (!isMember) {
         logger.warn('Active workspace not authorized for user', {
           service: 'workspace-auth',
@@ -97,8 +98,8 @@ export const requireWorkspaceAccess = async (req, res, next) => {
   } catch (error) {
     logger.error('Workspace authorization error', {
       service: 'workspace-auth',
-      error: error.message,
-      stack: error.stack,
+      error: (error instanceof Error ? error.message : String(error)),
+      stack: (error as Error).stack,
     });
     return sendError(res, 500, 'Authorization check failed');
   }
@@ -108,7 +109,7 @@ export const requireWorkspaceAccess = async (req, res, next) => {
  * Require ownership of a specific workspace
  * Used for admin operations like inviting users
  */
-export const requireWorkspaceOwner = async (req, res, next) => {
+export const requireWorkspaceOwner = async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!req.user?.userId) {
       return sendError(res, 401, 'Authentication required');
@@ -139,7 +140,7 @@ export const requireWorkspaceOwner = async (req, res, next) => {
   } catch (error) {
     logger.error('Workspace owner check error', {
       service: 'workspace-auth',
-      error: error.message,
+      error: (error instanceof Error ? error.message : String(error)),
     });
     return sendError(res, 500, 'Authorization check failed');
   }
@@ -149,7 +150,7 @@ export const requireWorkspaceOwner = async (req, res, next) => {
  * Middleware to check if user can invite others
  * Owner or members with canInvite permission
  */
-export const canInviteMembers = async (req, res, next) => {
+export const canInviteMembers = async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!req.user?.userId) {
       return sendError(res, 401, 'Authentication required');
@@ -175,7 +176,7 @@ export const canInviteMembers = async (req, res, next) => {
   } catch (error) {
     logger.error('Invite permission check error', {
       service: 'workspace-auth',
-      error: error.message,
+      error: (error instanceof Error ? error.message : String(error)),
     });
     return sendError(res, 500, 'Permission check failed');
   }
@@ -184,7 +185,7 @@ export const canInviteMembers = async (req, res, next) => {
 /**
  * Get workspace IDs that user has access to (for filtering queries)
  */
-export async function getUserWorkspaceIds(userId) {
+export async function getUserWorkspaceIds(userId: string) {
   const memberships = await workspaceMemberRepository.findActiveQueryableWithWorkspace(userId);
-  return memberships.filter((m) => m.workspace).map((m) => m.workspace.id.toString());
+  return memberships.filter((m: any) => m.workspace).map((m: any) => m.workspace.id.toString());
 }

@@ -24,7 +24,8 @@ import logger from '../../config/logger.js';
 export interface CanUser {
   userId: string;
   platformAdmin?: boolean;
-  organizationId?: string;
+  // Nullable to accept req.user (AuthenticatedUser) directly — a user without an org is `null`.
+  organizationId?: string | null;
 }
 
 export const ISOLATION_MODES = ['off', 'shadow', 'enforce'];

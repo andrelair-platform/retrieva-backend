@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 import multer from 'multer';
 import path from 'path';
 import { AppError } from '../utils/index.js';
@@ -36,7 +37,7 @@ const MAX_FILES_PER_UPLOAD = 5;
 
 const storage = multer.memoryStorage();
 
-function fileFilter(_req, file, cb) {
+function fileFilter(_req: any, file: any, cb: any) {
   const ext = path.extname(file.originalname).toLowerCase();
 
   if (!ALLOWED_EXTENSIONS.has(ext) || !ALLOWED_MIME_TYPES.has(file.mimetype)) {
@@ -68,7 +69,7 @@ const uploadContract = multer({
 }).single('contract');
 
 /** Runs multer for a single `contract` file, converting MulterError → AppError. */
-export function contractUploadMiddleware(req, res, next) {
+export function contractUploadMiddleware(req: Request, res: Response, next: NextFunction) {
   uploadContract(req, res, (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
@@ -85,7 +86,7 @@ export function contractUploadMiddleware(req, res, next) {
  * Express middleware that runs multer and converts MulterError to AppError.
  * Place this in the route chain before validateBody and the controller.
  */
-export function assessmentUploadMiddleware(req, res, next) {
+export function assessmentUploadMiddleware(req: Request, res: Response, next: NextFunction) {
   uploadAssessmentFiles(req, res, (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {

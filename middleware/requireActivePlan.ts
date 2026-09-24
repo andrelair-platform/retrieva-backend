@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 /**
  * requireActivePlan middleware
  *
@@ -16,7 +17,7 @@ import { organizationRepository } from '../repositories/drizzle/OrganizationRepo
 import { sendError } from '../utils/index.js';
 import logger from '../config/logger.js';
 
-export async function requireActivePlan(req, res, next) {
+export async function requireActivePlan(req: Request, res: Response, next: NextFunction) {
   // Public routes (no auth token) bypass the check
   if (!req.user) {
     return next();
@@ -54,7 +55,7 @@ export async function requireActivePlan(req, res, next) {
       paused: 'Your subscription is paused. Please add a payment method to continue.',
     };
 
-    return sendError(res, 402, messages[planStatus] || 'Your subscription is not active.', {
+    return sendError(res, 402, messages[planStatus as keyof typeof messages] || 'Your subscription is not active.', {
       planStatus,
     });
   } catch (err) {
@@ -62,7 +63,7 @@ export async function requireActivePlan(req, res, next) {
     logger.error('requireActivePlan: failed to check org billing status', {
       service: 'billing',
       userId: req.user?.userId,
-      error: err.message,
+      error: (err instanceof Error ? err.message : String(err)),
     });
     return next();
   }

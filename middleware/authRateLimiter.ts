@@ -24,11 +24,11 @@ const DISABLED = process.env.AUTH_RATE_LIMIT_DISABLED === 'true';
  * so a single /64 allocation can't rotate through addresses to bypass the cap
  * (issue #381). Exported for testing.
  */
-export function buildRateLimitKey(name, ip) {
+export function buildRateLimitKey(name: string, ip: string) {
   return `auth:${name}:${ipKeyGenerator(ip || 'unknown')}`;
 }
 
-function makeLimiter({ name, windowMs, max, message }) {
+function makeLimiter({ name, windowMs, max, message }: { name: string; windowMs: number; max: number; message: string }) {
   return rateLimit({
     windowMs,
     max,
@@ -37,7 +37,7 @@ function makeLimiter({ name, windowMs, max, message }) {
     skip: () => DISABLED,
     // Key by IP. We deliberately do NOT key by user — the point is to
     // protect endpoints that establish identity, before a user is known.
-    keyGenerator: (req) => buildRateLimitKey(name, req.ip),
+    keyGenerator: (req) => buildRateLimitKey(name, req.ip || "unknown"),
     // We DO normalize IPv6 via ipKeyGenerator (inside buildRateLimitKey), but v8's
     // heuristic can't see it through the helper → disable that specific check.
     validate: { ip: false, trustProxy: false, keyGeneratorIpFallback: false },
