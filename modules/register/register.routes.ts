@@ -3,7 +3,7 @@ import { getRegister, exportRegister } from './register.controller.js';
 import { authenticate } from '../../middleware/auth.js';
 
 // DORA Register of Information (RT.02.01), RTV-38. ORG-scoped — every handler keys off
-// req.user.organizationId; the Register is a projection generated on demand from the arrangement
+// req.user!.organizationId; the Register is a projection generated on demand from the arrangement
 // graph (RTV-36), never a stored/maintained copy (ADR §2). Modular-monolith module: routes +
 // controller over the shared services/db layer. Mounted with setEntityContext (RTV-54 isolation).
 const router = Router();

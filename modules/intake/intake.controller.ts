@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 import path from 'path';
 import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import { parseFile } from '../../services/fileIngestionService.js';
@@ -11,18 +12,18 @@ import {
 } from '../../repositories/index.js';
 
 // AI-assisted intake (RTV-34) — ORG-scoped. Upload a contract → AI proposes an arrangement → the
-// human confirms (nothing is authoritative until confirm). Keys off req.user.organizationId.
-const orgId = (req) => req.user?.organizationId;
-const requireOrg = (req, res) => {
+// human confirms (nothing is authoritative until confirm). Keys off req.user!.organizationId.
+const orgId = (req: Request) => req.user?.organizationId as string;
+const requireOrg = (req: Request, res: Response) => {
   const id = orgId(req);
   if (!id) sendError(res, 400, 'No organization context for this user');
   return id;
 };
 
-const norm = (s) => String(s || '').trim().toLowerCase();
+const norm = (s: unknown) => String(s || '').trim().toLowerCase();
 
 // POST /api/v1/arrangements/intake — parse a contract + return a PROPOSAL (nothing persisted).
-export const proposeFromContract = catchAsync(async (req, res) => {
+export const proposeFromContract = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   if (!req.file) return sendError(res, 400, 'A contract file is required (field: contract)');
@@ -43,10 +44,10 @@ export const proposeFromContract = catchAsync(async (req, res) => {
     ictServiceRepository.listByOrg(organizationId),
   ]);
   const matches = {
-    legalEntityId: entities.find((e) => norm(e.name) === norm(proposal.legalEntityName))?.id ?? null,
-    providerId: providers.find((p) => norm(p.displayName) === norm(proposal.providerName))?.id ?? null,
-    businessFunctionId: functions.find((f) => norm(f.name) === norm(proposal.businessFunctionName))?.id ?? null,
-    ictServiceId: services.find((s) => norm(s.name) === norm(proposal.ictServiceName))?.id ?? null,
+    legalEntityId: entities.find((e: any) => norm(e.name) === norm(proposal.legalEntityName))?.id ?? null,
+    providerId: providers.find((p: any) => norm(p.displayName) === norm(proposal.providerName))?.id ?? null,
+    businessFunctionId: functions.find((f: any) => norm(f.name) === norm(proposal.businessFunctionName))?.id ?? null,
+    ictServiceId: services.find((s: any) => norm(s.name) === norm(proposal.ictServiceName))?.id ?? null,
   };
 
   sendSuccess(res, 200, 'Arrangement proposal', {
@@ -57,7 +58,7 @@ export const proposeFromContract = catchAsync(async (req, res) => {
 });
 
 // POST /api/v1/arrangements/intake/confirm — the human-validated proposal becomes an arrangement.
-export const confirmIntake = catchAsync(async (req, res) => {
+export const confirmIntake = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   const p = req.body?.proposal ?? req.body;
@@ -67,7 +68,7 @@ export const confirmIntake = catchAsync(async (req, res) => {
 
   const arrangement = await confirmProposal({
     organizationId,
-    userId: req.user.userId,
+    userId: req.user!.userId,
     proposal: p,
     sourceFileName: req.body?.sourceFileName || 'Ingested contract',
     trigger: req.body?.trigger,

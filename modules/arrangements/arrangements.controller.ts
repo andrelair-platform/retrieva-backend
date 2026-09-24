@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 import path from 'path';
 import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import { sha256 } from '../../utils/security/crypto.js';
@@ -21,25 +22,25 @@ import {
   evidenceRepository,
 } from '../../repositories/index.js';
 
-// Arrangement-graph CRUD (RTV-36/37) — ORG-scoped. Every handler keys off req.user.organizationId
+// Arrangement-graph CRUD (RTV-36/37) — ORG-scoped. Every handler keys off req.user!.organizationId
 // (never a caller-supplied org); row-level entity isolation (RTV-54) is applied by the repos via
 // setEntityContext on the router. Powers the frontend arrangement loop (create → assess → register).
-const orgId = (req) => req.user?.organizationId;
-const requireOrg = (req, res) => {
+const orgId = (req: Request) => req.user?.organizationId as string;
+const requireOrg = (req: Request, res: Response) => {
   const id = orgId(req);
   if (!id) sendError(res, 400, 'No organization context for this user');
   return id;
 };
 
 // ── enrichment: resolve FK ids → names so the UI needn't N+1 ────────────────────
-async function loadDimensionMaps(organizationId) {
+async function loadDimensionMaps(organizationId: string) {
   const [entities, functions, services, providers] = await Promise.all([
     legalEntityRepository.listByOrg(organizationId),
     businessFunctionRepository.listByOrg(organizationId),
     ictServiceRepository.listByOrg(organizationId),
     providerGraphRepository.listNodesByOrg(organizationId),
   ]);
-  const byId = (rows) => new Map(rows.map((r) => [String(r.id), r]));
+  const byId = (rows: any[]) => new Map(rows.map((r: any) => [String(r.id), r]));
   return {
     entities: byId(entities),
     functions: byId(functions),
@@ -48,7 +49,7 @@ async function loadDimensionMaps(organizationId) {
   };
 }
 
-function enrichArrangement(a, maps) {
+function enrichArrangement(a: any, maps: any) {
   return {
     ...a,
     legalEntityName: maps.entities.get(String(a.legalEntityId))?.name ?? null,
@@ -60,7 +61,7 @@ function enrichArrangement(a, maps) {
 }
 
 // ── arrangements ────────────────────────────────────────────────────────────────
-export const listArrangements = catchAsync(async (req, res) => {
+export const listArrangements = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   const [arrangements, maps] = await Promise.all([
@@ -68,11 +69,11 @@ export const listArrangements = catchAsync(async (req, res) => {
     loadDimensionMaps(organizationId),
   ]);
   sendSuccess(res, 200, 'Arrangements', {
-    arrangements: arrangements.map((a) => enrichArrangement(a, maps)),
+    arrangements: arrangements.map((a: any) => enrichArrangement(a, maps)),
   });
 });
 
-export const createArrangement = catchAsync(async (req, res) => {
+export const createArrangement = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   const { legalEntityId, businessFunctionId, providerId } = req.body;
@@ -93,13 +94,13 @@ export const createArrangement = catchAsync(async (req, res) => {
     exitDifficulty: req.body.exitDifficulty ?? null,
     // RTV-31 trigger → initial lifecycle state (🟢 new → prospect; 🟡 existing/default → active).
     lifecycleStatus: initialStatusForTrigger(req.body.trigger),
-    createdBy: req.user.userId,
+    createdBy: req.user!.userId,
   });
   const maps = await loadDimensionMaps(organizationId);
   sendSuccess(res, 201, 'Arrangement created', { arrangement: enrichArrangement(row, maps) });
 });
 
-export const getArrangement = catchAsync(async (req, res) => {
+export const getArrangement = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   const arrangement = await arrangementRepository.findByIdInOrg(organizationId, String(req.params.id));
@@ -109,7 +110,7 @@ export const getArrangement = catchAsync(async (req, res) => {
 });
 
 // GET /api/v1/arrangements/:id/lifecycle — the current state + its allowed next transitions (UI).
-export const getLifecycle = catchAsync(async (req, res) => {
+export const getLifecycle = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   const arrangement = await arrangementRepository.findByIdInOrg(organizationId, String(req.params.id));
@@ -124,7 +125,7 @@ export const getLifecycle = catchAsync(async (req, res) => {
 // are rejected; terminal/onboarding decisions (approval) require the CHECKER capability (risk:accept)
 // — the analyst who runs assessments can't self-approve onboarding/resolution/exit (SoD). The
 // decision is recorded in the immutable audit trail.
-export const transitionLifecycle = catchAsync(async (req, res) => {
+export const transitionLifecycle = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   const { transition } = req.body ?? {};
@@ -137,7 +138,7 @@ export const transitionLifecycle = catchAsync(async (req, res) => {
       res,
       400,
       `Invalid transition '${transition}' from '${from}'. Allowed: ${allowedTransitions(from)
-        .map((t) => t.transition)
+        .map((t: any) => t.transition)
         .join(', ') || '(none)'}`
     );
   }
@@ -154,10 +155,10 @@ export const transitionLifecycle = catchAsync(async (req, res) => {
   }
 
   const to = nextState(from, transition);
-  const updated = await arrangementRepository.setLifecycle(organizationId, arrangement.id, to);
+  const updated = await arrangementRepository.setLifecycle(organizationId as string, arrangement.id, to as string);
   await recordAudit({
     organizationId,
-    actor: req.user.userId,
+    actor: req.user!.userId,
     action: 'arrangement.lifecycle',
     targetType: 'arrangement',
     targetId: arrangement.id,
@@ -167,7 +168,7 @@ export const transitionLifecycle = catchAsync(async (req, res) => {
 });
 
 // ── evidence (RTV-37) ─────────────────────────────────────────────────────────
-export const listArrangementEvidence = catchAsync(async (req, res) => {
+export const listArrangementEvidence = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   const evidence = await evidenceRepository.resolveForArrangement(
@@ -177,7 +178,7 @@ export const listArrangementEvidence = catchAsync(async (req, res) => {
   sendSuccess(res, 200, 'Evidence', { evidence });
 });
 
-export const attachArrangementEvidence = catchAsync(async (req, res) => {
+export const attachArrangementEvidence = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   const { document } = req.body;
@@ -194,14 +195,14 @@ export const attachArrangementEvidence = catchAsync(async (req, res) => {
     source,
     version,
     hash: sha256(`arrangement:${req.params.id}|${document}|${source}|${version}`),
-    createdBy: req.user.userId,
+    createdBy: req.user!.userId,
   });
   sendSuccess(res, 201, 'Evidence attached', { evidence });
 });
 
 // POST /api/v1/arrangements/:id/evidence/ingest — upload a document: index its TEXT into the
 // arrangement's RAG collection (so assessments cite real passages) + create an evidence record.
-export const ingestArrangementEvidence = catchAsync(async (req, res) => {
+export const ingestArrangementEvidence = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   if (!req.file) return sendError(res, 400, 'A document file is required (field: contract)');
@@ -220,12 +221,12 @@ export const ingestArrangementEvidence = catchAsync(async (req, res) => {
     document: req.file.originalname,
     source: 'uploaded document',
     hash: sha256(text),
-    createdBy: req.user.userId,
+    createdBy: req.user!.userId,
   });
   sendSuccess(res, 201, 'Document ingested', { evidence, chunks });
 });
 
-export const attachProviderEvidence = catchAsync(async (req, res) => {
+export const attachProviderEvidence = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   const { document } = req.body;
@@ -240,13 +241,13 @@ export const attachProviderEvidence = catchAsync(async (req, res) => {
     source,
     version,
     hash: sha256(`provider:${req.params.providerId}|${document}|${source}|${version}`),
-    createdBy: req.user.userId,
+    createdBy: req.user!.userId,
   });
   sendSuccess(res, 201, 'Provider evidence attached', { evidence });
 });
 
 // ── dimensions (populate + create from the arrangement form) ────────────────────
-export const listLegalEntities = catchAsync(async (req, res) => {
+export const listLegalEntities = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   sendSuccess(res, 200, 'Legal entities', {
@@ -254,7 +255,7 @@ export const listLegalEntities = catchAsync(async (req, res) => {
   });
 });
 
-export const createLegalEntity = catchAsync(async (req, res) => {
+export const createLegalEntity = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   if (!req.body.name) return sendError(res, 400, 'name is required');
@@ -269,7 +270,7 @@ export const createLegalEntity = catchAsync(async (req, res) => {
   sendSuccess(res, 201, 'Legal entity created', { legalEntity: row });
 });
 
-export const listBusinessFunctions = catchAsync(async (req, res) => {
+export const listBusinessFunctions = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   const list = req.query.legalEntityId
@@ -278,7 +279,7 @@ export const listBusinessFunctions = catchAsync(async (req, res) => {
   sendSuccess(res, 200, 'Business functions', { businessFunctions: list });
 });
 
-export const createBusinessFunction = catchAsync(async (req, res) => {
+export const createBusinessFunction = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   if (!req.body.name || !req.body.legalEntityId) {
@@ -294,7 +295,7 @@ export const createBusinessFunction = catchAsync(async (req, res) => {
   sendSuccess(res, 201, 'Business function created', { businessFunction: row });
 });
 
-export const listProviders = catchAsync(async (req, res) => {
+export const listProviders = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   sendSuccess(res, 200, 'Providers', {
@@ -302,7 +303,7 @@ export const listProviders = catchAsync(async (req, res) => {
   });
 });
 
-export const createProvider = catchAsync(async (req, res) => {
+export const createProvider = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   if (!req.body.name) return sendError(res, 400, 'name is required');
@@ -315,7 +316,7 @@ export const createProvider = catchAsync(async (req, res) => {
   sendSuccess(res, 201, 'Provider created', { provider: node });
 });
 
-export const listIctServices = catchAsync(async (req, res) => {
+export const listIctServices = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   const list = req.query.providerId
@@ -324,7 +325,7 @@ export const listIctServices = catchAsync(async (req, res) => {
   sendSuccess(res, 200, 'ICT services', { ictServices: list });
 });
 
-export const createIctService = catchAsync(async (req, res) => {
+export const createIctService = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   if (!req.body.name || !req.body.providerId) {

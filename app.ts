@@ -41,9 +41,9 @@ import { sendError } from './utils/core/responseFormatter.js';
 // =============================================================================
 // ISSUE #12 FIX: Global Request Timeout Configuration
 // =============================================================================
-const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS) || 30000; // 30s default
-const STREAMING_TIMEOUT_MS = parseInt(process.env.STREAMING_TIMEOUT_MS) || 180000; // 3 min for streaming
-const SYNC_TIMEOUT_MS = parseInt(process.env.SYNC_TIMEOUT_MS) || 600000; // 10 min for sync operations
+const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || "", 10) || 30000; // 30s default
+const STREAMING_TIMEOUT_MS = parseInt(process.env.STREAMING_TIMEOUT_MS || "", 10) || 180000; // 3 min for streaming
+const SYNC_TIMEOUT_MS = parseInt(process.env.SYNC_TIMEOUT_MS || "", 10) || 600000; // 10 min for sync operations
 
 import { piiDetectionMiddleware } from './utils/security/piiMasker.js';
 
