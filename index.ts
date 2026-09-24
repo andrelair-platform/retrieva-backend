@@ -109,12 +109,12 @@ const startServer = async () => {
         });
       });
   } catch (error) {
-    logger.error('Failed to start server:', { service: 'rag-backend', error: error.message });
+    logger.error('Failed to start server:', { service: 'rag-backend', error: error instanceof Error ? error.message : String(error) });
     process.exit(1);
   }
 };
 
-const gracefulShutdown = async (signal) => {
+const gracefulShutdown = async (signal: string) => {
   logger.info(`${signal} signal received: closing HTTP server`, { service: 'rag-backend' });
   process.exit(0);
 };

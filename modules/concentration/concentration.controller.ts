@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import {
   analyzeOrganization,
@@ -11,34 +12,34 @@ import {
 } from '../../services/concentrationService.js';
 
 // Concentration is ORG-scoped (spans all the firm's vendors). Every handler keys off
-// req.user.organizationId — never a caller-supplied org id — so tenants can't cross.
-const orgId = (req) => req.user?.organizationId;
-const requireOrg = (req, res) => {
+// req.user!.organizationId — never a caller-supplied org id — so tenants can't cross.
+const orgId = (req: Request) => req.user?.organizationId as string;
+const requireOrg = (req: Request, res: Response) => {
   const id = orgId(req);
   if (!id) sendError(res, 400, 'No organization context for this user');
   return id;
 };
 
-export const getConcentration = catchAsync(async (req, res) => {
+export const getConcentration = catchAsync(async (req: Request, res: Response) => {
   const id = requireOrg(req, res);
   if (!id) return;
   const result = await analyzeOrganization(id);
   sendSuccess(res, 200, 'Concentration analysis', result);
 });
 
-export const getConcentrationGraph = catchAsync(async (req, res) => {
+export const getConcentrationGraph = catchAsync(async (req: Request, res: Response) => {
   const id = requireOrg(req, res);
   if (!id) return;
   sendSuccess(res, 200, 'Concentration graph', await getGraph(id));
 });
 
-export const getCriticalFunctions = catchAsync(async (req, res) => {
+export const getCriticalFunctions = catchAsync(async (req: Request, res: Response) => {
   const id = requireOrg(req, res);
   if (!id) return;
   sendSuccess(res, 200, 'Critical functions', { functions: await listCriticalFunctions(id) });
 });
 
-export const createOrUpdateCriticalFunction = catchAsync(async (req, res) => {
+export const createOrUpdateCriticalFunction = catchAsync(async (req: Request, res: Response) => {
   const id = requireOrg(req, res);
   if (!id) return;
   const fn = await upsertCriticalFunction(id, {
@@ -47,12 +48,12 @@ export const createOrUpdateCriticalFunction = catchAsync(async (req, res) => {
     criticality: req.body.criticality,
     description: req.body.description,
     dependsOn: req.body.dependsOn,
-    userId: req.user.userId,
+    userId: req.user!.userId,
   });
   sendSuccess(res, req.body.id ? 200 : 201, 'Critical function saved', { function: fn });
 });
 
-export const removeCriticalFunction = catchAsync(async (req, res) => {
+export const removeCriticalFunction = catchAsync(async (req: Request, res: Response) => {
   const id = requireOrg(req, res);
   if (!id) return;
   const removed = await deleteCriticalFunction(id, String(req.params.id));
@@ -60,13 +61,13 @@ export const removeCriticalFunction = catchAsync(async (req, res) => {
   sendSuccess(res, 200, 'Critical function deleted', { id: String(req.params.id) });
 });
 
-export const getDependencies = catchAsync(async (req, res) => {
+export const getDependencies = catchAsync(async (req: Request, res: Response) => {
   const id = requireOrg(req, res);
   if (!id) return;
   sendSuccess(res, 200, 'Provider dependencies', { dependencies: await listDependencies(id) });
 });
 
-export const confirmDependency = catchAsync(async (req, res) => {
+export const confirmDependency = catchAsync(async (req: Request, res: Response) => {
   const id = requireOrg(req, res);
   if (!id) return;
   const updated = await setDependencyConfirmed(id, String(req.params.id), req.body.confirmed !== false);
@@ -74,7 +75,7 @@ export const confirmDependency = catchAsync(async (req, res) => {
   sendSuccess(res, 200, 'Dependency updated', { dependency: updated });
 });
 
-export const extractSubProviders = catchAsync(async (req, res) => {
+export const extractSubProviders = catchAsync(async (req: Request, res: Response) => {
   const id = requireOrg(req, res);
   if (!id) return;
   const result = await extractSubProvidersForWorkspace(id, String(req.params.workspaceId));

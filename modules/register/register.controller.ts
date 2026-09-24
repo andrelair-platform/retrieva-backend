@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import { buildRegister } from '../../services/registerProjectionService.js';
 import {
@@ -7,10 +8,10 @@ import {
 import { RT0201_TEMPLATES } from '../../config/register/rt0201FieldMap.js';
 
 // The Register is ORG-scoped (spans the firm's whole arrangement graph). Every handler keys off
-// req.user.organizationId — never a caller-supplied org id — so tenants can't cross. Row-level
+// req.user!.organizationId — never a caller-supplied org id — so tenants can't cross. Row-level
 // entity isolation (RTV-54) is applied by the graph repos via setEntityContext on the router.
-const orgId = (req) => req.user?.organizationId;
-const requireOrg = (req, res) => {
+const orgId = (req: Request) => req.user?.organizationId as string;
+const requireOrg = (req: Request, res: Response) => {
   const id = orgId(req);
   if (!id) sendError(res, 400, 'No organization context for this user');
   return id;
@@ -18,7 +19,7 @@ const requireOrg = (req, res) => {
 
 // GET /api/v1/register — the RT.02.01 read model (templates + gaps), generated on demand from
 // live graph state (ADR §2: "the Register falls out of the graph").
-export const getRegister = catchAsync(async (req, res) => {
+export const getRegister = catchAsync(async (req: Request, res: Response) => {
   const id = requireOrg(req, res);
   if (!id) return;
   const register = await buildRegister(id);
@@ -28,7 +29,7 @@ export const getRegister = catchAsync(async (req, res) => {
 // GET /api/v1/register/export?format=xlsx|csv[&template=B_02]
 //   xlsx (default) → full workbook (one sheet per template + Gaps)
 //   csv            → one template's CSV (requires &template=)
-export const exportRegister = catchAsync(async (req, res) => {
+export const exportRegister = catchAsync(async (req: Request, res: Response) => {
   const id = requireOrg(req, res);
   if (!id) return;
   const register = await buildRegister(id);
@@ -37,7 +38,7 @@ export const exportRegister = catchAsync(async (req, res) => {
 
   if (format === 'csv') {
     const template = String(req.query.template || '');
-    if (!RT0201_TEMPLATES[template]) {
+    if (!RT0201_TEMPLATES[template as keyof typeof RT0201_TEMPLATES]) {
       return sendError(
         res,
         400,

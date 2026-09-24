@@ -17,7 +17,12 @@
     "workers/**/*.ts",
     "prompts/**/*.ts",
     "middleware/**/*.ts",
-    "controllers/**/*.ts"
+    "controllers/**/*.ts",
+    "modules/**/*.ts",
+    "validators/**/*.ts",
+    "routes/**/*.ts",
+    "index.ts",
+    "app.ts"
   ],
   "exclude": ["node_modules", "dist", "coverage", "tests", "website", "seeds", "data"]
 }

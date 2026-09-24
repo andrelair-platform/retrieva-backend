@@ -14,7 +14,7 @@ import { validateParams } from '../../middleware/validate.js';
 import { functionIdParam, dependencyIdParam, extractParam } from './concentration.schema.js';
 
 // DORA concentration & nth-party graph (RTV-15). ORG-scoped — every handler keys off
-// req.user.organizationId, so no per-workspace access middleware is needed (and must
+// req.user!.organizationId, so no per-workspace access middleware is needed (and must
 // not be used: concentration deliberately spans all the firm's vendors).
 //
 // Modular-monolith reference module: routes + controller + schema + types live together

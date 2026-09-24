@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 import { z } from 'zod';
 
 /**
@@ -11,7 +12,7 @@ import { z } from 'zod';
  * @param {string} str - String to sanitize
  * @returns {string} Sanitized string with HTML entities escaped
  */
-function sanitizeHtml(str) {
+function sanitizeHtml(str: string) {
   if (!str) return str;
   return str
     .replace(/&/g, '&amp;')
