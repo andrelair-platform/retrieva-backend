@@ -28,12 +28,12 @@ export const mfaService = {
    * Build the otpauth:// URI an authenticator app scans (or that the frontend
    * renders as a QR code).
    */
-  keyUri(accountName, secret) {
+  keyUri(accountName: string, secret: string) {
     return generateURI({ issuer: ISSUER, label: accountName, secret });
   },
 
   /** Verify a 6-digit TOTP code against a secret. */
-  verifyTotp(secret, token) {
+  verifyTotp(secret: string, token: string) {
     if (!secret || !token) return false;
     try {
       return verifySync({
@@ -51,8 +51,8 @@ export const mfaService = {
    * user exactly once) and their hashes (persisted on the user).
    */
   generateRecoveryCodes(count = RECOVERY_CODE_COUNT) {
-    const plain = [];
-    const hashed = [];
+    const plain: string[] = [];
+    const hashed: string[] = [];
     for (let i = 0; i < count; i += 1) {
       // 10 hex chars, grouped as xxxxx-xxxxx for readability.
       const raw = crypto.randomBytes(5).toString('hex');
@@ -64,7 +64,7 @@ export const mfaService = {
   },
 
   /** Hash a recovery code for storage / comparison (normalized, case-insensitive). */
-  hashRecoveryCode(code) {
+  hashRecoveryCode(code: string) {
     return sha256(String(code).trim().toLowerCase());
   },
 };

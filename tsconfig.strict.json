@@ -11,12 +11,7 @@
     "db/**/*.ts",
     "repositories/**/*.ts",
     "types/**/*.d.ts",
-    "services/lifecycle/**/*.ts",
-    "services/security/**/*.ts",
-    "services/registerProjection.ts",
-    "services/registerProjectionService.ts",
-    "services/assessment/**/*.ts",
-    "services/rag/**/*.ts",
+    "services/**/*.ts",
     "config/**/*.ts",
     "utils/**/*.ts"
   ],

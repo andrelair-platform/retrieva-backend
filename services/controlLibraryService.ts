@@ -8,14 +8,19 @@
  */
 import { CURRENT_LIBRARY_VERSION, LIBRARY_VERSIONS } from '../config/controlLibrary/index.js';
 
+interface ArrangementCIF {
+  criticality?: string | null;
+  criticalOrImportant?: boolean | null;
+}
+
 /** The version new assessments stamp (AC-3). */
 export function getCurrentLibraryVersion() {
   return CURRENT_LIBRARY_VERSION;
 }
 
 /** The frozen control list for a version (defaults to current). Throws on an unknown version. */
-export function getControls(version = CURRENT_LIBRARY_VERSION) {
-  const lib = LIBRARY_VERSIONS[version];
+export function getControls(version: string = CURRENT_LIBRARY_VERSION) {
+  const lib = LIBRARY_VERSIONS[version as keyof typeof LIBRARY_VERSIONS];
   if (!lib) throw new Error(`Unknown control-library version: ${version}`);
   return lib.controls;
 }
@@ -25,7 +30,7 @@ export function getControls(version = CURRENT_LIBRARY_VERSION) {
  * is critical-or-important OR the arrangement's own criticality is critical/important.
  * @param {{criticality?: string|null, criticalOrImportant?: boolean|null}} arr
  */
-export function isCIF(arr = {}) {
+export function isCIF(arr: ArrangementCIF = {}) {
   if (arr.criticalOrImportant === true) return true;
   return arr.criticality === 'critical' || arr.criticality === 'important';
 }
@@ -37,7 +42,10 @@ export function isCIF(arr = {}) {
  * obligation) and the resolved `libraryVersion`.
  * @returns {{libraryVersion:string, cif:boolean, controls:object[]}}
  */
-export function resolveControlsForArrangement(arr, version = CURRENT_LIBRARY_VERSION) {
+export function resolveControlsForArrangement(
+  arr: ArrangementCIF,
+  version: string = CURRENT_LIBRARY_VERSION
+) {
   const cif = isCIF(arr);
   const controls = getControls(version)
     .filter((c) => c.applicability === 'baseline' || cif)

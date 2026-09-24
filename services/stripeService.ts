@@ -23,7 +23,7 @@ const TRIAL_PERIOD_DAYS = 20;
  * @param {string} name    - Organization name
  * @returns {{ customerId: string, subscriptionId: string, trialEndsAt: Date }}
  */
-export async function setupOrgBilling(orgId, email, name) {
+export async function setupOrgBilling(orgId: string, email: string, name: string) {
   const stripe = getStripe();
   const customer = await stripe.customers.create({
     email,
@@ -40,7 +40,7 @@ export async function setupOrgBilling(orgId, email, name) {
     },
   });
 
-  const trialEndsAt = new Date(subscription.trial_end * 1000);
+  const trialEndsAt = new Date((subscription.trial_end ?? 0) * 1000);
 
   logger.info('Stripe billing provisioned', {
     service: 'stripe',

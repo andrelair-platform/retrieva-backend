@@ -11,18 +11,19 @@ import {
   buildExtractionUserPrompt,
 } from '../../prompts/intakePrompts.js';
 
-const str = (v) => {
+const str = (v: unknown) => {
   const s = typeof v === 'string' ? v.trim() : '';
   return s.length ? s : null;
 };
-const strArray = (v) =>
+const strArray = (v: unknown) =>
   Array.isArray(v)
     ? [...new Set(v.map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean))]
     : [];
-const oneOf = (v, allowed) => (allowed.includes(v) ? v : null);
+const oneOf = (v: unknown, allowed: string[]) => (allowed.includes(v as string) ? v : null);
 
 /** Pure: clamp a raw model object to a valid, safe proposal (unknown → null, enums clamped). */
-export function normalizeProposal(raw = {}) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw model output is untyped
+export function normalizeProposal(raw: any = {}) {
   const confidence = Number(raw.confidence);
   return {
     providerName: str(raw.providerName),
@@ -42,7 +43,7 @@ export function normalizeProposal(raw = {}) {
 }
 
 /** Default production judge: the cost-gated, traced gateway model (lazy-imported). */
-async function defaultLlm(contractText, sessionId) {
+async function defaultLlm(contractText: string, sessionId?: string) {
   const { createLLM } = await import('../../config/llmProvider.js');
   const { getCallbacks } = await import('../../config/tracing.js');
   const llm = await createLLM({ purpose: 'analysis', temperature: 0, maxTokens: 1500 });
@@ -62,15 +63,18 @@ async function defaultLlm(contractText, sessionId) {
  * @param {{ llm?: (text:string)=>Promise<string>, sessionId?: string }} [deps] injected LLM returns raw text
  * @returns {Promise<object>} a normalised proposal (all fields present, unknown → null)
  */
-export async function extractArrangementProposal(contractText, deps = {}) {
-  const run = deps.llm || ((t) => defaultLlm(t, deps.sessionId));
-  let content;
+export async function extractArrangementProposal(
+  contractText: string,
+  deps: { llm?: (text: string) => Promise<string>; sessionId?: string } = {}
+) {
+  const run = deps.llm || ((t: string) => defaultLlm(t, deps.sessionId));
+  let content: string;
   try {
     content = await run(contractText);
   } catch (err) {
     logger.error('contract intake: extraction call failed', {
       service: 'intake',
-      error: err.message,
+      error: err instanceof Error ? err.message : String(err),
     });
     return normalizeProposal({
       notes: 'Automatic extraction failed — fill the fields manually.',
