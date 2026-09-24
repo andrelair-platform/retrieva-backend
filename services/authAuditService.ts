@@ -22,23 +22,25 @@ import logger from '../config/logger.js';
 
 const SERVICE = 'auth-audit';
 
-function audit(event, ctx = {}, level = 'info') {
+type AuditCtx = Record<string, unknown>;
+
+function audit(event: string, ctx: AuditCtx = {}, level: 'info' | 'warn' | 'error' | 'debug' = 'info') {
   logger[level]('auth.audit', { service: SERVICE, event, ...ctx });
   return true;
 }
 
 export const authAuditService = {
-  logRegisterSuccess: (ctx) => audit('register_success', ctx),
-  logLoginSuccess: (ctx) => audit('login_success', ctx),
-  logLoginFailed: (ctx) => audit('login_failed', ctx, 'warn'),
-  logLoginBlockedLocked: (ctx) => audit('login_blocked_locked', ctx, 'warn'),
-  logAccountLocked: (ctx) => audit('account_locked', ctx, 'warn'),
-  logLogout: (ctx) => audit('logout', ctx),
-  logPasswordResetRequest: (ctx) => audit('password_reset_request', ctx),
-  logPasswordResetSuccess: (ctx) => audit('password_reset_success', ctx),
-  logTokenRefresh: (ctx) => audit('token_refresh', ctx),
-  logTokenTheftDetected: (ctx) => audit('token_theft_detected', ctx, 'warn'),
-  logEmailVerified: (ctx) => audit('email_verified', ctx),
+  logRegisterSuccess: (ctx: AuditCtx) => audit('register_success', ctx),
+  logLoginSuccess: (ctx: AuditCtx) => audit('login_success', ctx),
+  logLoginFailed: (ctx: AuditCtx) => audit('login_failed', ctx, 'warn'),
+  logLoginBlockedLocked: (ctx: AuditCtx) => audit('login_blocked_locked', ctx, 'warn'),
+  logAccountLocked: (ctx: AuditCtx) => audit('account_locked', ctx, 'warn'),
+  logLogout: (ctx: AuditCtx) => audit('logout', ctx),
+  logPasswordResetRequest: (ctx: AuditCtx) => audit('password_reset_request', ctx),
+  logPasswordResetSuccess: (ctx: AuditCtx) => audit('password_reset_success', ctx),
+  logTokenRefresh: (ctx: AuditCtx) => audit('token_refresh', ctx),
+  logTokenTheftDetected: (ctx: AuditCtx) => audit('token_theft_detected', ctx, 'warn'),
+  logEmailVerified: (ctx: AuditCtx) => audit('email_verified', ctx),
 
   // Detection stubs — see module note. Always report "not blocked"; the active
   // controls are authRateLimiter (per IP) and the User account lockout.

@@ -14,7 +14,17 @@ import logger from '../config/logger.js';
  *          targetId?:string, evidenceRefs?:string[], metadata?:object}} entry
  * @returns {Promise<object|null>} the appended row (null if it could not be written — non-fatal).
  */
-export async function recordAudit(entry) {
+interface AuditEntry {
+  organizationId: string;
+  actor?: string | null;
+  action: string;
+  targetType: string;
+  targetId?: string | null;
+  evidenceRefs?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export async function recordAudit(entry: AuditEntry) {
   const { organizationId, action, targetType } = entry || {};
   if (!organizationId || !action || !targetType) {
     throw new Error('recordAudit requires organizationId, action, targetType');
@@ -35,7 +45,7 @@ export async function recordAudit(entry) {
       service: 'audit-log',
       action,
       targetType,
-      error: err.message,
+      error: err instanceof Error ? err.message : String(err),
     });
     return null;
   }

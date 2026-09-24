@@ -31,6 +31,20 @@ export class InputGuardrailError extends AppError {
  * @param {boolean} [params.useIntentAware]  Enable intent-aware routing
  * @returns {Object} RAG result
  */
+interface ExecuteRAGParams {
+  question: string;
+  conversationId?: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- optional retrieval filters
+  filters?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- SSE event callback (event, data)
+  onEvent?: ((event: any, data?: any) => void) | null;
+  userId?: string | null;
+  authorizedWorkspaceIds?: string[] | null;
+  lang?: string;
+  forceIntent?: string;
+  useIntentAware?: boolean;
+}
+
 export async function executeRAG({
   question,
   conversationId,
@@ -39,7 +53,7 @@ export async function executeRAG({
   userId = null,
   authorizedWorkspaceIds = null,
   lang = 'en',
-}) {
+}: ExecuteRAGParams) {
   logger.info('Executing RAG query', {
     service: 'rag-executor',
     questionLength: question.length,

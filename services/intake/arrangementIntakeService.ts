@@ -16,7 +16,7 @@ import {
   evidenceRepository,
 } from '../../repositories/index.js';
 
-const norm = (s) =>
+const norm = (s: unknown) =>
   String(s || '')
     .trim()
     .toLowerCase();
@@ -26,6 +26,17 @@ const norm = (s) =>
  *          trigger?:string, repos?:object}} args  repos is injectable for tests (defaults to the singletons)
  * @returns {Promise<object>} the created arrangement row
  */
+interface ConfirmProposalArgs {
+  organizationId: string;
+  userId?: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the extracted proposal is a heterogeneous draft
+  proposal: any;
+  sourceFileName?: string;
+  trigger?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable repo overrides (stubbed in tests)
+  repos?: Record<string, any>;
+}
+
 export async function confirmProposal({
   organizationId,
   userId = null,
@@ -33,7 +44,7 @@ export async function confirmProposal({
   sourceFileName = 'Ingested contract',
   trigger,
   repos = {},
-}) {
+}: ConfirmProposalArgs) {
   const legalEntities = repos.legalEntityRepository || legalEntityRepository;
   const businessFunctions = repos.businessFunctionRepository || businessFunctionRepository;
   const ictServices = repos.ictServiceRepository || ictServiceRepository;
@@ -44,12 +55,12 @@ export async function confirmProposal({
 
   const entities = await legalEntities.listByOrg(organizationId);
   const legalEntity =
-    entities.find((e) => norm(e.name) === norm(p.legalEntityName)) ||
+    entities.find((e: any) => norm(e.name) === norm(p.legalEntityName)) ||
     (await legalEntities.create({ organizationId, name: p.legalEntityName }));
 
   const fns = await businessFunctions.listByEntity(organizationId, legalEntity.id);
   const businessFunction =
-    fns.find((f) => norm(f.name) === norm(p.businessFunctionName)) ||
+    fns.find((f: any) => norm(f.name) === norm(p.businessFunctionName)) ||
     (await businessFunctions.create({
       organizationId,
       legalEntityId: legalEntity.id,
@@ -88,7 +99,7 @@ export async function confirmProposal({
   if (p.ictServiceName) {
     const svcs = await ictServices.listByProvider(organizationId, provider.id);
     ictService =
-      svcs.find((s) => norm(s.name) === norm(p.ictServiceName)) ||
+      svcs.find((s: any) => norm(s.name) === norm(p.ictServiceName)) ||
       (await ictServices.create({
         organizationId,
         providerId: provider.id,

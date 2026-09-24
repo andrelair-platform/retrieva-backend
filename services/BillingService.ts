@@ -1,23 +1,30 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Stripe webhook payloads (subscriptions,
+   invoices, events) are untyped here + repos/services are injectable for tests. */
 import { getStripe, PRICE_TO_PLAN, STRIPE_STATUS_MAP } from '../config/stripe.js';
 import { AppError } from '../utils/index.js';
 import { organizationRepository } from '../repositories/index.js';
 import { emailService } from './emailService.js';
 import logger from '../config/logger.js';
 
-function resolvePlan(subscription) {
+function resolvePlan(subscription: any) {
   const priceId = subscription.items?.data?.[0]?.price?.id;
   return PRICE_TO_PLAN[priceId] || 'starter';
 }
 
 class BillingService {
-  constructor(deps = {}) {
+  organizationRepo: any;
+  emailService: any;
+  stripeFactory: any;
+  logger: any;
+
+  constructor(deps: Record<string, any> = {}) {
     this.organizationRepo = deps.organizationRepo || organizationRepository;
     this.emailService = deps.emailService || emailService;
     this.stripeFactory = deps.stripeFactory || getStripe;
     this.logger = deps.logger || logger;
   }
 
-  async findOrgByCustomerId(customerId) {
+  async findOrgByCustomerId(customerId: string) {
     const customer = await this.stripeFactory().customers.retrieve(customerId);
     if (!customer || customer.deleted) return null;
 
@@ -27,12 +34,12 @@ class BillingService {
     return this.organizationRepo.findById(orgId);
   }
 
-  async handleSubscriptionUpdated(subscription) {
+  async handleSubscriptionUpdated(subscription: any) {
     const org = await this.findOrgByCustomerId(subscription.customer);
     if (!org) return;
 
     const plan = resolvePlan(subscription);
-    const planStatus = STRIPE_STATUS_MAP[subscription.status] || 'past_due';
+    const planStatus = STRIPE_STATUS_MAP[subscription.status as keyof typeof STRIPE_STATUS_MAP] || 'past_due';
     const trialEndsAt = subscription.trial_end ? new Date(subscription.trial_end * 1000) : null;
 
     await this.organizationRepo.updateById(org._id, { plan, planStatus, trialEndsAt });
@@ -46,7 +53,7 @@ class BillingService {
     });
   }
 
-  async handleSubscriptionDeleted(subscription) {
+  async handleSubscriptionDeleted(subscription: any) {
     const org = await this.findOrgByCustomerId(subscription.customer);
     if (!org) return;
 
@@ -55,7 +62,7 @@ class BillingService {
     this.logger.info('Subscription canceled', { service: 'billing', orgId: org._id });
   }
 
-  async handleTrialWillEnd(subscription) {
+  async handleTrialWillEnd(subscription: any) {
     const org = await this.findOrgByCustomerId(subscription.customer);
     if (!org) return;
 
@@ -74,7 +81,7 @@ class BillingService {
         <p><a href="${process.env.FRONTEND_URL}/settings/billing">Manage billing</a></p>
       `,
       })
-      .catch((err) => {
+      .catch((err: any) => {
         this.logger.warn('Failed to send trial_will_end email', {
           service: 'billing',
           orgId: org._id,
@@ -89,7 +96,7 @@ class BillingService {
     });
   }
 
-  async handlePaymentSucceeded(invoice) {
+  async handlePaymentSucceeded(invoice: any) {
     if (!invoice.subscription) return;
 
     const org = await this.findOrgByCustomerId(invoice.customer);
@@ -103,7 +110,7 @@ class BillingService {
     });
   }
 
-  async handlePaymentFailed(invoice) {
+  async handlePaymentFailed(invoice: any) {
     if (!invoice.subscription) return;
 
     const org = await this.findOrgByCustomerId(invoice.customer);
@@ -117,7 +124,7 @@ class BillingService {
     });
   }
 
-  async dispatchWebhookEvent(event) {
+  async dispatchWebhookEvent(event: any) {
     switch (event.type) {
       case 'customer.subscription.updated':
         return this.handleSubscriptionUpdated(event.data.object);
@@ -135,7 +142,7 @@ class BillingService {
     }
   }
 
-  async createPortalSession(organizationId) {
+  async createPortalSession(organizationId: string) {
     const org = await this.organizationRepo.findById(organizationId, {
       select: 'stripeCustomerId',
     });
