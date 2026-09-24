@@ -1,10 +1,11 @@
+import type { Request, Response, NextFunction } from "express";
 import { questionnaireService } from '../services/QuestionnaireService.js';
 import { catchAsync, sendSuccess } from '../utils/index.js';
 
 /**
  * POST /api/v1/questionnaires
  */
-export const createQuestionnaire = catchAsync(async (req, res) => {
+export const createQuestionnaire = catchAsync(async (req: Request, res: Response) => {
   const { vendorName, vendorEmail, vendorContactName, workspaceId } = req.body;
 
   const questionnaire = await questionnaireService.createQuestionnaire({
@@ -12,7 +13,7 @@ export const createQuestionnaire = catchAsync(async (req, res) => {
     vendorEmail,
     vendorContactName,
     workspaceId,
-    userId: req.user.userId,
+    userId: req.user!.userId,
   });
 
   sendSuccess(res, 201, 'Questionnaire created', {
@@ -23,7 +24,7 @@ export const createQuestionnaire = catchAsync(async (req, res) => {
       vendorEmail: questionnaire.vendorEmail,
       vendorContactName: questionnaire.vendorContactName,
       status: questionnaire.status,
-      questions: questionnaire.questions.map((q) => ({
+      questions: questionnaire.questions.map((q: any) => ({
         id: q.id,
         text: q.text,
         doraArticle: q.doraArticle,
@@ -37,9 +38,9 @@ export const createQuestionnaire = catchAsync(async (req, res) => {
 /**
  * GET /api/v1/questionnaires
  */
-export const listQuestionnaires = catchAsync(async (req, res) => {
+export const listQuestionnaires = catchAsync(async (req: Request, res: Response) => {
   const { workspaceId, status, page = 1, limit = 20 } = req.query;
-  const authorizedWorkspaceIds = req.authorizedWorkspaces?.map((w) => w._id) || [];
+  const authorizedWorkspaceIds = req.authorizedWorkspaces?.map((w: any) => w._id) || [];
 
   const result = await questionnaireService.listQuestionnaires({
     authorizedWorkspaceIds,
@@ -55,8 +56,8 @@ export const listQuestionnaires = catchAsync(async (req, res) => {
 /**
  * GET /api/v1/questionnaires/:id
  */
-export const getQuestionnaire = catchAsync(async (req, res) => {
-  const authorizedWorkspaceIds = req.authorizedWorkspaces?.map((w) => w._id.toString()) || [];
+export const getQuestionnaire = catchAsync(async (req: Request, res: Response) => {
+  const authorizedWorkspaceIds = req.authorizedWorkspaces?.map((w: any) => w._id.toString()) || [];
 
   const questionnaire = await questionnaireService.getQuestionnaire(
     String(req.params.id),
@@ -69,12 +70,12 @@ export const getQuestionnaire = catchAsync(async (req, res) => {
 /**
  * DELETE /api/v1/questionnaires/:id
  */
-export const deleteQuestionnaire = catchAsync(async (req, res) => {
-  const authorizedWorkspaceIds = req.authorizedWorkspaces?.map((w) => w._id.toString()) || [];
+export const deleteQuestionnaire = catchAsync(async (req: Request, res: Response) => {
+  const authorizedWorkspaceIds = req.authorizedWorkspaces?.map((w: any) => w._id.toString()) || [];
 
   await questionnaireService.deleteQuestionnaire(
     String(req.params.id),
-    req.user.userId,
+    req.user!.userId,
     authorizedWorkspaceIds
   );
 
@@ -84,10 +85,10 @@ export const deleteQuestionnaire = catchAsync(async (req, res) => {
 /**
  * POST /api/v1/questionnaires/:id/send
  */
-export const sendQuestionnaire = catchAsync(async (req, res) => {
+export const sendQuestionnaire = catchAsync(async (req: Request, res: Response) => {
   const questionnaire = await questionnaireService.sendQuestionnaire(
     String(req.params.id),
-    { userName: req.user.name, userEmail: req.user.email },
+    { userName: req.user!.name, userEmail: req.user!.email },
     req.authorizedWorkspaces || []
   );
 
@@ -104,7 +105,7 @@ export const sendQuestionnaire = catchAsync(async (req, res) => {
 /**
  * GET /api/v1/questionnaires/respond/:token  (PUBLIC — no auth)
  */
-export const getPublicForm = catchAsync(async (req, res) => {
+export const getPublicForm = catchAsync(async (req: Request, res: Response) => {
   const result = await questionnaireService.getPublicForm(String(req.params.token));
 
   if (result.state === 'complete') {
@@ -128,7 +129,7 @@ export const getPublicForm = catchAsync(async (req, res) => {
   sendSuccess(res, 200, 'Questionnaire form loaded', {
     vendorName: questionnaire.vendorName,
     status: questionnaire.status,
-    questions: questionnaire.questions.map((q) => ({
+    questions: questionnaire.questions.map((q: any) => ({
       id: q.id,
       text: q.text,
       doraArticle: q.doraArticle,
@@ -142,7 +143,7 @@ export const getPublicForm = catchAsync(async (req, res) => {
 /**
  * POST /api/v1/questionnaires/respond/:token  (PUBLIC — no auth)
  */
-export const submitResponse = catchAsync(async (req, res) => {
+export const submitResponse = catchAsync(async (req: Request, res: Response) => {
   const { answers, final } = req.body;
   const result = await questionnaireService.submitResponse(String(req.params.token), { answers, final });
 

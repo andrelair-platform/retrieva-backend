@@ -1,48 +1,49 @@
+import type { Request, Response, NextFunction } from "express";
 import { catchAsync, sendSuccess } from '../utils/index.js';
 import { workspaceService } from '../services/WorkspaceService.js';
 import { assessmentRepository } from '../repositories/index.js';
 
-export const createWorkspace = catchAsync(async (req, res) => {
-  const workspace = await workspaceService.createWorkspace(req.user.userId, req.body);
+export const createWorkspace = catchAsync(async (req: Request, res: Response) => {
+  const workspace = await workspaceService.createWorkspace(req.user!.userId, req.body);
   sendSuccess(res, 201, 'Workspace created', { workspace });
 });
 
-export const getWorkspace = catchAsync(async (req, res) => {
-  const workspace = await workspaceService.getWorkspace(String(req.params.workspaceId), req.user.userId);
+export const getWorkspace = catchAsync(async (req: Request, res: Response) => {
+  const workspace = await workspaceService.getWorkspace(String(req.params.workspaceId), req.user!.userId);
   sendSuccess(res, 200, 'Workspace retrieved', { workspace });
 });
 
-export const updateWorkspace = catchAsync(async (req, res) => {
+export const updateWorkspace = catchAsync(async (req: Request, res: Response) => {
   const workspace = await workspaceService.updateWorkspace(
     String(req.params.workspaceId),
-    req.user.userId,
+    req.user!.userId,
     req.body
   );
   sendSuccess(res, 200, 'Workspace updated', { workspace });
 });
 
-export const deleteWorkspace = catchAsync(async (req, res) => {
-  await workspaceService.deleteWorkspace(String(req.params.workspaceId), req.user.userId);
+export const deleteWorkspace = catchAsync(async (req: Request, res: Response) => {
+  await workspaceService.deleteWorkspace(String(req.params.workspaceId), req.user!.userId);
   sendSuccess(res, 200, 'Workspace deleted');
 });
 
-export const getMyWorkspaces = catchAsync(async (req, res) => {
-  const workspaces = await workspaceService.getMyWorkspaces(req.user.userId);
+export const getMyWorkspaces = catchAsync(async (req: Request, res: Response) => {
+  const workspaces = await workspaceService.getMyWorkspaces(req.user!.userId);
   sendSuccess(res, 200, 'Workspaces retrieved', { workspaces });
 });
 
-export const getWorkspaceMembers = catchAsync(async (req, res) => {
+export const getWorkspaceMembers = catchAsync(async (req: Request, res: Response) => {
   const members = await workspaceService.getWorkspaceMembers(
     String(req.params.workspaceId),
-    req.user.userId
+    req.user!.userId
   );
   sendSuccess(res, 200, 'Members retrieved', { members });
 });
 
-export const inviteMember = catchAsync(async (req, res) => {
+export const inviteMember = catchAsync(async (req: Request, res: Response) => {
   const result = await workspaceService.inviteMember(
     String(req.params.workspaceId),
-    req.user.userId,
+    req.user!.userId,
     req.body
   );
   sendSuccess(res, 201, `${result.inviteeName} has been invited to ${result.workspaceName}`, {
@@ -50,22 +51,22 @@ export const inviteMember = catchAsync(async (req, res) => {
   });
 });
 
-export const revokeMember = catchAsync(async (req, res) => {
-  await workspaceService.revokeMember(String(req.params.workspaceId), req.user.userId, String(req.params.memberId));
+export const revokeMember = catchAsync(async (req: Request, res: Response) => {
+  await workspaceService.revokeMember(String(req.params.workspaceId), req.user!.userId, String(req.params.memberId));
   sendSuccess(res, 200, 'Access revoked successfully');
 });
 
-export const updateMember = catchAsync(async (req, res) => {
+export const updateMember = catchAsync(async (req: Request, res: Response) => {
   const member = await workspaceService.updateMember(
     String(req.params.workspaceId),
-    req.user.userId,
+    req.user!.userId,
     String(req.params.memberId),
     req.body
   );
   sendSuccess(res, 200, 'Member updated successfully', { member });
 });
 
-export const getComplianceScore = catchAsync(async (req, res) => {
+export const getComplianceScore = catchAsync(async (req: Request, res: Response) => {
   const score = await assessmentRepository.getComplianceScore(String(String(req.params.workspaceId)));
   sendSuccess(res, 200, 'Compliance score retrieved', { score });
 });

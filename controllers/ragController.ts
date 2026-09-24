@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 import { executeRAG, InputGuardrailError } from '../services/ragExecutor.js';
 import { catchAsync, sendSuccess, sendError } from '../utils/index.js';
 import { userCanViewSources } from '../utils/security/sourceVisibility.js';
@@ -11,7 +12,7 @@ import logger from '../config/logger.js';
  * activity logging, token tracking) lives in executeRAG().
  * This controller only handles HTTP request/response shaping.
  */
-export const askQuestion = catchAsync(async (req, res) => {
+export const askQuestion = catchAsync(async (req: Request, res: Response) => {
   const { question, conversationId, filters, useIntentAware = true, forceIntent, lang } = req.body;
 
   if (!conversationId) {
@@ -26,7 +27,7 @@ export const askQuestion = catchAsync(async (req, res) => {
       conversationId,
       filters: filters || null,
       userId: req.user?.userId?.toString(),
-      authorizedWorkspaceIds: req.authorizedWorkspaces?.map((w) => String(w.workspaceId)) || [],
+      authorizedWorkspaceIds: req.authorizedWorkspaces?.map((w: any) => String(w.workspaceId)) || [],
       forceIntent: forceIntent || null,
       useIntentAware,
       lang,
@@ -38,9 +39,9 @@ export const askQuestion = catchAsync(async (req, res) => {
     }
 
     sendSuccess(res, 200, 'Question answered successfully', result);
-  } catch (error) {
+  } catch (error: unknown) {
     if (error instanceof InputGuardrailError) {
-      return sendError(res, 400, error.message);
+      return sendError(res, 400, (error instanceof Error ? error.message : String(error)));
     }
     throw error;
   }
@@ -54,7 +55,7 @@ export const askQuestion = catchAsync(async (req, res) => {
  * the client as `event: <type>\ndata: <json>\n\n` so the UI can render tokens
  * progressively.
  */
-export const askQuestionStream = catchAsync(async (req, res) => {
+export const askQuestionStream = catchAsync(async (req: Request, res: Response) => {
   const { question, conversationId, filters, useIntentAware = true, forceIntent, lang } = req.body;
 
   if (!conversationId) {
@@ -73,7 +74,7 @@ export const askQuestionStream = catchAsync(async (req, res) => {
   res.flushHeaders?.();
 
   let closed = false;
-  const send = (event, data) => {
+  const send = (event: any, data?: any) => {
     if (closed || res.writableEnded) return;
     if (event === 'sources' && !allowSources) return;
     res.write(`event: ${event}\n`);
@@ -97,17 +98,17 @@ export const askQuestionStream = catchAsync(async (req, res) => {
       conversationId,
       filters: filters || null,
       userId: req.user?.userId?.toString(),
-      authorizedWorkspaceIds: req.authorizedWorkspaces?.map((w) => String(w.workspaceId)) || [],
+      authorizedWorkspaceIds: req.authorizedWorkspaces?.map((w: any) => String(w.workspaceId)) || [],
       forceIntent: forceIntent || null,
       useIntentAware,
       lang,
       onEvent: send,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     if (error instanceof InputGuardrailError) {
-      send('error', { message: error.message, code: 'INPUT_GUARDRAIL' });
+      send('error', { message: (error instanceof Error ? error.message : String(error)), code: 'INPUT_GUARDRAIL' });
     } else {
-      logger.error('RAG stream failed', { error: error.message, stack: error.stack });
+      logger.error('RAG stream failed', { error: (error instanceof Error ? error.message : String(error)), stack: (error as Error).stack });
       send('error', { message: 'Stream failed', code: 'STREAM_ERROR' });
     }
   } finally {
