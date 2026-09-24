@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- injectable repos/services stored as fields;
+   conversation/message rows and request payloads are heterogeneous. */
 import { and, eq, inArray, isNull, desc } from 'drizzle-orm';
 import { AppError } from '../utils/index.js';
 import { verifyOwnership } from '../utils/index.js';
@@ -12,7 +14,13 @@ import logger from '../config/logger.js';
 // service uses the repo's explicit unscoped ops + userId filters (RTV-49). workspaceId is a
 // nullable uuid FK now — the legacy 'default' string maps to null.
 class ConversationService {
-  constructor(deps = {}) {
+  conversationRepo: any;
+  messageRepo: any;
+  workspaceMemberRepo: any;
+  ragService: any;
+  logger: any;
+
+  constructor(deps: Record<string, any> = {}) {
     this.conversationRepo = deps.conversationRepo || conversationRepository;
     this.messageRepo = deps.messageRepo || messageRepository;
     this.workspaceMemberRepo = deps.workspaceMemberRepo || workspaceMemberRepository;
@@ -20,12 +28,12 @@ class ConversationService {
     this.logger = deps.logger || logger;
   }
 
-  async getUserPrimaryWorkspace(userId) {
+  async getUserPrimaryWorkspace(userId: string) {
     const membership = await this.workspaceMemberRepo.findActiveByUserId(userId);
     return membership?.workspaceId?.toString() || null;
   }
 
-  async createConversation({ userId, title, workspaceId, idempotencyKey }) {
+  async createConversation({ userId, title, workspaceId, idempotencyKey }: any) {
     let resolvedWorkspaceId = workspaceId;
     if (!resolvedWorkspaceId) {
       resolvedWorkspaceId = await this.getUserPrimaryWorkspace(userId);
@@ -71,7 +79,7 @@ class ConversationService {
     return { conversation, wasCreated: true };
   }
 
-  async listConversations(userId, { workspaceId, limit, skip }) {
+  async listConversations(userId: string, { workspaceId, limit, skip }: any = {}) {
     const where = workspaceId
       ? and(eq(conversations.userId, userId), eq(conversations.workspaceId, workspaceId))
       : eq(conversations.userId, userId);
@@ -88,7 +96,7 @@ class ConversationService {
     return { conversations: rows, total };
   }
 
-  async getConversation(id, userId, { limit, skip }) {
+  async getConversation(id: string, userId: string, { limit, skip }: any = {}) {
     const conversation = await this.conversationRepo.findByIdUnscoped(id);
     if (!conversation) throw new AppError('Conversation not found', 404);
 
@@ -110,7 +118,7 @@ class ConversationService {
     return { conversation, messages: msgs, totalMessages };
   }
 
-  async askQuestion(id, userId, { question, filters, authorizedWorkspaceIds = null }) {
+  async askQuestion(id: string, userId: string, { question, filters, authorizedWorkspaceIds = null }: any) {
     if (!question || question.trim().length === 0) {
       throw new AppError('Question is required', 400);
     }
@@ -139,7 +147,7 @@ class ConversationService {
     });
   }
 
-  async updateConversation(id, userId, { title }) {
+  async updateConversation(id: string, userId: string, { title }: any) {
     if (!title || title.trim().length === 0) {
       throw new AppError('Title is required', 400);
     }
@@ -155,7 +163,7 @@ class ConversationService {
     return conversation;
   }
 
-  async deleteConversation(id, userId) {
+  async deleteConversation(id: string, userId: string) {
     const conversation = await this.conversationRepo.findByIdUnscoped(id);
     if (!conversation) throw new AppError('Conversation not found', 404);
     if (!verifyOwnership(conversation.userId, userId)) {
@@ -172,7 +180,7 @@ class ConversationService {
     });
   }
 
-  async bulkDelete(ids, userId) {
+  async bulkDelete(ids: string[], userId: string) {
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
       throw new AppError('ids array is required', 400);
     }
@@ -188,7 +196,7 @@ class ConversationService {
       throw new AppError('No conversations found', 404);
     }
 
-    const validIds = rows.map((c) => c.id);
+    const validIds = rows.map((c: any) => c.id);
     const invalidCount = ids.length - validIds.length;
 
     await this.messageRepo.deleteWhere(inArray(messages.conversationId, validIds));

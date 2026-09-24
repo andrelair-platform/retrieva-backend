@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- injectable repos/services stored as fields;
+   org/member/user rows + request payloads are heterogeneous. */
 import { AppError } from '../utils/index.js';
 import { safeDecrypt } from '../utils/security/fieldEncryption.js';
 import { organizationRepository } from '../repositories/index.js';
@@ -11,7 +13,14 @@ const VALID_ROLES = ['org_admin', 'analyst', 'viewer'];
 const TRIAL_DAYS = 20;
 
 class OrganizationService {
-  constructor(deps = {}) {
+  organizationRepo: any;
+  memberRepo: any;
+  userRepo: any;
+  emailService: any;
+  setupOrgBilling: any;
+  logger: any;
+
+  constructor(deps: Record<string, any> = {}) {
     this.organizationRepo = deps.organizationRepo || organizationRepository;
     this.memberRepo = deps.memberRepo || organizationMemberRepository;
     this.userRepo = deps.userRepo || userRepository;
@@ -20,7 +29,7 @@ class OrganizationService {
     this.logger = deps.logger || logger;
   }
 
-  async createOrganization(userId, { name, industry, country }) {
+  async createOrganization(userId: string, { name, industry, country }: any) {
     if (!name?.trim()) throw new AppError('Organization name is required', 400);
 
     const existing = await this.memberRepo.findActiveByUserId(userId);
@@ -47,7 +56,7 @@ class OrganizationService {
     await this.userRepo.updateById(userId, { organizationId: org.id });
 
     // Provision Stripe billing — failure must never block org creation
-    let billingFields = {
+    let billingFields: Record<string, any> = {
       plan: 'starter',
       planStatus: 'trialing',
       trialEndsAt: new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000),
@@ -65,7 +74,7 @@ class OrganizationService {
       this.logger.error('Stripe billing provisioning failed — using local fallback', {
         service: 'organization',
         orgId: org.id,
-        error: err.message,
+        error: err instanceof Error ? err.message : String(err),
       });
     }
 
@@ -80,7 +89,7 @@ class OrganizationService {
     return { org, billingFields };
   }
 
-  async getMyOrganization(userId) {
+  async getMyOrganization(userId: string) {
     const membership = await this.memberRepo.findActiveByUserId(userId);
     if (!membership) return { organization: null, role: null };
 
@@ -90,7 +99,7 @@ class OrganizationService {
     return { organization: org, role: membership.role };
   }
 
-  async getInviteInfo(token) {
+  async getInviteInfo(token: string) {
     if (!token) throw new AppError('Token is required', 400);
 
     const member = await this.memberRepo.findByToken(token);
@@ -115,7 +124,7 @@ class OrganizationService {
     };
   }
 
-  async inviteMember(inviterId, { email, role = 'analyst' }) {
+  async inviteMember(inviterId: string, { email, role = "analyst" }: any) {
     if (!email) throw new AppError('Email is required', 400);
     if (!VALID_ROLES.includes(role)) throw new AppError('Invalid role', 400);
 
@@ -146,10 +155,10 @@ class OrganizationService {
         role,
         inviteToken: rawToken,
       })
-      .catch((err) => {
+      .catch((err: any) => {
         this.logger.warn('Failed to send org invitation email', {
           service: 'organization',
-          error: err.message,
+          error: err instanceof Error ? err.message : String(err),
         });
       });
 
@@ -170,7 +179,7 @@ class OrganizationService {
     return member;
   }
 
-  async acceptInvite(userId, token) {
+  async acceptInvite(userId: string, token: string) {
     if (!token) throw new AppError('Token is required', 400);
 
     const member = await this.memberRepo.findByToken(token);
@@ -198,14 +207,14 @@ class OrganizationService {
     });
   }
 
-  async getMembers(userId) {
+  async getMembers(userId: string) {
     const callerMembership = await this.memberRepo.findActiveByUserId(userId);
     if (!callerMembership) throw new AppError('You do not belong to an organization', 403);
 
     return this.memberRepo.findByOrganizationWithUser(callerMembership.organizationId);
   }
 
-  async removeMember(userId, memberId) {
+  async removeMember(userId: string, memberId: string) {
     const callerMembership = await this.memberRepo.findActiveByUserId(userId);
     if (!callerMembership || callerMembership.role !== 'org_admin') {
       throw new AppError('Only org admins can remove members', 403);

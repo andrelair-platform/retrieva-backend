@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- injectable repos/queue/services stored as
+   fields; questionnaire rows + request payloads are heterogeneous. */
 import { randomUUID } from 'crypto';
 import { AppError } from '../utils/index.js';
 import { questionnaireTemplateRepository } from '../repositories/index.js';
@@ -9,7 +11,13 @@ import logger from '../config/logger.js';
 const TOKEN_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 class QuestionnaireService {
-  constructor(deps = {}) {
+  templateRepo: any;
+  questionnaireRepo: any;
+  questionnaireQueue: any;
+  emailService: any;
+  logger: any;
+
+  constructor(deps: Record<string, any> = {}) {
     this.templateRepo = deps.templateRepo || questionnaireTemplateRepository;
     this.questionnaireRepo = deps.questionnaireRepo || vendorQuestionnaireRepository;
     this.questionnaireQueue = deps.questionnaireQueue || questionnaireQueue;
@@ -17,7 +25,7 @@ class QuestionnaireService {
     this.logger = deps.logger || logger;
   }
 
-  async createQuestionnaire({ vendorName, vendorEmail, vendorContactName, workspaceId, userId }) {
+  async createQuestionnaire({ vendorName, vendorEmail, vendorContactName, workspaceId, userId }: any) {
     if (!vendorName || !vendorEmail) {
       throw new AppError('Vendor name and email are required', 400);
     }
@@ -30,7 +38,7 @@ class QuestionnaireService {
       throw new AppError('No default questionnaire template found. Please contact support.', 500);
     }
 
-    const questions = template.questions.map((q) => ({
+    const questions = template.questions.map((q: any) => ({
       id: q.id,
       text: q.text,
       doraArticle: q.doraArticle,
@@ -61,7 +69,7 @@ class QuestionnaireService {
     return questionnaire;
   }
 
-  async listQuestionnaires({ authorizedWorkspaceIds, workspaceId, status, page, limit }) {
+  async listQuestionnaires({ authorizedWorkspaceIds, workspaceId, status, page, limit }: any) {
     const {
       rows,
       total,
@@ -81,7 +89,7 @@ class QuestionnaireService {
     };
   }
 
-  async getQuestionnaire(id, authorizedWorkspaceIds) {
+  async getQuestionnaire(id: string, authorizedWorkspaceIds: any) {
     // Unscoped: this service does its own authz (authorizedWorkspaceIds) rather than the
     // request tenant, so it reads across workspaces then gates below.
     const questionnaire = await this.questionnaireRepo.findByIdUnscoped(id);
@@ -92,7 +100,7 @@ class QuestionnaireService {
     return questionnaire;
   }
 
-  async deleteQuestionnaire(id, userId, authorizedWorkspaceIds) {
+  async deleteQuestionnaire(id: string, userId: string, authorizedWorkspaceIds: any) {
     const questionnaire = await this.questionnaireRepo.findByIdUnscoped(id);
     if (!questionnaire) throw new AppError('Questionnaire not found', 404);
     if (!authorizedWorkspaceIds.includes(String(questionnaire.workspaceId))) {
@@ -111,8 +119,8 @@ class QuestionnaireService {
     });
   }
 
-  async sendQuestionnaire(id, { userName, userEmail }, authorizedWorkspaces) {
-    const authorizedWorkspaceIds = authorizedWorkspaces.map((w) => String(w._id));
+  async sendQuestionnaire(id: string, { userName, userEmail }: any, authorizedWorkspaces: any) {
+    const authorizedWorkspaceIds = authorizedWorkspaces.map((w: any) => String(w._id));
     const questionnaire = await this.questionnaireRepo.findByIdUnscoped(id);
     if (!questionnaire) throw new AppError('Questionnaire not found', 404);
     if (!authorizedWorkspaceIds.includes(String(questionnaire.workspaceId))) {
@@ -134,7 +142,7 @@ class QuestionnaireService {
     });
 
     const workspaceName =
-      authorizedWorkspaces.find((w) => String(w._id) === String(questionnaire.workspaceId))?.name ||
+      authorizedWorkspaces.find((w: any) => String(w._id) === String(questionnaire.workspaceId))?.name ||
       'Your Assessment Team';
 
     await this.emailService.sendQuestionnaireInvitation({
@@ -157,7 +165,7 @@ class QuestionnaireService {
     return updated;
   }
 
-  async getPublicForm(token) {
+  async getPublicForm(token: string) {
     // Public path — no auth/tenant context, so reads + writes are explicitly unscoped.
     const questionnaire = await this.questionnaireRepo.findByToken(token);
     if (!questionnaire) throw new AppError('Questionnaire not found', 404);
@@ -174,7 +182,7 @@ class QuestionnaireService {
     return { state: 'ok', questionnaire };
   }
 
-  async submitResponse(token, { answers, final }) {
+  async submitResponse(token: string, { answers, final }: any) {
     if (!Array.isArray(answers)) {
       throw new AppError('answers must be an array', 400);
     }
@@ -198,7 +206,7 @@ class QuestionnaireService {
 
     // Merge answers into the questions array (in memory), then persist the whole array.
     const answerMap = new Map(answers.map((a) => [a.id, a.answer || '']));
-    const mergedQuestions = questionnaire.questions.map((q) =>
+    const mergedQuestions = questionnaire.questions.map((q: any) =>
       answerMap.has(q.id) ? { ...q, answer: answerMap.get(q.id) } : q
     );
 

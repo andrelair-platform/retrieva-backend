@@ -22,13 +22,13 @@ export const listAssessments = catchAsync(async (req, res) => {
 });
 
 export const getAssessment = catchAsync(async (req, res) => {
-  const assessment = await assessmentService.getAssessment(req.params.id, getAuthorizedIds(req));
+  const assessment = await assessmentService.getAssessment(String(req.params.id), getAuthorizedIds(req));
   sendSuccess(res, 200, 'Assessment retrieved', { assessment });
 });
 
 export const downloadReport = catchAsync(async (req, res) => {
   const { buffer, filename } = await assessmentService.getReportBuffer(
-    req.params.id,
+    String(req.params.id),
     req.user.userId,
     getAuthorizedIds(req)
   );
@@ -43,7 +43,7 @@ export const downloadReport = catchAsync(async (req, res) => {
 
 export const setRiskDecision = catchAsync(async (req, res) => {
   const riskDecision = await assessmentService.setRiskDecision(
-    req.params.id,
+    String(req.params.id),
     req.user.userId,
     getAuthorizedIds(req),
     req.body
@@ -53,7 +53,7 @@ export const setRiskDecision = catchAsync(async (req, res) => {
 
 export const setClauseSignoff = catchAsync(async (req, res) => {
   const clauseSignoffs = await assessmentService.setClauseSignoff(
-    req.params.id,
+    String(req.params.id),
     req.user.userId,
     getAuthorizedIds(req),
     req.body
@@ -63,7 +63,7 @@ export const setClauseSignoff = catchAsync(async (req, res) => {
 
 export const downloadAssessmentFile = catchAsync(async (req, res) => {
   const { stream, fileName } = await assessmentService.getAssessmentFileDownload(
-    req.params.id,
+    String(req.params.id),
     req.params.docIndex,
     getAuthorizedIds(req)
   );
@@ -73,6 +73,6 @@ export const downloadAssessmentFile = catchAsync(async (req, res) => {
 });
 
 export const deleteAssessment = catchAsync(async (req, res) => {
-  await assessmentService.deleteAssessment(req.params.id, req.user.userId, getAuthorizedIds(req));
+  await assessmentService.deleteAssessment(String(req.params.id), req.user.userId, getAuthorizedIds(req));
   sendSuccess(res, 200, 'Assessment deleted');
 });

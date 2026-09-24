@@ -59,7 +59,7 @@ export const getQuestionnaire = catchAsync(async (req, res) => {
   const authorizedWorkspaceIds = req.authorizedWorkspaces?.map((w) => w._id.toString()) || [];
 
   const questionnaire = await questionnaireService.getQuestionnaire(
-    req.params.id,
+    String(req.params.id),
     authorizedWorkspaceIds
   );
 
@@ -73,7 +73,7 @@ export const deleteQuestionnaire = catchAsync(async (req, res) => {
   const authorizedWorkspaceIds = req.authorizedWorkspaces?.map((w) => w._id.toString()) || [];
 
   await questionnaireService.deleteQuestionnaire(
-    req.params.id,
+    String(req.params.id),
     req.user.userId,
     authorizedWorkspaceIds
   );
@@ -86,7 +86,7 @@ export const deleteQuestionnaire = catchAsync(async (req, res) => {
  */
 export const sendQuestionnaire = catchAsync(async (req, res) => {
   const questionnaire = await questionnaireService.sendQuestionnaire(
-    req.params.id,
+    String(req.params.id),
     { userName: req.user.name, userEmail: req.user.email },
     req.authorizedWorkspaces || []
   );
@@ -105,7 +105,7 @@ export const sendQuestionnaire = catchAsync(async (req, res) => {
  * GET /api/v1/questionnaires/respond/:token  (PUBLIC — no auth)
  */
 export const getPublicForm = catchAsync(async (req, res) => {
-  const result = await questionnaireService.getPublicForm(req.params.token);
+  const result = await questionnaireService.getPublicForm(String(req.params.token));
 
   if (result.state === 'complete') {
     return res.status(200).json({
@@ -144,7 +144,7 @@ export const getPublicForm = catchAsync(async (req, res) => {
  */
 export const submitResponse = catchAsync(async (req, res) => {
   const { answers, final } = req.body;
-  const result = await questionnaireService.submitResponse(req.params.token, { answers, final });
+  const result = await questionnaireService.submitResponse(String(req.params.token), { answers, final });
 
   if (result.state === 'alreadyComplete') {
     return res.status(200).json({

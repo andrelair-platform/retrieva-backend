@@ -55,9 +55,9 @@ export const createOrUpdateCriticalFunction = catchAsync(async (req, res) => {
 export const removeCriticalFunction = catchAsync(async (req, res) => {
   const id = requireOrg(req, res);
   if (!id) return;
-  const removed = await deleteCriticalFunction(id, req.params.id);
+  const removed = await deleteCriticalFunction(id, String(req.params.id));
   if (!removed) return sendError(res, 404, 'Critical function not found');
-  sendSuccess(res, 200, 'Critical function deleted', { id: req.params.id });
+  sendSuccess(res, 200, 'Critical function deleted', { id: String(req.params.id) });
 });
 
 export const getDependencies = catchAsync(async (req, res) => {
@@ -69,7 +69,7 @@ export const getDependencies = catchAsync(async (req, res) => {
 export const confirmDependency = catchAsync(async (req, res) => {
   const id = requireOrg(req, res);
   if (!id) return;
-  const updated = await setDependencyConfirmed(id, req.params.id, req.body.confirmed !== false);
+  const updated = await setDependencyConfirmed(id, String(req.params.id), req.body.confirmed !== false);
   if (!updated) return sendError(res, 404, 'Dependency not found');
   sendSuccess(res, 200, 'Dependency updated', { dependency: updated });
 });
@@ -77,6 +77,6 @@ export const confirmDependency = catchAsync(async (req, res) => {
 export const extractSubProviders = catchAsync(async (req, res) => {
   const id = requireOrg(req, res);
   if (!id) return;
-  const result = await extractSubProvidersForWorkspace(id, req.params.workspaceId);
+  const result = await extractSubProvidersForWorkspace(id, String(req.params.workspaceId));
   sendSuccess(res, 200, 'Sub-provider extraction complete (edges are unconfirmed — review before use)', result);
 });
