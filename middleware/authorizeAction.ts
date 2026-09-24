@@ -30,7 +30,7 @@ export const authorizeAction = (
     }
 
     const resource = getResource ? getResource(req) : undefined;
-    const allowed = await can(req.user, action, resource);
+    const allowed = await can(req.user, action, resource as any);
 
     if (!allowed) {
       logger.warn('Action forbidden', {

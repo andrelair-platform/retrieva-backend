@@ -15,7 +15,8 @@
     "config/**/*.ts",
     "utils/**/*.ts",
     "workers/**/*.ts",
-    "prompts/**/*.ts"
+    "prompts/**/*.ts",
+    "middleware/**/*.ts"
   ],
   "exclude": ["node_modules", "dist", "coverage", "tests", "website", "seeds", "data"]
 }

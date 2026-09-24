@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 /**
  * Security Sanitizer Middleware
  *
@@ -44,7 +45,7 @@ const NOSQL_INJECTION_PATTERNS = [
  * @param {string} path - Current path for logging
  * @returns {any} Sanitized object
  */
-function sanitizeNoSQL(obj, path = '') {
+function sanitizeNoSQL(obj: any, path = ""): any {
   if (obj === null || obj === undefined) {
     return obj;
   }
@@ -67,7 +68,7 @@ function sanitizeNoSQL(obj, path = '') {
   }
 
   if (typeof obj === 'object') {
-    const sanitized = {};
+    const sanitized: Record<string, any> = {};
 
     for (const [key, value] of Object.entries(obj)) {
       // Block keys starting with $ (MongoDB operators)
@@ -129,7 +130,7 @@ const XSS_DANGEROUS_PATTERNS = [
  * @param {boolean} aggressive - Use aggressive sanitization
  * @returns {string} Sanitized string
  */
-function sanitizeXSS(str, aggressive = false) {
+function sanitizeXSS(str: any, aggressive = false) {
   if (typeof str !== 'string') {
     return str;
   }
@@ -165,7 +166,7 @@ function sanitizeXSS(str, aggressive = false) {
  * @param {boolean} aggressive - Use aggressive sanitization
  * @returns {any} Sanitized object
  */
-function sanitizeObjectXSS(obj, aggressive = false) {
+function sanitizeObjectXSS(obj: any, aggressive = false): any {
   if (obj === null || obj === undefined) {
     return obj;
   }
@@ -179,7 +180,7 @@ function sanitizeObjectXSS(obj, aggressive = false) {
   }
 
   if (typeof obj === 'object') {
-    const sanitized = {};
+    const sanitized: Record<string, any> = {};
     for (const [key, value] of Object.entries(obj)) {
       sanitized[key] = sanitizeObjectXSS(value, aggressive);
     }
@@ -198,7 +199,7 @@ function sanitizeObjectXSS(obj, aggressive = false) {
  * @returns {Function} Express middleware
  */
 export function mongoSanitize(_options = {}) {
-  return (req, res, next) => {
+  return (req: Request, res: Response, next: NextFunction) => {
     if (req.body) {
       req.body = sanitizeNoSQL(req.body, 'body');
     }
@@ -226,7 +227,7 @@ export function mongoSanitize(_options = {}) {
 export function xssClean(options: { aggressive?: boolean } = {}) {
   const aggressive = options.aggressive || false;
 
-  return (req, res, next) => {
+  return (req: Request, res: Response, next: NextFunction) => {
     if (req.body) {
       req.body = sanitizeObjectXSS(req.body, aggressive);
     }
@@ -251,7 +252,7 @@ export function xssClean(options: { aggressive?: boolean } = {}) {
  * @returns {Function} Express middleware
  */
 export function securitySanitizer(options: { aggressiveXSS?: boolean } = {}) {
-  return (req, res, next) => {
+  return (req: Request, res: Response, next: NextFunction) => {
     // NoSQL sanitization
     // Note: In Express 5, req.query, req.params are read-only getters
     // We need to use Object.defineProperty or skip modification

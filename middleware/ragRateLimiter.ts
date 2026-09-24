@@ -12,7 +12,8 @@ import logger from '../config/logger.js';
  * Generate a rate limit key from request
  * Uses user ID if authenticated, otherwise normalized IP
  */
-function generateKey(req, prefix = '') {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- express-rate-limit passes its own generic Request; this key helper only reads user/ip
+function generateKey(req: any, prefix = "") {
   if (req.user?.userId && req.user.userId !== 'anonymous') {
     return `${prefix}user:${req.user.userId}`;
   }

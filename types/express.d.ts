@@ -19,6 +19,7 @@ declare global {
       user?: AuthenticatedUser;
       workspace?: WorkspaceContext;
       workspaceMembership?: unknown;
+      membership?: unknown;
       isWorkspaceOwner?: boolean;
       // Workspaces the authenticated user may query (set by workspace-scope middleware).
       authorizedWorkspaces?: Array<Record<string, unknown>>;
