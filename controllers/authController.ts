@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 import { authService } from '../services/AuthService.js';
 import { catchAsync, sendSuccess } from '../utils/index.js';
 import {
@@ -7,7 +8,7 @@ import {
 } from '../utils/security/cookieConfig.js';
 import logger from '../config/logger.js';
 
-const getDeviceInfo = (req) => {
+const getDeviceInfo = (req: Request) => {
   const userAgent = req.headers['user-agent'] || 'unknown';
   const ip = req.ip || req.connection?.remoteAddress || 'unknown';
   return `${userAgent.substring(0, 50)}|${ip}`;
@@ -16,7 +17,7 @@ const getDeviceInfo = (req) => {
 /**
  * POST /api/v1/auth/register
  */
-export const register = catchAsync(async (req, res) => {
+export const register = catchAsync(async (req: Request, res: Response) => {
   const { email, password, name, role, inviteToken } = req.body;
 
   const { user, needsOrganization, tokens } = await authService.register({
@@ -45,7 +46,7 @@ export const register = catchAsync(async (req, res) => {
 /**
  * POST /api/v1/auth/login
  */
-export const login = catchAsync(async (req, res) => {
+export const login = catchAsync(async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
   const result = await authService.login({
@@ -75,7 +76,7 @@ export const login = catchAsync(async (req, res) => {
  * POST /api/v1/auth/mfa/verify
  * Step 2 of MFA login: exchange the challenge token + code for a session.
  */
-export const verifyMfa = catchAsync(async (req, res) => {
+export const verifyMfa = catchAsync(async (req: Request, res: Response) => {
   const { mfaToken, code } = req.body;
 
   const { user, tokens } = await authService.verifyMfa({
@@ -96,8 +97,8 @@ export const verifyMfa = catchAsync(async (req, res) => {
  * POST /api/v1/auth/mfa/setup
  * Step 1 of enrollment: returns the TOTP secret + otpauth URI (not yet enabled).
  */
-export const setupMfa = catchAsync(async (req, res) => {
-  const result = await authService.setupMfa(req.user.userId);
+export const setupMfa = catchAsync(async (req: Request, res: Response) => {
+  const result = await authService.setupMfa(req.user!.userId);
   sendSuccess(res, 200, 'Scan the QR code in your authenticator app, then confirm', result);
 });
 
@@ -105,8 +106,8 @@ export const setupMfa = catchAsync(async (req, res) => {
  * POST /api/v1/auth/mfa/enable
  * Step 2 of enrollment: verify the first code, enable MFA, return recovery codes.
  */
-export const enableMfa = catchAsync(async (req, res) => {
-  const { recoveryCodes } = await authService.enableMfa(req.user.userId, req.body.token);
+export const enableMfa = catchAsync(async (req: Request, res: Response) => {
+  const { recoveryCodes } = await authService.enableMfa(req.user!.userId, req.body.token);
   sendSuccess(res, 200, 'MFA enabled. Save your recovery codes now — they are shown once.', {
     recoveryCodes,
   });
@@ -116,8 +117,8 @@ export const enableMfa = catchAsync(async (req, res) => {
  * POST /api/v1/auth/mfa/disable
  * Disable MFA (requires current password + a valid code).
  */
-export const disableMfa = catchAsync(async (req, res) => {
-  await authService.disableMfa(req.user.userId, {
+export const disableMfa = catchAsync(async (req: Request, res: Response) => {
+  await authService.disableMfa(req.user!.userId, {
     password: req.body.password,
     code: req.body.code,
   });
@@ -130,7 +131,7 @@ export const disableMfa = catchAsync(async (req, res) => {
  * SECURITY: Implements refresh token rotation. On any rejection, also clears
  * the HTTP-only auth cookies so the client retreats to a clean state.
  */
-export const refreshToken = async (req, res, next) => {
+export const refreshToken = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { accessToken, refreshToken: newRefreshToken } = await authService.refreshTokens({
       refreshTokenValue: getRefreshToken(req),
@@ -143,7 +144,7 @@ export const refreshToken = async (req, res, next) => {
       accessToken,
       refreshToken: newRefreshToken,
     });
-  } catch (err) {
+  } catch (err: unknown) {
     // Any refresh failure must also clear cookies so the client doesn't keep
     // retrying with a now-stale cookie.
     clearAuthCookies(res);
@@ -155,16 +156,16 @@ export const refreshToken = async (req, res, next) => {
  * POST /api/v1/auth/logout
  * ?all=true logs out from all devices.
  */
-export const logout = async (req, res, next) => {
+export const logout = async (req: Request, res: Response, next: NextFunction) => {
   try {
     await authService.logout({
       userId: req.user?.userId,
       refreshTokenValue: getRefreshToken(req),
       logoutAll: req.query.all === 'true',
     });
-  } catch (err) {
+  } catch (err: unknown) {
     logger.error('Logout failed', {
-      error: err.message,
+      error: (err instanceof Error ? err.message : String(err)),
       userId: req.user?.userId,
     });
     // fall through — we still want to clear cookies and respond
@@ -182,23 +183,23 @@ export const logout = async (req, res, next) => {
 /**
  * GET /api/v1/auth/me
  */
-export const getMe = catchAsync(async (req, res) => {
-  const { user } = await authService.getMe(req.user.userId);
+export const getMe = catchAsync(async (req: Request, res: Response) => {
+  const { user } = await authService.getMe(req.user!.userId);
   sendSuccess(res, 200, 'User profile retrieved', { user });
 });
 
 /**
  * PATCH /api/v1/auth/profile
  */
-export const updateProfile = catchAsync(async (req, res) => {
-  const { user } = await authService.updateProfile(req.user.userId, req.body);
+export const updateProfile = catchAsync(async (req: Request, res: Response) => {
+  const { user } = await authService.updateProfile(req.user!.userId, req.body);
   sendSuccess(res, 200, 'Profile updated successfully', { user });
 });
 
 /**
  * POST /api/v1/auth/forgot-password
  */
-export const forgotPassword = catchAsync(async (req, res) => {
+export const forgotPassword = catchAsync(async (req: Request, res: Response) => {
   await authService.forgotPassword({ email: req.body.email });
   sendSuccess(
     res,
@@ -210,7 +211,7 @@ export const forgotPassword = catchAsync(async (req, res) => {
 /**
  * POST /api/v1/auth/reset-password
  */
-export const resetPassword = catchAsync(async (req, res) => {
+export const resetPassword = catchAsync(async (req: Request, res: Response) => {
   await authService.resetPassword(req.body);
   sendSuccess(
     res,
@@ -222,7 +223,7 @@ export const resetPassword = catchAsync(async (req, res) => {
 /**
  * POST /api/v1/auth/verify-email
  */
-export const verifyEmail = catchAsync(async (req, res) => {
+export const verifyEmail = catchAsync(async (req: Request, res: Response) => {
   await authService.verifyEmail({ token: req.body.token });
   sendSuccess(res, 200, 'Email verified successfully.');
 });
@@ -230,8 +231,8 @@ export const verifyEmail = catchAsync(async (req, res) => {
 /**
  * POST /api/v1/auth/resend-verification
  */
-export const resendVerification = catchAsync(async (req, res) => {
-  await authService.resendVerification(req.user.userId);
+export const resendVerification = catchAsync(async (req: Request, res: Response) => {
+  await authService.resendVerification(req.user!.userId);
   sendSuccess(res, 200, 'Verification email sent. Please check your inbox.');
 });
 
@@ -239,8 +240,8 @@ export const resendVerification = catchAsync(async (req, res) => {
  * POST /api/v1/auth/change-password
  * SECURITY: Invalidates ALL refresh tokens after password change.
  */
-export const changePassword = catchAsync(async (req, res) => {
-  await authService.changePassword(req.user.userId, req.body);
+export const changePassword = catchAsync(async (req: Request, res: Response) => {
+  await authService.changePassword(req.user!.userId, req.body);
   clearAuthCookies(res);
   sendSuccess(
     res,
@@ -252,7 +253,7 @@ export const changePassword = catchAsync(async (req, res) => {
 /**
  * PATCH /api/v1/auth/onboarding
  */
-export const updateOnboarding = catchAsync(async (req, res) => {
-  await authService.updateOnboarding(req.user.userId, req.body);
+export const updateOnboarding = catchAsync(async (req: Request, res: Response) => {
+  await authService.updateOnboarding(req.user!.userId, req.body);
   sendSuccess(res, 200, 'Onboarding state updated');
 });

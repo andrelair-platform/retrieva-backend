@@ -1,35 +1,36 @@
+import type { Request, Response, NextFunction } from "express";
 import { catchAsync, sendSuccess, sendError } from '../utils/index.js';
 import { assessmentService } from '../services/AssessmentService.js';
 
-const getAuthorizedIds = (req) => req.authorizedWorkspaces?.map((w) => w._id.toString()) || [];
+const getAuthorizedIds = (req: Request) => req.authorizedWorkspaces?.map((w: any) => w._id.toString()) || [];
 
-export const createAssessment = catchAsync(async (req, res) => {
+export const createAssessment = catchAsync(async (req: Request, res: Response) => {
   if (!req.files || req.files.length === 0) {
     return sendError(res, 400, 'At least one vendor document must be uploaded');
   }
   const assessment = await assessmentService.createAssessment(
-    req.user.userId,
-    req.user.organizationId,
+    req.user!.userId,
+    req.user!.organizationId as string,
     req.body,
     req.files
   );
   sendSuccess(res, 201, 'Assessment created and queued for processing', { assessment });
 });
 
-export const listAssessments = catchAsync(async (req, res) => {
+export const listAssessments = catchAsync(async (req: Request, res: Response) => {
   const result = await assessmentService.listAssessments(getAuthorizedIds(req), req.query);
   sendSuccess(res, 200, 'Assessments retrieved', result);
 });
 
-export const getAssessment = catchAsync(async (req, res) => {
+export const getAssessment = catchAsync(async (req: Request, res: Response) => {
   const assessment = await assessmentService.getAssessment(String(req.params.id), getAuthorizedIds(req));
   sendSuccess(res, 200, 'Assessment retrieved', { assessment });
 });
 
-export const downloadReport = catchAsync(async (req, res) => {
+export const downloadReport = catchAsync(async (req: Request, res: Response) => {
   const { buffer, filename } = await assessmentService.getReportBuffer(
     String(req.params.id),
-    req.user.userId,
+    req.user!.userId,
     getAuthorizedIds(req)
   );
   res.setHeader(
@@ -41,27 +42,27 @@ export const downloadReport = catchAsync(async (req, res) => {
   res.end(buffer);
 });
 
-export const setRiskDecision = catchAsync(async (req, res) => {
+export const setRiskDecision = catchAsync(async (req: Request, res: Response) => {
   const riskDecision = await assessmentService.setRiskDecision(
     String(req.params.id),
-    req.user.userId,
+    req.user!.userId,
     getAuthorizedIds(req),
     req.body
   );
   sendSuccess(res, 200, 'Risk decision recorded', { riskDecision });
 });
 
-export const setClauseSignoff = catchAsync(async (req, res) => {
+export const setClauseSignoff = catchAsync(async (req: Request, res: Response) => {
   const clauseSignoffs = await assessmentService.setClauseSignoff(
     String(req.params.id),
-    req.user.userId,
+    req.user!.userId,
     getAuthorizedIds(req),
     req.body
   );
   sendSuccess(res, 200, 'Clause sign-off recorded', { clauseSignoffs });
 });
 
-export const downloadAssessmentFile = catchAsync(async (req, res) => {
+export const downloadAssessmentFile = catchAsync(async (req: Request, res: Response) => {
   const { stream, fileName } = await assessmentService.getAssessmentFileDownload(
     String(req.params.id),
     req.params.docIndex,
@@ -72,7 +73,7 @@ export const downloadAssessmentFile = catchAsync(async (req, res) => {
   stream.pipe(res);
 });
 
-export const deleteAssessment = catchAsync(async (req, res) => {
-  await assessmentService.deleteAssessment(String(req.params.id), req.user.userId, getAuthorizedIds(req));
+export const deleteAssessment = catchAsync(async (req: Request, res: Response) => {
+  await assessmentService.deleteAssessment(String(req.params.id), req.user!.userId, getAuthorizedIds(req));
   sendSuccess(res, 200, 'Assessment deleted');
 });

@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 /**
  * Compliance Controller
  *
@@ -42,7 +43,7 @@ const CHAPTER_RANGES = {
   VI: [45, 49],
 };
 
-function articleNumber(articleStr) {
+function articleNumber(articleStr: string) {
   const m = articleStr.match(/Article\s+(\d+)/i);
   return m ? parseInt(m[1], 10) : 0;
 }
@@ -51,7 +52,7 @@ function articleNumber(articleStr) {
  * GET /api/v1/compliance/metadata
  * Returns knowledge base version, last verified date, next review date and sources.
  */
-export const getMetadata = catchAsync(async (req, res) => {
+export const getMetadata = catchAsync(async (req: Request, res: Response) => {
   sendSuccess(res, 200, 'Knowledge base metadata retrieved', {
     version: KB_META.version,
     lastVerified: KB_META.lastVerified,
@@ -59,7 +60,7 @@ export const getMetadata = catchAsync(async (req, res) => {
     sources: KB_META.sources,
     stats: {
       totalEntries: ARTICLES.length,
-      byRegulation: ARTICLES.reduce((acc, a) => {
+      byRegulation: ARTICLES.reduce((acc: any, a: any) => {
         acc[a.regulation] = (acc[a.regulation] || 0) + 1;
         return acc;
       }, {}),
@@ -71,7 +72,7 @@ export const getMetadata = catchAsync(async (req, res) => {
  * GET /api/v1/compliance/articles
  * Optional query params: domain, chapter (I–VI), regulation (DORA | DORA-RTS)
  */
-export const listArticles = catchAsync(async (req, res) => {
+export const listArticles = catchAsync(async (req: Request, res: Response) => {
   // Query params arrive as string | string[]; this endpoint expects single strings.
   const { domain, chapter, regulation } = req.query as {
     domain?: string;
@@ -81,11 +82,11 @@ export const listArticles = catchAsync(async (req, res) => {
   let articles = ARTICLES;
 
   if (regulation) {
-    articles = articles.filter((a) => a.regulation === regulation);
+    articles = articles.filter((a: any) => a.regulation === regulation);
   }
 
   if (domain) {
-    articles = articles.filter((a) => a.domain === domain);
+    articles = articles.filter((a: any) => a.domain === domain);
     if (articles.length === 0) {
       return sendError(res, 404, `No articles found for domain: ${domain}`);
     }
@@ -93,7 +94,7 @@ export const listArticles = catchAsync(async (req, res) => {
 
   if (chapter) {
     const key = chapter.toUpperCase();
-    const range = CHAPTER_RANGES[key];
+    const range = CHAPTER_RANGES[key as keyof typeof CHAPTER_RANGES];
     if (!range) {
       return sendError(
         res,
@@ -101,7 +102,7 @@ export const listArticles = catchAsync(async (req, res) => {
         `Invalid chapter "${chapter}". Valid values: ${Object.keys(CHAPTER_RANGES).join(', ')}`
       );
     }
-    articles = articles.filter((a) => {
+    articles = articles.filter((a: any) => {
       const num = articleNumber(a.article);
       return num >= range[0] && num <= range[1];
     });
@@ -109,7 +110,7 @@ export const listArticles = catchAsync(async (req, res) => {
 
   sendSuccess(res, 200, 'Articles retrieved', {
     total: articles.length,
-    articles: articles.map((a) => ({
+    articles: articles.map((a: any) => ({
       regulation: a.regulation,
       article: a.article,
       title: a.title,
@@ -123,12 +124,12 @@ export const listArticles = catchAsync(async (req, res) => {
  * GET /api/v1/compliance/articles/:article
  * :article — "Article 30" URL-encoded, "Article-30" kebab, or RTS ID e.g. "RTS-RM-01"
  */
-export const getArticle = catchAsync(async (req, res) => {
+export const getArticle = catchAsync(async (req: Request, res: Response) => {
   const raw = decodeURIComponent(String(req.params.article))
     .replace(/-/g, ' ')
     .trim();
 
-  const found = ARTICLES.find((a) => a.article.toLowerCase() === raw.toLowerCase());
+  const found = ARTICLES.find((a: any) => a.article.toLowerCase() === raw.toLowerCase());
   if (!found) {
     return sendError(res, 404, `Article not found: ${raw}`);
   }
@@ -140,8 +141,8 @@ export const getArticle = catchAsync(async (req, res) => {
  * GET /api/v1/compliance/domains
  * Returns all domains with article counts, split by regulation type.
  */
-export const listDomains = catchAsync(async (req, res) => {
-  const domainMap = {};
+export const listDomains = catchAsync(async (req: Request, res: Response) => {
+  const domainMap: Record<string, any> = {};
   for (const a of ARTICLES) {
     if (!domainMap[a.domain]) {
       domainMap[a.domain] = {

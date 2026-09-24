@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 /**
  * Export Controller
  *
@@ -13,8 +14,8 @@ import { generateRoiWorkbook } from '../services/roiExportService.js';
  * Generates and streams a DORA Article 28(3) Register of Information XLSX
  * workbook for all workspaces accessible by the authenticated user.
  */
-export const exportRoi = catchAsync(async (req, res) => {
-  const buffer = await generateRoiWorkbook(req.user.userId);
+export const exportRoi = catchAsync(async (req: Request, res: Response) => {
+  const buffer = await generateRoiWorkbook(req.user!.userId);
   const dateStr = new Date().toISOString().slice(0, 10);
   const filename = `DORA_Register_of_Information_${dateStr}.xlsx`;
 

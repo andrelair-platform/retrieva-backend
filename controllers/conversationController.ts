@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 import { conversationService } from '../services/ConversationService.js';
 import { catchAsync, sendSuccess, getUserId, parsePagination } from '../utils/index.js';
 import { userCanViewSources } from '../utils/security/sourceVisibility.js';
@@ -7,7 +8,7 @@ import logger from '../config/logger.js';
  * Create a new conversation
  * POST /api/v1/conversations
  */
-export const createConversation = catchAsync(async (req, res) => {
+export const createConversation = catchAsync(async (req: Request, res: Response) => {
   logger.debug('createConversation called', {
     hasTitle: !!req.body?.title,
     hasWorkspaceId: !!(req.headers['x-workspace-id'] || req.body?.workspaceId),
@@ -49,7 +50,7 @@ export const createConversation = catchAsync(async (req, res) => {
  * Get all conversations for a user
  * GET /api/v1/conversations
  */
-export const getConversations = catchAsync(async (req, res) => {
+export const getConversations = catchAsync(async (req: Request, res: Response) => {
   const userId = getUserId(req);
   const { limit, skip } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 100 });
   const workspaceId = req.headers['x-workspace-id'] || req.query.workspaceId;
@@ -61,7 +62,7 @@ export const getConversations = catchAsync(async (req, res) => {
   });
 
   sendSuccess(res, 200, 'Conversations retrieved successfully', {
-    conversations: conversations.map((c) => ({
+    conversations: conversations.map((c: any) => ({
       id: c.id,
       title: c.title,
       userId: c.userId,
@@ -84,7 +85,7 @@ export const getConversations = catchAsync(async (req, res) => {
  * Get a specific conversation with messages
  * GET /api/v1/conversations/:id
  */
-export const getConversation = catchAsync(async (req, res) => {
+export const getConversation = catchAsync(async (req: Request, res: Response) => {
   const id = String(req.params.id);
   const { limit, skip } = parsePagination(req.query, { defaultLimit: 100, maxLimit: 500 });
   const userId = getUserId(req);
@@ -108,7 +109,7 @@ export const getConversation = catchAsync(async (req, res) => {
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
     },
-    messages: messages.map((m) => ({
+    messages: messages.map((m: any) => ({
       id: m.id,
       role: m.role,
       content: m.content,
@@ -128,7 +129,7 @@ export const getConversation = catchAsync(async (req, res) => {
  * Ask a question in a conversation
  * POST /api/v1/conversations/:id/ask
  */
-export const askQuestion = catchAsync(async (req, res) => {
+export const askQuestion = catchAsync(async (req: Request, res: Response) => {
   const id = String(req.params.id);
   const { question, filters } = req.body;
   const userId = getUserId(req);
@@ -136,7 +137,7 @@ export const askQuestion = catchAsync(async (req, res) => {
   const answer = await conversationService.askQuestion(id, userId, {
     question,
     filters,
-    authorizedWorkspaceIds: req.authorizedWorkspaces?.map((w) => w.workspaceId) || [],
+    authorizedWorkspaceIds: req.authorizedWorkspaces?.map((w: any) => w.workspaceId) || [],
   });
 
   // B1: honor the workspace canViewSources permission before returning sources.
@@ -155,7 +156,7 @@ export const askQuestion = catchAsync(async (req, res) => {
  * Update conversation (e.g., change title)
  * PATCH /api/v1/conversations/:id
  */
-export const updateConversation = catchAsync(async (req, res) => {
+export const updateConversation = catchAsync(async (req: Request, res: Response) => {
   const id = String(req.params.id);
   const { title } = req.body;
   const userId = getUserId(req);
@@ -182,7 +183,7 @@ export const updateConversation = catchAsync(async (req, res) => {
  * Delete a conversation and all its messages
  * DELETE /api/v1/conversations/:id
  */
-export const deleteConversation = catchAsync(async (req, res) => {
+export const deleteConversation = catchAsync(async (req: Request, res: Response) => {
   const id = String(req.params.id);
   const userId = getUserId(req);
 
@@ -195,7 +196,7 @@ export const deleteConversation = catchAsync(async (req, res) => {
  * Bulk delete multiple conversations and their messages
  * POST /api/v1/conversations/bulk-delete
  */
-export const bulkDeleteConversations = catchAsync(async (req, res) => {
+export const bulkDeleteConversations = catchAsync(async (req: Request, res: Response) => {
   const { ids } = req.body;
   const userId = getUserId(req);
 

@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 /**
  * Organization Controller
  *
@@ -12,8 +13,8 @@ import { safeDecrypt } from '../utils/security/fieldEncryption.js';
 /**
  * POST /api/v1/organizations
  */
-export const createOrganization = catchAsync(async (req, res) => {
-  const userId = req.user.userId;
+export const createOrganization = catchAsync(async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
   const { name, industry, country } = req.body;
 
   const { org, billingFields } = await organizationService.createOrganization(userId, {
@@ -38,9 +39,9 @@ export const createOrganization = catchAsync(async (req, res) => {
 /**
  * GET /api/v1/organizations/me
  */
-export const getMyOrganization = catchAsync(async (req, res) => {
+export const getMyOrganization = catchAsync(async (req: Request, res: Response) => {
   const { organization, role } = await organizationService.getMyOrganization(
-    req.user.userId
+    req.user!.userId
   );
 
   if (!organization) {
@@ -64,7 +65,7 @@ export const getMyOrganization = catchAsync(async (req, res) => {
 /**
  * GET /api/v1/organizations/invite-info?token=XXX  (PUBLIC — no auth)
  */
-export const getInviteInfo = catchAsync(async (req, res) => {
+export const getInviteInfo = catchAsync(async (req: Request, res: Response) => {
   // Cast (not String()) — the token is optional; the service does its own `if (!token)` check,
   // so the raw undefined must pass through rather than becoming the string "undefined".
   const info = await organizationService.getInviteInfo(req.query.token as string);
@@ -74,8 +75,8 @@ export const getInviteInfo = catchAsync(async (req, res) => {
 /**
  * POST /api/v1/organizations/invite
  */
-export const inviteMember = catchAsync(async (req, res) => {
-  const inviterId = req.user.userId;
+export const inviteMember = catchAsync(async (req: Request, res: Response) => {
+  const inviterId = req.user!.userId;
   const { email, role = 'analyst' } = req.body;
 
   const member = await organizationService.inviteMember(inviterId, { email, role });
@@ -93,18 +94,18 @@ export const inviteMember = catchAsync(async (req, res) => {
 /**
  * POST /api/v1/organizations/accept-invite  (authenticated)
  */
-export const acceptInvite = catchAsync(async (req, res) => {
-  await organizationService.acceptInvite(req.user.userId, req.body.token);
+export const acceptInvite = catchAsync(async (req: Request, res: Response) => {
+  await organizationService.acceptInvite(req.user!.userId, req.body.token);
   sendSuccess(res, 200, 'Invitation accepted');
 });
 
 /**
  * GET /api/v1/organizations/members
  */
-export const getMembers = catchAsync(async (req, res) => {
-  const members = await organizationService.getMembers(req.user.userId);
+export const getMembers = catchAsync(async (req: Request, res: Response) => {
+  const members = await organizationService.getMembers(req.user!.userId);
 
-  const memberList = members.map((m) => ({
+  const memberList = members.map((m: any) => ({
     id: m.id,
     email: m.email,
     role: m.role,
@@ -125,7 +126,7 @@ export const getMembers = catchAsync(async (req, res) => {
 /**
  * DELETE /api/v1/organizations/members/:memberId
  */
-export const removeMember = catchAsync(async (req, res) => {
-  await organizationService.removeMember(req.user.userId, String(req.params.memberId));
+export const removeMember = catchAsync(async (req: Request, res: Response) => {
+  await organizationService.removeMember(req.user!.userId, String(req.params.memberId));
   sendSuccess(res, 200, 'Member removed');
 });

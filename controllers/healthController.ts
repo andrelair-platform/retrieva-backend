@@ -1,3 +1,4 @@
+import type { Request, Response, NextFunction } from "express";
 import { sql } from 'drizzle-orm';
 import { getDb } from '../config/db.js';
 import { redisConnection } from '../config/redis.js';
@@ -16,7 +17,7 @@ const HEALTH_CHECK_TIMEOUT_MS = 5000; // 5 seconds for each service check
  * Basic health check
  * GET /api/v1/health
  */
-export const basicHealth = async (req, res) => {
+export const basicHealth = async (req: Request, res: Response) => {
   sendSuccess(res, 200, 'Service is healthy', {
     status: 'up',
     timestamp: new Date().toISOString(),
@@ -34,7 +35,7 @@ export const basicHealth = async (req, res) => {
  * Detailed health check with all dependencies
  * GET /api/v1/health/detailed
  */
-export const detailedHealth = async (req, res) => {
+export const detailedHealth = async (req: Request, res: Response) => {
   // Dynamic aggregation object — each probe adds a service entry; typed loosely
   // (Record<string, any>) because the shape is built up per-check at runtime.
   const health: {
@@ -56,10 +57,10 @@ export const detailedHealth = async (req, res) => {
   try {
     await getDb().execute(sql`select 1`);
     health.services.postgres = { status: 'up' };
-  } catch (error) {
+  } catch (error: unknown) {
     health.services.postgres = {
       status: 'down',
-      error: error.message,
+      error: (error instanceof Error ? error.message : String(error)),
     };
     allHealthy = false;
   }
@@ -72,10 +73,10 @@ export const detailedHealth = async (req, res) => {
       response: redisPing,
     };
     if (redisPing !== 'PONG') allHealthy = false;
-  } catch (error) {
+  } catch (error: unknown) {
     health.services.redis = {
       status: 'down',
-      error: error.message,
+      error: (error instanceof Error ? error.message : String(error)),
     };
     allHealthy = false;
   }
@@ -101,11 +102,11 @@ export const detailedHealth = async (req, res) => {
       collection: collectionInfo.name,
       vectorsCount: collectionInfo.vectors_count || collectionInfo.points_count,
     };
-  } catch (error) {
+  } catch (error: unknown) {
     health.services.qdrant = {
       status: 'down',
-      error: error.message,
-      timeout: error.message?.includes('timed out'),
+      error: (error instanceof Error ? error.message : String(error)),
+      timeout: (error instanceof Error ? error.message : String(error))?.includes('timed out'),
     };
     allHealthy = false;
   }
@@ -130,12 +131,12 @@ export const detailedHealth = async (req, res) => {
       model: process.env.LLM_MODEL || process.env.OPENROUTER_MODEL || 'default',
       responsive: !!testResponse,
     };
-  } catch (error) {
+  } catch (error: unknown) {
     health.services.llm = {
       status: 'down',
       provider: getCurrentProvider(),
-      error: error.message,
-      timeout: error.message?.includes('timed out'),
+      error: (error instanceof Error ? error.message : String(error)),
+      timeout: (error instanceof Error ? error.message : String(error))?.includes('timed out'),
     };
     allHealthy = false;
   }
@@ -153,13 +154,13 @@ export const detailedHealth = async (req, res) => {
         failed: assessmentQueueCounts.failed || 0,
       },
     };
-  } catch (error) {
+  } catch (error: unknown) {
     health.services.queues = {
       status: 'down',
-      error: error.message,
+      error: (error instanceof Error ? error.message : String(error)),
     };
     // Queues are non-critical - don't mark as unhealthy
-    logger.warn('Queue health check failed', { error: error.message });
+    logger.warn('Queue health check failed', { error: (error instanceof Error ? error.message : String(error)) });
   }
 
   // Email provider (Resend HTTP API)
@@ -187,7 +188,7 @@ export const detailedHealth = async (req, res) => {
 
   logger.info('Health check performed', {
     status: health.status,
-    servicesUp: Object.values(health.services).filter((s) => s.status === 'up').length,
+    servicesUp: Object.values(health.services).filter((s: any) => s.status === 'up').length,
     servicesTotal: Object.keys(health.services).length,
   });
 
@@ -201,7 +202,7 @@ export const detailedHealth = async (req, res) => {
  * Readiness check (for Kubernetes)
  * GET /api/v1/health/ready
  */
-export const readinessCheck = async (req, res) => {
+export const readinessCheck = async (req: Request, res: Response) => {
   try {
     // Check critical services
     let postgresReady = false;
@@ -231,8 +232,8 @@ export const readinessCheck = async (req, res) => {
         redis: redisReady,
       },
     });
-  } catch (error) {
-    logger.error('Readiness check failed', { error: error.message });
+  } catch (error: unknown) {
+    logger.error('Readiness check failed', { error: (error instanceof Error ? error.message : String(error)) });
     return res.status(503).json({
       status: 'error',
       message: 'Readiness check failed',
@@ -245,7 +246,7 @@ export const readinessCheck = async (req, res) => {
  * Liveness check (for Kubernetes)
  * GET /api/v1/health/live
  */
-export const livenessCheck = async (req, res) => {
+export const livenessCheck = async (req: Request, res: Response) => {
   // Simple check - if we can respond, we're alive
   sendSuccess(res, 200, 'Service is alive', {
     alive: true,
