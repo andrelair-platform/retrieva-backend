@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- injectable repos/services stored as fields;
+   user rows + auth request payloads are heterogeneous. */
 import { AppError } from '../utils/index.js';
 import { userRepository } from '../repositories/drizzle/UserRepository.js';
 import { organizationRepository } from '../repositories/drizzle/OrganizationRepository.js';
@@ -20,7 +22,7 @@ const RESEND_VERIFICATION_COOLDOWN_MS = 60 * 1000;
 
 // RTV-49: users now come from the Drizzle userRepository, which returns a SANITIZED
 // row — `id` (uuid), `name` already decrypted, secrets stripped. No Mongoose documents.
-function toUserPayload(user, overrides = {}) {
+function toUserPayload(user: any, overrides: any = {}) {
   return {
     id: user.id,
     email: user.email,
@@ -36,7 +38,15 @@ function toUserPayload(user, overrides = {}) {
 }
 
 class AuthService {
-  constructor(deps = {}) {
+  userRepo: any;
+  organizationRepo: any;
+  memberRepo: any;
+  emailService: any;
+  authAudit: any;
+  mfa: any;
+  logger: any;
+
+  constructor(deps: Record<string, any> = {}) {
     this.userRepo = deps.userRepo || userRepository;
     this.organizationRepo = deps.organizationRepo || organizationRepository;
     this.memberRepo = deps.memberRepo || organizationMemberRepository;
@@ -47,14 +57,14 @@ class AuthService {
   }
 
   /** Resolve an organization summary for inclusion in /me + login responses. */
-  async _resolveOrganizationSummary(organizationId) {
+  async _resolveOrganizationSummary(organizationId: any) {
     if (!organizationId) return null;
     const org = await this.organizationRepo.findById(organizationId);
     if (!org) return null;
     return { id: org.id, name: org.name, industry: org.industry, country: org.country };
   }
 
-  async register({ email, password, name, role, inviteToken, deviceInfo }) {
+  async register({ email, password, name, role, inviteToken, deviceInfo }: any) {
     const existingUser = await this.userRepo.findByEmail(email);
     if (existingUser) {
       this.logger.warn('Registration attempt with existing email', { email });
@@ -79,7 +89,7 @@ class AuthService {
       } catch (err) {
         this.logger.warn('Invite token processing failed during registration', {
           userId: user.id,
-          error: err.message,
+          error: (err instanceof Error ? err.message : String(err)),
         });
       }
     }
@@ -87,10 +97,10 @@ class AuthService {
     const verificationToken = await this.userRepo.setEmailVerificationToken(user.id);
     this.emailService
       .sendEmailVerification({ toEmail: user.email, toName: name, verificationToken })
-      .catch((err) => {
+      .catch((err: any) => {
         this.logger.warn('Failed to send verification email', {
           userId: user.id,
-          error: err.message,
+          error: (err instanceof Error ? err.message : String(err)),
         });
       });
 
@@ -120,7 +130,7 @@ class AuthService {
    * A3: notify a user out-of-band that all their sessions were revoked because a refresh
    * token was reused (a sign of theft). Best-effort; never throws into the auth flow.
    */
-  _sendTokenTheftAlert(user) {
+  _sendTokenTheftAlert(user: any) {
     try {
       const result = this.emailService.sendEmail?.({
         to: user.email,
@@ -135,21 +145,21 @@ class AuthService {
           `<p><strong>If this wasn't you</strong>, reset your password immediately ` +
           `and review your account.</p><p>— The Retrieva team</p>`,
       });
-      result?.catch?.((err) =>
+      result?.catch?.((err: any) =>
         this.logger.warn('Failed to send token-theft alert email', {
           userId: user.id,
-          error: err.message,
+          error: (err instanceof Error ? err.message : String(err)),
         })
       );
     } catch (err) {
       this.logger.warn('Failed to send token-theft alert email', {
         userId: user.id,
-        error: err.message,
+        error: (err instanceof Error ? err.message : String(err)),
       });
     }
   }
 
-  async login({ email, password, deviceInfo }) {
+  async login({ email, password, deviceInfo }: any): Promise<any> {
     const user = await this.userRepo.findByEmail(email);
 
     if (!user) {
@@ -195,7 +205,7 @@ class AuthService {
   }
 
   /** Issue tokens + a refresh session for an already-authenticated user. */
-  async _issueSession(user, deviceInfo) {
+  async _issueSession(user: any, deviceInfo: any) {
     const tokens = generateTokenPair({ userId: user.id, email: user.email, role: user.role });
     await this.userRepo.addRefreshToken(user.id, hashRefreshToken(tokens.refreshToken), deviceInfo);
 
@@ -212,7 +222,7 @@ class AuthService {
   // ---------------------------------------------------------------------------
 
   /** Step 1: generate (but don't yet enable) a TOTP secret; return secret + otpauth URI. */
-  async setupMfa(userId) {
+  async setupMfa(userId: any) {
     const user = await this.userRepo.findById(userId);
     if (!user) throw new AppError('User not found', 404);
     if (user.mfaEnabled) throw new AppError('MFA is already enabled', 409);
@@ -224,7 +234,7 @@ class AuthService {
   }
 
   /** Step 2: verify the first code, enable MFA, return the one-time recovery codes. */
-  async enableMfa(userId, token) {
+  async enableMfa(userId: any, token: any) {
     const user = await this.userRepo.findById(userId);
     if (!user) throw new AppError('User not found', 404);
     if (user.mfaEnabled) throw new AppError('MFA is already enabled', 409);
@@ -243,12 +253,12 @@ class AuthService {
   }
 
   /** Step 2 of login: exchange a valid MFA challenge + TOTP/recovery code for a session. */
-  async verifyMfa({ mfaToken, code, deviceInfo }) {
+  async verifyMfa({ mfaToken, code, deviceInfo }: any) {
     let decoded;
     try {
       decoded = verifyMfaToken(mfaToken);
     } catch (error) {
-      throw new AppError(error.message || 'Invalid MFA token', 401);
+      throw new AppError((error instanceof Error ? error.message : String(error)) || 'Invalid MFA token', 401);
     }
 
     const user = await this.userRepo.findById(decoded.userId);
@@ -266,7 +276,7 @@ class AuthService {
   }
 
   /** Disable MFA. Requires current password AND a valid TOTP/recovery code. */
-  async disableMfa(userId, { password, code }) {
+  async disableMfa(userId: any, { password, code }: any) {
     const user = await this.userRepo.findById(userId);
     if (!user) throw new AppError('User not found', 404);
     if (!user.mfaEnabled) throw new AppError('MFA is not enabled', 400);
@@ -287,7 +297,7 @@ class AuthService {
    * Verify a code against the user's TOTP secret, falling back to single-use recovery
    * codes (consumed in place). Returns true on success.
    */
-  async _consumeMfaCode(userId, code) {
+  async _consumeMfaCode(userId: any, code: any) {
     const secret = await this.userRepo.getMfaSecret(userId);
     if (secret && this.mfa.verifyTotp(secret, code)) return true;
 
@@ -306,7 +316,7 @@ class AuthService {
    *   throws AppError 401 — caller should also clearAuthCookies(res)
    *   returns { accessToken, refreshToken } on success
    */
-  async refreshTokens({ refreshTokenValue, deviceInfo }) {
+  async refreshTokens({ refreshTokenValue, deviceInfo }: any) {
     if (!refreshTokenValue) {
       throw new AppError('Refresh token required', 401);
     }
@@ -315,8 +325,8 @@ class AuthService {
     try {
       decoded = verifyRefreshToken(refreshTokenValue);
     } catch (error) {
-      this.logger.warn('Invalid refresh token signature', { error: error.message });
-      throw new AppError(error.message || 'Invalid refresh token', 401);
+      this.logger.warn('Invalid refresh token signature', { error: (error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error)) });
+      throw new AppError((error instanceof Error ? error.message : String(error)) || 'Invalid refresh token', 401);
     }
 
     const user = await this.userRepo.findById(decoded.userId);
@@ -359,7 +369,7 @@ class AuthService {
     return { accessToken: newAccessToken, refreshToken: newRefreshToken };
   }
 
-  async logout({ userId, refreshTokenValue, logoutAll }) {
+  async logout({ userId, refreshTokenValue, logoutAll }: any) {
     const user = await this.userRepo.findById(userId);
     if (!user) return;
 
@@ -377,7 +387,7 @@ class AuthService {
     this.authAudit.logLogout?.({ userId: user.id, allDevices: false });
   }
 
-  async getMe(userId) {
+  async getMe(userId: any) {
     const user = await this.userRepo.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
@@ -392,7 +402,7 @@ class AuthService {
     };
   }
 
-  async updateProfile(userId, { name, email }) {
+  async updateProfile(userId: any, { name, email }: any) {
     const user = await this.userRepo.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
@@ -420,7 +430,7 @@ class AuthService {
     };
   }
 
-  async forgotPassword({ email }) {
+  async forgotPassword({ email }: any) {
     const user = await this.userRepo.findByEmail(email);
 
     // Always return success to prevent email enumeration
@@ -454,7 +464,7 @@ class AuthService {
     this.authAudit.logPasswordResetRequest?.({ userId: user.id, email: user.email });
   }
 
-  async resetPassword({ token, password }) {
+  async resetPassword({ token, password }: any) {
     const found = await this.userRepo.findByValidPasswordResetToken(token);
     if (!found) {
       this.logger.warn('Invalid or expired password reset token');
@@ -469,7 +479,7 @@ class AuthService {
     this.authAudit.logPasswordResetSuccess?.({ userId: found.safe.id });
   }
 
-  async verifyEmail({ token }) {
+  async verifyEmail({ token }: any) {
     const found = await this.userRepo.findByValidEmailVerificationToken(token);
     if (!found) {
       this.logger.warn('Invalid or expired email verification token');
@@ -483,15 +493,15 @@ class AuthService {
 
     this.emailService
       .sendWelcomeEmail({ toEmail: verified.email, toName: verified.name })
-      .catch((err) => {
+      .catch((err: any) => {
         this.logger.warn('Failed to send welcome email after verification', {
           userId: verified.id,
-          error: err.message,
+          error: (err instanceof Error ? err.message : String(err)),
         });
       });
   }
 
-  async resendVerification(userId) {
+  async resendVerification(userId: any) {
     const user = await this.userRepo.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
@@ -534,7 +544,7 @@ class AuthService {
     this.logger.info('Verification email resent', { userId: user.id, email: user.email });
   }
 
-  async changePassword(userId, { currentPassword, newPassword }) {
+  async changePassword(userId: any, { currentPassword, newPassword }: any) {
     const user = await this.userRepo.findById(userId);
     if (!user) throw new AppError('User not found', 404);
 
@@ -550,7 +560,7 @@ class AuthService {
     this.logger.info('Password changed successfully - all sessions invalidated', { userId });
   }
 
-  async updateOnboarding(userId, { completed, checklist }) {
+  async updateOnboarding(userId: any, { completed, checklist }: any) {
     const allowed = [
       'vendorCreated',
       'assessmentCreated',

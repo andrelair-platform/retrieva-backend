@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- IO/LLM adapter over untyped PDF/DOCX/zip/LLM payloads. */
 /**
  * File Ingestion Service
  *
@@ -47,7 +48,7 @@ const CHUNK_SIZE = 600;
 const CHUNK_OVERLAP = 100;
 
 function getQdrantClient() {
-  const options = { url: QDRANT_URL };
+  const options: { url: string; apiKey?: string } = { url: QDRANT_URL };
   if (QDRANT_API_KEY) options.apiKey = QDRANT_API_KEY;
   return new QdrantClient(options);
 }
@@ -55,7 +56,7 @@ function getQdrantClient() {
 /**
  * Build a collection name for a given assessment.
  */
-export function assessmentCollectionName(assessmentId) {
+export function assessmentCollectionName(assessmentId: any) {
   return `assessment_${assessmentId}`;
 }
 
@@ -63,14 +64,14 @@ export function assessmentCollectionName(assessmentId) {
 // Parsers
 // ---------------------------------------------------------------------------
 
-async function parsePdf(buffer) {
+async function parsePdf(buffer: any) {
   // Dynamic import avoids pdf-parse reading a test PDF at module-load time
   const { default: pdfParse } = await import('pdf-parse');
   const data = await pdfParse(buffer);
   return data.text || '';
 }
 
-function parseXlsx(buffer) {
+function parseXlsx(buffer: any) {
   const workbook = XLSX.read(buffer, { type: 'buffer' });
   const lines = [];
   for (const sheetName of workbook.SheetNames) {
@@ -83,7 +84,7 @@ function parseXlsx(buffer) {
   return lines.join('\n\n');
 }
 
-async function parseDocx(buffer) {
+async function parseDocx(buffer: any) {
   // Use mammoth if available; fall back to raw XML extraction
   try {
     const { default: mammoth } = await import('mammoth');
@@ -117,7 +118,7 @@ async function parseDocx(buffer) {
  * @param {string} fileType  lowercased extension ('pdf'|'xlsx'|'xls'|'docx'|'png'|…)
  * @param {string} [fileName] original filename (drives server-side type routing)
  */
-export async function parseFile(buffer, fileType, fileName) {
+export async function parseFile(buffer: any, fileType: any, fileName: any) {
   const ext = (fileType || '').toLowerCase();
 
   // Images: OCR-only, no local parser.
@@ -142,7 +143,7 @@ export async function parseFile(buffer, fileType, fileName) {
         logger.warn('Docling/markitdown conversion failed; falling back to local pdf-parse', {
           service: 'file-ingestion',
           fileName,
-          error: err.message,
+          error: err instanceof Error ? err.message : String(err),
         });
       }
     }
@@ -167,7 +168,7 @@ export async function parseFile(buffer, fileType, fileName) {
 /**
  * Split text into overlapping chunks at paragraph/sentence boundaries.
  */
-export function chunkText(text, chunkSize = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
+export function chunkText(text: any, chunkSize = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
   // Normalize whitespace
   const normalized = text
     .replace(/\r\n/g, '\n')
@@ -212,14 +213,14 @@ export function chunkText(text, chunkSize = CHUNK_SIZE, overlap = CHUNK_OVERLAP)
   if (current.trim()) chunks.push(current.trim());
 
   // Filter out very short chunks (likely noise)
-  return chunks.filter((c) => c.length > 30);
+  return chunks.filter((c: any) => c.length > 30);
 }
 
 // ---------------------------------------------------------------------------
 // Qdrant collection management
 // ---------------------------------------------------------------------------
 
-async function ensureAssessmentCollection(client, collectionName) {
+async function ensureAssessmentCollection(client: any, collectionName: any) {
   try {
     await client.getCollection(collectionName);
     logger.debug('Assessment Qdrant collection already exists', { collectionName });
@@ -236,7 +237,7 @@ async function ensureAssessmentCollection(client, collectionName) {
   }
 }
 
-export async function deleteAssessmentCollection(assessmentId) {
+export async function deleteAssessmentCollection(assessmentId: any) {
   const collectionName = assessmentCollectionName(assessmentId);
   try {
     const client = getQdrantClient();
@@ -245,7 +246,7 @@ export async function deleteAssessmentCollection(assessmentId) {
   } catch (err) {
     logger.warn('Could not delete assessment collection (may not exist)', {
       collectionName,
-      error: err.message,
+      error: err instanceof Error ? err.message : String(err),
     });
   }
 }
@@ -274,7 +275,7 @@ export async function ingestFile({
   workspaceId,
   vendorName,
   onProgress,
-}) {
+}: any) {
   logger.info('Starting file ingestion', {
     service: 'file-ingestion',
     fileName,
@@ -318,7 +319,7 @@ export async function ingestFile({
       logger.warn('Figure-aware ingestion failed; falling back to text parse', {
         service: 'file-ingestion',
         fileName,
-        error: err.message,
+        error: err instanceof Error ? err.message : String(err),
       });
       rawText = await parseFile(buffer, fileType, fileName);
     }
@@ -356,7 +357,7 @@ export async function ingestFile({
   const client = getQdrantClient();
   await ensureAssessmentCollection(client, collectionName);
 
-  const sanitize = (t) =>
+  const sanitize = (t: any) =>
     typeof t === 'string'
       ? t.replace(
           /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
@@ -425,7 +426,7 @@ export async function ingestFile({
         assessmentId,
         workspaceId,
         fileName,
-        error: err.message,
+        error: err instanceof Error ? err.message : String(err),
       });
     }
   }
@@ -452,7 +453,7 @@ export async function ingestFile({
  * @param {number} [topK=15]
  * @returns {Promise<Array<{ content: string, metadata: object, score: number }>>}
  */
-export async function searchAssessmentChunks(assessmentId, queryText, topK = 15) {
+export async function searchAssessmentChunks(assessmentId: any, queryText: any, topK = 15) {
   const collectionName = assessmentCollectionName(assessmentId);
   const client = getQdrantClient();
 
@@ -464,7 +465,7 @@ export async function searchAssessmentChunks(assessmentId, queryText, topK = 15)
     with_payload: true,
   });
 
-  return result.map((hit) => ({
+  return result.map((hit: any) => ({
     content: hit.payload?.pageContent || '',
     metadata: hit.payload?.metadata || {},
     score: hit.score,
@@ -475,7 +476,7 @@ export async function searchAssessmentChunks(assessmentId, queryText, topK = 15)
 // DI factory — enables unit testing without mocking config modules
 // ---------------------------------------------------------------------------
 
-export function createFileIngestionService(_deps = {}) {
+export function createFileIngestionService(_deps: any = {}) {
   return { ingestFile, searchAssessmentChunks, deleteAssessmentCollection, chunkText };
 }
 

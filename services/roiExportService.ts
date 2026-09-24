@@ -17,6 +17,8 @@
  *   RT.04.01 — Gap Summary (one row per gap from latest complete assessment)
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- xlsx export over heterogeneous
+   workspace/assessment/questionnaire/concentration rows. */
 import XLSX from 'xlsx';
 import { assessmentRepository } from '../repositories/index.js';
 import { workspaceRepository } from '../repositories/index.js';
@@ -25,17 +27,17 @@ import { vendorQuestionnaireRepository } from '../repositories/index.js';
 
 const INSTITUTION_NAME = process.env.INSTITUTION_NAME || 'Financial Entity';
 
-function fmtDate(d) {
+function fmtDate(d: any) {
   if (!d) return '';
   const date = d instanceof Date ? d : new Date(d);
   if (isNaN(date.getTime())) return '';
   return date.toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
-export async function generateRoiWorkbook(userId) {
+export async function generateRoiWorkbook(userId: string) {
   // 1. Collect all workspaces the user has access to
   const memberships = await workspaceMemberRepository.findActiveByUserId(userId);
-  const workspaceIds = memberships.map((m) => m.workspaceId);
+  const workspaceIds = memberships.map((m: any) => m.workspaceId);
   const workspaces = await workspaceRepository.findByIds(workspaceIds);
 
   // 2/3. Latest complete assessment + questionnaire per workspace (Postgres DISTINCT ON —
@@ -47,15 +49,15 @@ export async function generateRoiWorkbook(userId) {
 
   // O(1) lookup maps, keyed by workspace id (each row is the latest for its workspace)
   const assessmentMap = Object.fromEntries(
-    latestAssessments.map((a) => [String(a.workspaceId), a])
+    latestAssessments.map((a: any) => [String(a.workspaceId), a])
   );
   const questionnaireMap = Object.fromEntries(
-    latestQuestionnaires.map((q) => [String(q.workspaceId), q])
+    latestQuestionnaires.map((q: any) => [String(q.workspaceId), q])
   );
 
   // Concentration analysis (RTV-15) — org-scoped; map by workspace id for the register
   // columns. Best-effort: a register must still generate if the graph isn't populated.
-  const concentrationByWs = {};
+  const concentrationByWs: Record<string, any> = {};
   try {
     const orgId = workspaces[0]?.organizationId;
     if (orgId) {
@@ -81,9 +83,9 @@ export async function generateRoiWorkbook(userId) {
     ['Institution Name', INSTITUTION_NAME],
     ['Report Generated', new Date().toISOString()],
     ['Total Vendors', workspaces.length],
-    ['Critical Vendors', workspaces.filter((w) => w.vendorTier === 'critical').length],
-    ['Important Vendors', workspaces.filter((w) => w.vendorTier === 'important').length],
-    ['Standard Vendors', workspaces.filter((w) => w.vendorTier === 'standard').length],
+    ['Critical Vendors', workspaces.filter((w: any) => w.vendorTier === 'critical').length],
+    ['Important Vendors', workspaces.filter((w: any) => w.vendorTier === 'important').length],
+    ['Standard Vendors', workspaces.filter((w: any) => w.vendorTier === 'standard').length],
   ];
   const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
   XLSX.utils.book_append_sheet(wb, wsSummary, 'RT.01.01 Summary');

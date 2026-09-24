@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- email templates over heterogeneous payloads; nodemailer transport is loosely typed. */
 /**
  * Email Service — Monolith Proxy
  *
@@ -23,14 +24,14 @@ const EMAIL_SERVICE_URL = process.env.EMAIL_SERVICE_URL;
 // Remote path (email-service is running)
 // ---------------------------------------------------------------------------
 
-async function callEmailService(path, payload) {
-  return internalClient.post(EMAIL_SERVICE_URL, path, payload).catch((err) => {
+async function callEmailService(path: string, payload: any) {
+  return internalClient.post(EMAIL_SERVICE_URL as string, path, payload).catch((err: any) => {
     logger.error('Email service call failed', {
       service: 'email',
       path,
-      error: err.message,
+      error: (err instanceof Error ? err.message : String(err)),
     });
-    return { success: false, error: err.message };
+    return { success: false, error: (err instanceof Error ? err.message : String(err)) };
   });
 }
 
@@ -50,7 +51,7 @@ const EMAIL_CONFIG = {
 };
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-let _resendClient = null;
+let _resendClient: any = null;
 function getResendClient() {
   if (!_resendClient) {
     if (!EMAIL_CONFIG.apiKey) {
@@ -62,7 +63,7 @@ function getResendClient() {
   return _resendClient;
 }
 
-async function _sendEmailInProcess({ to, subject, html, text }) {
+async function _sendEmailInProcess({ to, subject, html, text }: any) {
   const client = getResendClient();
   if (!client) return { success: false, reason: 'Email service not configured' };
 
@@ -82,8 +83,8 @@ async function _sendEmailInProcess({ to, subject, html, text }) {
     logger.info('Email sent successfully', { service: 'email', messageId: data.id, to, subject });
     return { success: true, messageId: data.id };
   } catch (err) {
-    logger.error('Failed to send email', { service: 'email', to, subject, error: err.message });
-    return { success: false, error: err.message };
+    logger.error('Failed to send email', { service: 'email', to, subject, error: (err instanceof Error ? err.message : String(err)) });
+    return { success: false, error: (err instanceof Error ? err.message : String(err)) };
   }
 }
 
@@ -95,7 +96,7 @@ async function _verifyConnectionInProcess() {
     logger.info('Email service connection verified', { service: 'email' });
     return true;
   } catch (err) {
-    logger.error('Email service connection failed', { service: 'email', error: err.message });
+    logger.error('Email service connection failed', { service: 'email', error: (err instanceof Error ? err.message : String(err)) });
     return false;
   }
 }
@@ -105,20 +106,20 @@ async function _verifyConnectionInProcess() {
 // ---------------------------------------------------------------------------
 
 const remote = {
-  sendEmail: (p) => callEmailService('/internal/email/send', p),
-  sendWorkspaceInvitation: (p) => callEmailService('/internal/email/workspace-invitation', p),
-  sendWelcomeEmail: (p) => callEmailService('/internal/email/welcome', p),
-  sendPasswordResetEmail: (p) => callEmailService('/internal/email/password-reset', p),
-  sendEmailVerification: (p) => callEmailService('/internal/email/email-verification', p),
-  sendQuestionnaireInvitation: (p) =>
+  sendEmail: (p: any) => callEmailService('/internal/email/send', p),
+  sendWorkspaceInvitation: (p: any) => callEmailService('/internal/email/workspace-invitation', p),
+  sendWelcomeEmail: (p: any) => callEmailService('/internal/email/welcome', p),
+  sendPasswordResetEmail: (p: any) => callEmailService('/internal/email/password-reset', p),
+  sendEmailVerification: (p: any) => callEmailService('/internal/email/email-verification', p),
+  sendQuestionnaireInvitation: (p: any) =>
     callEmailService('/internal/email/questionnaire-invitation', p),
-  sendMonitoringAlert: (p) => callEmailService('/internal/email/monitoring-alert', p),
-  sendOrganizationInvitation: (p) => callEmailService('/internal/email/org-invitation', p),
-  sendWeeklyDigest: (p) => callEmailService('/internal/email/weekly-digest', p),
+  sendMonitoringAlert: (p: any) => callEmailService('/internal/email/monitoring-alert', p),
+  sendOrganizationInvitation: (p: any) => callEmailService('/internal/email/org-invitation', p),
+  sendWeeklyDigest: (p: any) => callEmailService('/internal/email/weekly-digest', p),
   verifyConnection: () => callEmailService('/internal/email/health', {}),
 };
 
-function buildMonitoringAlertHtml({ toName, workspaceName, alertType, details }) {
+function buildMonitoringAlertHtml({ toName, workspaceName, alertType, details }: any) {
   const settingsUrl = `${FRONTEND_URL}/settings`;
   const alertMessages = {
     'cert-expiry-90': `The <strong>${details.certType}</strong> certification for vendor <strong>${workspaceName}</strong> will expire on <strong>${details.expiryDate}</strong> (in ~90 days). Begin the renewal process now to avoid a compliance gap.`,
@@ -132,7 +133,7 @@ function buildMonitoringAlertHtml({ toName, workspaceName, alertType, details })
     'single-point-of-failure': `The critical function <strong>${details.functionName}</strong> depends on <strong>${workspaceName}</strong> as its <strong>sole</strong> provider — a single point of failure under DORA Article 28(4). Assess whether a backup provider or exit strategy is required.`,
   };
   const message =
-    alertMessages[alertType] ||
+    alertMessages[alertType as keyof typeof alertMessages] ||
     `A compliance alert has been triggered for vendor <strong>${workspaceName}</strong>.`;
 
   return `<!DOCTYPE html>
@@ -172,7 +173,7 @@ function buildMonitoringAlertHtml({ toName, workspaceName, alertType, details })
 </html>`;
 }
 
-function buildWeeklyDigestHtml({ toName, items }) {
+function buildWeeklyDigestHtml({ toName, items }: any) {
   const dashboardUrl = `${FRONTEND_URL}/workspaces`;
   const statusBadge = {
     green: 'background:#dcfce7;color:#166534;',
@@ -181,9 +182,9 @@ function buildWeeklyDigestHtml({ toName, items }) {
   };
 
   const rows = items
-    .map((item) => {
+    .map((item: any) => {
       const badge = item.status
-        ? `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;${statusBadge[item.status]}">${item.score ?? '—'}</span>`
+        ? `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;${statusBadge[item.status as keyof typeof statusBadge]}">${item.score ?? '—'}</span>`
         : '<span style="color:#94a3b8;font-size:13px;">No assessments</span>';
 
       const trendStr =
@@ -256,14 +257,14 @@ const local = {
     workspaceName,
     workspaceId,
     role,
-  }) {
+  }: any) {
     const workspaceUrl = `${FRONTEND_URL}/workspaces/${workspaceId}`;
     const subject = `${inviterName} invited you to "${workspaceName}"`;
     const html = `<p>Hi ${toName || 'there'}, ${inviterName} invited you to <strong>${workspaceName}</strong> as <strong>${role}</strong>. <a href="${workspaceUrl}">Open Workspace</a></p>`;
     return _sendEmailInProcess({ to: toEmail, subject, html });
   },
 
-  async sendWelcomeEmail({ toEmail, toName }) {
+  async sendWelcomeEmail({ toEmail, toName }: any) {
     const dashboardUrl = `${FRONTEND_URL}/assessments`;
     const displayName = toName || 'there';
     const subject = 'Welcome to Retrieva — your DORA compliance platform';
@@ -319,7 +320,7 @@ const local = {
     return _sendEmailInProcess({ to: toEmail, subject, html });
   },
 
-  async sendPasswordResetEmail({ toEmail, toName, resetToken }) {
+  async sendPasswordResetEmail({ toEmail, toName, resetToken }: any) {
     const resetUrl = `${FRONTEND_URL}/reset-password?token=${resetToken}`;
     return _sendEmailInProcess({
       to: toEmail,
@@ -328,7 +329,7 @@ const local = {
     });
   },
 
-  async sendEmailVerification({ toEmail, toName, verificationToken }) {
+  async sendEmailVerification({ toEmail, toName, verificationToken }: any) {
     const verifyUrl = `${FRONTEND_URL}/verify-email?token=${verificationToken}`;
     const displayName = toName || 'there';
     const subject = 'Verify your email address — Retrieva';
@@ -385,7 +386,7 @@ const local = {
     workspaceName,
     token,
     expiresAt,
-  }) {
+  }: any) {
     const formUrl = `${FRONTEND_URL}/q/${token}`;
     const deadline = expiresAt
       ? new Date(expiresAt).toLocaleDateString('en-GB', {
@@ -448,9 +449,12 @@ const local = {
     return _sendEmailInProcess({ to: toEmail, subject, html });
   },
 
-  async sendOrganizationInvitation({ toEmail, inviterName, organizationName, role, inviteToken }) {
+  async sendOrganizationInvitation({ toEmail, inviterName, organizationName, role, inviteToken }: any) {
     const inviteUrl = `${FRONTEND_URL}/join?token=${inviteToken}`;
-    const roleLabel = { org_admin: 'Admin', analyst: 'Analyst', viewer: 'Viewer' }[role] || role;
+    const roleLabel =
+      { org_admin: 'Admin', analyst: 'Analyst', viewer: 'Viewer' }[
+        role as 'org_admin' | 'analyst' | 'viewer'
+      ] || role;
     const subject = `${inviterName} invited you to join ${organizationName} on Retrieva`;
     const html = `<!DOCTYPE html>
 <html>
@@ -496,7 +500,7 @@ const local = {
     return _sendEmailInProcess({ to: toEmail, subject, html });
   },
 
-  async sendMonitoringAlert({ toEmail, toName, workspaceName, alertType, details }) {
+  async sendMonitoringAlert({ toEmail, toName, workspaceName, alertType, details }: any) {
     const subjects = {
       'cert-expiry-90': `[90-Day Warning] ${details.certType} certification expiring for ${workspaceName}`,
       'cert-expiry-30': `[30-Day Warning] ${details.certType} certification expiring soon for ${workspaceName}`,
@@ -508,12 +512,12 @@ const local = {
       'concentration-risk': `[Concentration Risk] ${workspaceName} supports ${details.supportedFunctions} critical function(s) — DORA Art 28(4)`,
       'single-point-of-failure': `[Single Point of Failure] ${details.functionName} depends solely on ${workspaceName}`,
     };
-    const subject = subjects[alertType] || `Compliance Alert — ${workspaceName}`;
+    const subject = subjects[alertType as keyof typeof subjects] || `Compliance Alert — ${workspaceName}`;
     const html = buildMonitoringAlertHtml({ toName, workspaceName, alertType, details });
     return _sendEmailInProcess({ to: toEmail, subject, html });
   },
 
-  async sendWeeklyDigest({ toEmail, toName, items }) {
+  async sendWeeklyDigest({ toEmail, toName, items }: any) {
     const subject = `Your weekly DORA compliance digest — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}`;
     const html = buildWeeklyDigestHtml({ toName, items });
     return _sendEmailInProcess({ to: toEmail, subject, html });

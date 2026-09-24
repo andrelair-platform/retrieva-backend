@@ -15,6 +15,7 @@
  * A 40-page text contract = 0 calls; a 3-chart deck = ~3 calls.
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- VLM captioning over untyped figure payloads + LLM output. */
 import { resolveVisionCaptionPrompt } from '../config/promptManager.js';
 import logger from '../config/logger.js';
 
@@ -44,7 +45,7 @@ export function isVlmCaptionEnabled() {
 }
 
 /** A figure survives the pre-filter (so it's worth a VLM call). */
-export function figurePassesFilter(fig) {
+export function figurePassesFilter(fig: any) {
   if (!fig || typeof fig.dataUrl !== 'string') return false;
   if ((fig.bytes || fig.dataUrl.length) < MIN_BYTES) return false;
   const w = fig.width || 0;
@@ -58,7 +59,7 @@ export function figurePassesFilter(fig) {
   return true;
 }
 
-async function captionOne(dataUrl, promptText) {
+async function captionOne(dataUrl: any, promptText: any) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -102,7 +103,7 @@ async function captionOne(dataUrl, promptText) {
  * @param {object} [opts.trace] optional Langfuse trace handle — each figure is logged
  *   as a multimodal generation (image input) under it.
  */
-export async function captionFigures(figures, { fileName, trace } = {}) {
+export async function captionFigures(figures: any, { fileName, trace }: any = {}) {
   if (!isVlmCaptionEnabled()) return [];
   if (!Array.isArray(figures) || figures.length === 0) return [];
 
@@ -165,10 +166,10 @@ export async function captionFigures(figures, { fileName, trace } = {}) {
         gen?.end?.({ output: caption });
       } catch (err) {
         logger.warn('VLM caption failed for a figure (skipping)', {
-          service: 'vision', fileName, index: i, error: err.message,
+          service: 'vision', fileName, index: i, error: (err instanceof Error ? err.message : String(err)),
         });
         captions[i] = null; // best-effort: one bad figure never fails ingestion
-        gen?.end?.({ output: null, level: 'ERROR', statusMessage: err.message });
+        gen?.end?.({ output: null, level: 'ERROR', statusMessage: (err instanceof Error ? err.message : String(err)) });
       }
     }
   }
