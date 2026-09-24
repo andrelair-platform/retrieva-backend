@@ -6,7 +6,7 @@
  *  - gapAnalysis : Run the DORA gap analysis agent (implemented in Phase 3)
  */
 
-import { Worker } from 'bullmq';
+import { Worker, type ConnectionOptions } from "bullmq";
 import { redisConnection } from '../config/redis.js';
 import { assessmentRepository } from '../repositories/index.js';
 import { ingestFile, assessmentCollectionName } from '../services/fileIngestionService.js';
@@ -15,17 +15,17 @@ import logger from '../config/logger.js';
 import { connectPg } from '../config/db.js';
 
 // Ensure DB is connected when worker runs
-connectPg().catch((err) =>
-  logger.error('Assessment worker: DB connection failed', { error: err.message })
+connectPg().catch((err: any) =>
+  logger.error('Assessment worker: DB connection failed', { error: err instanceof Error ? err.message : String(err) })
 );
 
-const CONCURRENCY = parseInt(process.env.ASSESSMENT_WORKER_CONCURRENCY) || 2;
+const CONCURRENCY = parseInt(process.env.ASSESSMENT_WORKER_CONCURRENCY || "", 10) || 2;
 
 // ---------------------------------------------------------------------------
 // Job: fileIndex
 // ---------------------------------------------------------------------------
 
-async function processFileIndex(job) {
+async function processFileIndex(job: any) {
   const {
     assessmentId,
     documentIndex,
@@ -47,7 +47,7 @@ async function processFileIndex(job) {
   });
 
   // Idempotency guard — skip if already indexed (safe on retries)
-  const existing = await assessmentRepository.findById(assessmentId, { lean: true });
+  const existing = await (assessmentRepository.findById as any)(assessmentId, { lean: true });
   if (existing?.documents[documentIndex]?.status === 'indexed') {
     logger.info('Document already indexed, skipping (idempotency guard)', {
       service: 'assessment-worker',
@@ -75,7 +75,7 @@ async function processFileIndex(job) {
       assessmentId,
       workspaceId: existing?.workspaceId?.toString(),
       vendorName,
-      onProgress: async ({ indexed, total }) => {
+      onProgress: async ({ indexed, total }: any) => {
         const pct = Math.round(10 + (indexed / total) * 70);
         await job.updateProgress(pct);
       },
@@ -102,13 +102,13 @@ async function processFileIndex(job) {
       service: 'assessment-worker',
       assessmentId,
       fileName,
-      error: err.message,
+      error: (err instanceof Error ? err.message : String(err)),
     });
 
     await assessmentRepository.updateById(assessmentId, {
       [`documents.${documentIndex}.status`]: 'failed',
       status: 'failed',
-      statusMessage: `Failed to index ${fileName}: ${err.message}`,
+      statusMessage: `Failed to index ${fileName}: ${err instanceof Error ? err.message : String(err)}`,
     });
 
     throw err;
@@ -119,7 +119,7 @@ async function processFileIndex(job) {
 // Job: gapAnalysis (stub — full implementation in Phase 3)
 // ---------------------------------------------------------------------------
 
-async function processGapAnalysis(job) {
+async function processGapAnalysis(job: any) {
   const { assessmentId, userId } = job.data;
 
   logger.info('Gap analysis job started', {
@@ -141,7 +141,7 @@ async function processGapAnalysis(job) {
 // RTV-41: control-based assessment of an ARRANGEMENT (org-scoped, not workspace-scoped). Runs the
 // evidence-grounded verdict engine and persists findings. Uses organizationId/arrangementId from
 // the job (no assessmentId → the tenant-context wrapper no-ops, which is correct here).
-async function processArrangementAssessment(job) {
+async function processArrangementAssessment(job: any) {
   const { organizationId, arrangementId, userId } = job.data;
   logger.info('Arrangement assessment job started', {
     service: 'assessment-worker',
@@ -159,10 +159,10 @@ async function processArrangementAssessment(job) {
 // B2 follow-up: run each job inside its assessment's tenant context so all
 // DB work is workspace-scoped (matching request-path isolation). The bootstrap
 // lookup runs outside any context (unfiltered) purely to resolve the workspace.
-async function runInAssessmentTenantContext(job, fn) {
+async function runInAssessmentTenantContext(job: any, fn: any) {
   const { assessmentId, userId } = job.data;
   const doc = assessmentId
-    ? await assessmentRepository.findById(assessmentId, { select: 'workspaceId', lean: true })
+    ? await (assessmentRepository.findById as any)(assessmentId, { select: 'workspaceId', lean: true })
     : null;
   const workspaceId = doc?.workspaceId?.toString();
   if (!workspaceId) return fn();
@@ -186,7 +186,7 @@ const worker = new Worker(
       }
     }),
   {
-    connection: redisConnection,
+    connection: redisConnection as unknown as ConnectionOptions,
     concurrency: CONCURRENCY,
     lockDuration: 10 * 60 * 1000, // 10 minutes
     lockRenewTime: 4 * 60 * 1000, // Renew every 4 minutes
@@ -206,14 +206,14 @@ worker.on('failed', (job, err) => {
     service: 'assessment-worker',
     jobName: job?.name,
     jobId: job?.id,
-    error: err.message,
+    error: (err instanceof Error ? err.message : String(err)),
   });
 });
 
 worker.on('error', (err) => {
   logger.error('Assessment worker error', {
     service: 'assessment-worker',
-    error: err.message,
+    error: (err instanceof Error ? err.message : String(err)),
   });
 });
 

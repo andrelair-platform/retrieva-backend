@@ -5,7 +5,7 @@
  * Runs every 24 hours (configurable via MONITORING_INTERVAL_HOURS).
  */
 
-import { Worker } from 'bullmq';
+import { Worker, type ConnectionOptions } from "bullmq";
 import { redisConnection } from '../config/redis.js';
 import {
   runMonitoringAlerts,
@@ -45,7 +45,7 @@ const worker = new Worker(
     logger.warn('Unknown monitoring job type', { jobName: job.name, jobId: job.id });
   },
   {
-    connection: redisConnection,
+    connection: redisConnection as unknown as ConnectionOptions,
     concurrency: 1,
     lockDuration: 5 * 60 * 1000, // 5 minutes
     lockRenewTime: 2 * 60 * 1000, // Renew every 2 minutes

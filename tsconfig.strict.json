@@ -13,7 +13,9 @@
     "types/**/*.d.ts",
     "services/**/*.ts",
     "config/**/*.ts",
-    "utils/**/*.ts"
+    "utils/**/*.ts",
+    "workers/**/*.ts",
+    "prompts/**/*.ts"
   ],
   "exclude": ["node_modules", "dist", "coverage", "tests", "website", "seeds", "data"]
 }

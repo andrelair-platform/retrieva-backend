@@ -22,10 +22,10 @@ Rules:
 - Cite the exact excerpt indices you relied on in "citedIndices".`;
 
 /** Build the user prompt for a control + its retrieved evidence spans. */
-export function buildVerdictUserPrompt(control, spans) {
+export function buildVerdictUserPrompt(control: any, spans: any[]) {
   const excerpts = spans
     .map(
-      (s, i) => `[${i}] (source: ${s.source || 'unknown'}) ${String(s.snippet || '').slice(0, 500)}`
+      (s: any, i: number) => `[${i}] (source: ${s.source || 'unknown'}) ${String(s.snippet || '').slice(0, 500)}`
     )
     .join('\n\n');
   return `CONTROL ${control.id} — ${control.title} (${control.doraArticleRef})
