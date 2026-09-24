@@ -1,12 +1,12 @@
 {
-  "// note": "allowJs baseline (RTV-19) — the code is still JavaScript (ESM). strict is intentionally OFF; it is tightened during the .js->.ts conversion (RTV-21..24). NodeNext: relative imports need explicit .js extensions even in .ts source.",
+  "// note": "Strict TypeScript baseline. The RTV-21..24 conversion turned the whole app .js->.ts and RTV-25 folded the former tsconfig.strict.json in here: strict:true + allowJs:false apply to every source file, so no untyped .js can enter the graph. Only standalone tooling (scripts/, *.config.js, instrument.js) stays .js and is outside the program. NodeNext: relative imports need explicit .js extensions even in .ts source (resolved to the .ts sibling).",
   "compilerOptions": {
     "target": "ES2022",
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "allowJs": true,
+    "allowJs": false,
     "checkJs": false,
-    "strict": false,
+    "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
@@ -14,6 +14,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["**/*.js", "**/*.ts"],
-  "exclude": ["node_modules", "dist", "coverage", "tests", "website", "seeds", "data"]
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist", "coverage", "tests", "website", "data"]
 }

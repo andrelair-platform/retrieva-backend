@@ -65,11 +65,8 @@ jobs:
       - name: Lint
         run: npm run lint --if-present
 
-      - name: Typecheck (allowJs baseline)
+      - name: Typecheck (strict, allowJs:false — RTV-25 folded)
         run: npm run typecheck
-
-      - name: Typecheck (strict — converted dirs, RTV-22..25)
-        run: npm run typecheck:strict
 
       - name: Unit + integration tests
         run: npm run test:coverage

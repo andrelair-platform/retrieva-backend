@@ -6,8 +6,8 @@
   "scripts": {
     "start": "node --import tsx --import ./instrument.js index.ts",
     "dev": "tsx watch --import ./instrument.js index.ts",
-    "workers": "node --import tsx --import ./instrument.js workers/index.js",
-    "workers:dev": "tsx watch --import ./instrument.js workers/index.js",
+    "workers": "node --import tsx --import ./instrument.js workers/index.ts",
+    "workers:dev": "tsx watch --import ./instrument.js workers/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -26,7 +26,7 @@
     "seed:controls": "node --import tsx scripts/seedControlLibrary.js",
     "evaluate": "node scripts/evaluate.js",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "node db/migrate.js",
+    "db:migrate": "node --import tsx db/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -34,7 +34,6 @@
     "format": "prettier --write \"**/*.js\"",
     "format:check": "prettier --check \"**/*.js\"",
     "typecheck": "tsc --noEmit",
-    "typecheck:strict": "tsc -p tsconfig.strict.json",
     "prepare": "husky || true"
   },
   "lint-staged": {
