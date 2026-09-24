@@ -19,7 +19,7 @@ logger.info('='.repeat(60));
  * Graceful shutdown handler
  * Ensures all workers finish their current jobs before exiting
  */
-async function gracefulShutdown(signal) {
+async function gracefulShutdown(signal: string) {
   logger.info(`\n${signal} received. Starting graceful shutdown...`);
 
   try {
@@ -54,6 +54,6 @@ process.on('uncaughtException', (error) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  logger.error('Unhandled Rejection at:', { promise, reason });
   gracefulShutdown('unhandledRejection');
 });

@@ -24,7 +24,7 @@ Return ONLY a valid JSON object:
 }`;
 
 /** Truncate to a sane budget before the model call (contracts can be long). */
-export function buildExtractionUserPrompt(contractText, maxChars = 24000) {
+export function buildExtractionUserPrompt(contractText: string, maxChars = 24000) {
   const text = String(contractText || '').slice(0, maxChars);
   return `CONTRACT TEXT:\n${text}\n\nExtract the arrangement as the JSON object. Return null for anything not clearly stated.`;
 }

@@ -86,7 +86,7 @@ export const RAG_PROMPT_CONFIG = { temperature: 0.1, topP: 1, maxTokens: 2048 };
  *
  * @param {string} renderedSystemText  system prompt with {{context}}/{{responseInstruction}} already substituted
  */
-export function buildRagChatPrompt(renderedSystemText) {
+export function buildRagChatPrompt(renderedSystemText: string) {
   return ChatPromptTemplate.fromMessages([
     new SystemMessage(renderedSystemText),
     new MessagesPlaceholder({ variableName: 'chat_history', optional: true }),

@@ -5,7 +5,7 @@
  *  - scoreQuestionnaire: score all answered questions + generate executive summary
  */
 
-import { Worker } from 'bullmq';
+import { Worker, type ConnectionOptions } from "bullmq";
 import { redisConnection } from '../config/redis.js';
 import { vendorQuestionnaireRepository } from '../repositories/index.js';
 import { runScoring } from '../services/questionnaireScorer.js';
@@ -14,12 +14,12 @@ import logger from '../config/logger.js';
 import { connectPg } from '../config/db.js';
 
 connectPg().catch((err) =>
-  logger.error('Questionnaire worker: DB connection failed', { error: err.message })
+  logger.error('Questionnaire worker: DB connection failed', { error: (err instanceof Error ? err.message : String(err)) })
 );
 
-const CONCURRENCY = parseInt(process.env.QUESTIONNAIRE_WORKER_CONCURRENCY) || 2;
+const CONCURRENCY = parseInt(process.env.QUESTIONNAIRE_WORKER_CONCURRENCY || "", 10) || 2;
 
-async function processScoreQuestionnaire(job) {
+async function processScoreQuestionnaire(job: any) {
   const { questionnaireId } = job.data;
 
   logger.info('Questionnaire scoring job started', {
@@ -44,10 +44,10 @@ async function processScoreQuestionnaire(job) {
 // B2 follow-up: run each job inside its questionnaire's tenant context so all
 // DB work is workspace-scoped. The bootstrap lookup runs outside any context
 // (unfiltered) purely to resolve the workspace.
-async function runInQuestionnaireTenantContext(job, fn) {
+async function runInQuestionnaireTenantContext(job: any, fn: any) {
   const { questionnaireId } = job.data;
   const doc = questionnaireId
-    ? await vendorQuestionnaireRepository.findById(questionnaireId, {
+    ? await (vendorQuestionnaireRepository.findById as any)(questionnaireId, {
         select: 'workspaceId',
         lean: true,
       })
@@ -59,7 +59,7 @@ async function runInQuestionnaireTenantContext(job, fn) {
 
 const worker = new Worker(
   'questionnaireJobs',
-  async (job) =>
+  async (job: any) =>
     runInQuestionnaireTenantContext(job, () => {
       switch (job.name) {
         case 'scoreQuestionnaire':
@@ -70,7 +70,7 @@ const worker = new Worker(
       }
     }),
   {
-    connection: redisConnection,
+    connection: redisConnection as unknown as ConnectionOptions,
     concurrency: CONCURRENCY,
     lockDuration: 10 * 60 * 1000, // 10 minutes
     lockRenewTime: 4 * 60 * 1000, // Renew every 4 minutes
@@ -90,7 +90,7 @@ worker.on('failed', async (job, err) => {
     service: 'questionnaire-worker',
     jobName: job?.name,
     jobId: job?.id,
-    error: err.message,
+    error: (err instanceof Error ? err.message : String(err)),
   });
 
   if (job?.data?.questionnaireId) {
@@ -103,7 +103,7 @@ worker.on('failed', async (job, err) => {
       logger.error('Failed to update questionnaire status on job failure', {
         service: 'questionnaire-worker',
         questionnaireId: job.data.questionnaireId,
-        error: updateErr.message,
+        error: (updateErr instanceof Error ? updateErr.message : String(updateErr)),
       });
     }
   }
@@ -112,7 +112,7 @@ worker.on('failed', async (job, err) => {
 worker.on('error', (err) => {
   logger.error('Questionnaire worker error', {
     service: 'questionnaire-worker',
-    error: err.message,
+    error: (err instanceof Error ? err.message : String(err)),
   });
 });
 
