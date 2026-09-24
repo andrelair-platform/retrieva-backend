@@ -304,7 +304,7 @@ export async function seedDefaultTemplate() {
   } catch (err) {
     logger.error('Failed to seed default questionnaire template', {
       service: 'seed',
-      error: err.message,
+      error: err instanceof Error ? err.message : String(err),
     });
   }
 }
