@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- IO/LLM adapter over untyped PDF/DOCX/zip/LLM payloads. */
 /**
  * Report Generator
  *
@@ -56,7 +57,7 @@ const GAP_FILL = { covered: COLOUR.covered, partial: COLOUR.partial, missing: CO
 // Helpers
 // ---------------------------------------------------------------------------
 
-function heading1(text) {
+function heading1(text: any) {
   return new Paragraph({
     text,
     heading: HeadingLevel.HEADING_1,
@@ -65,7 +66,7 @@ function heading1(text) {
   });
 }
 
-function heading2(text) {
+function heading2(text: any) {
   return new Paragraph({
     text,
     heading: HeadingLevel.HEADING_2,
@@ -74,7 +75,7 @@ function heading2(text) {
   });
 }
 
-function para(text, opts = {}) {
+function para(text: any, opts: any = {}) {
   return new Paragraph({
     children: [
       new TextRun({
@@ -90,7 +91,7 @@ function para(text, opts = {}) {
   });
 }
 
-function cell(text, opts = {}) {
+function cell(text: any, opts: any = {}) {
   return new TableCell({
     children: [
       new Paragraph({
@@ -116,7 +117,7 @@ function cell(text, opts = {}) {
   });
 }
 
-function headerCell(text, width) {
+function headerCell(text: any, width: any) {
   return cell(text, {
     fill: COLOUR.tableHeader,
     textColor: COLOUR.tableHeaderText,
@@ -125,7 +126,7 @@ function headerCell(text, width) {
   });
 }
 
-function riskBadge(risk) {
+function riskBadge(risk: any) {
   return new TextRun({
     text: ` ${risk} `,
     bold: true,
@@ -134,11 +135,11 @@ function riskBadge(risk) {
   });
 }
 
-function gapBadge(level) {
+function gapBadge(level: any) {
   const label = level.charAt(0).toUpperCase() + level.slice(1);
   return cell(label, {
-    fill: GAP_FILL[level] || COLOUR.tableAlt,
-    textColor: GAP_COLOUR[level] || COLOUR.text,
+    fill: GAP_FILL[level as keyof typeof GAP_FILL] || COLOUR.tableAlt,
+    textColor: GAP_COLOUR[level as keyof typeof GAP_COLOUR] || COLOUR.text,
     bold: true,
     width: 10,
   });
@@ -148,7 +149,7 @@ function gapBadge(level) {
 // Section builders
 // ---------------------------------------------------------------------------
 
-function buildCoverPage(assessment) {
+function buildCoverPage(assessment: any) {
   const risk = assessment.results?.overallRisk || 'N/A';
   const isContract = assessment.framework === 'CONTRACT_A30';
   return [
@@ -265,7 +266,7 @@ const MIN_THOROUGH_DOCS = 2;
  * Precise mode (documents tagged with categories): lists the SPECIFIC recommended
  * categories that are missing. Fallback (untagged / legacy uploads): count-based.
  */
-export function partialEvidenceCaveat(assessment) {
+export function partialEvidenceCaveat(assessment: any) {
   const docs = assessment?.documents || [];
   if (docs.length === 0) return null;
 
@@ -274,13 +275,13 @@ export function partialEvidenceCaveat(assessment) {
   const recommendedKeys = isContract
     ? RECOMMENDED_CATEGORY_KEYS.CONTRACT_A30
     : RECOMMENDED_CATEGORY_KEYS.DORA;
-  const tagged = new Set(docs.map((d) => d.category).filter((c) => c && c !== 'other'));
+  const tagged = new Set(docs.map((d: any) => d.category).filter((c: any) => c && c !== 'other'));
 
   // Precise mode — at least one document is tagged → list the missing categories.
   if (tagged.size > 0) {
     const missingLabels = recommendedKeys
-      .filter((k) => !tagged.has(k))
-      .map((k) => CATEGORY_LABELS[k])
+      .filter((k: any) => !tagged.has(k))
+      .map((k: any) => CATEGORY_LABELS[k as keyof typeof CATEGORY_LABELS])
       .filter(Boolean);
     if (missingLabels.length === 0) return null; // full recommended coverage
     return (
@@ -292,7 +293,7 @@ export function partialEvidenceCaveat(assessment) {
 
   // Fallback — untagged uploads or legacy assessments: flag a thin evidence base.
   if (docs.length >= MIN_THOROUGH_DOCS) return null;
-  const allLabels = recommendedKeys.map((k) => CATEGORY_LABELS[k]).filter(Boolean);
+  const allLabels = recommendedKeys.map((k: any) => CATEGORY_LABELS[k as keyof typeof CATEGORY_LABELS]).filter(Boolean);
   return (
     `This ${reviewLabel} is based on a single uploaded document. A thorough review typically ` +
     `draws on several document types — e.g. ${allLabels.join(', ')}. Conclusions may understate ` +
@@ -301,15 +302,15 @@ export function partialEvidenceCaveat(assessment) {
   );
 }
 
-function buildExecutiveSummary(assessment) {
+function buildExecutiveSummary(assessment: any) {
   const gaps = assessment.results?.gaps || [];
   const risk = assessment.results?.overallRisk || 'N/A';
   const summary = assessment.results?.summary || '';
   const caveat = partialEvidenceCaveat(assessment);
 
-  const covered = gaps.filter((g) => g.gapLevel === 'covered').length;
-  const partial = gaps.filter((g) => g.gapLevel === 'partial').length;
-  const missing = gaps.filter((g) => g.gapLevel === 'missing').length;
+  const covered = gaps.filter((g: any) => g.gapLevel === 'covered').length;
+  const partial = gaps.filter((g: any) => g.gapLevel === 'partial').length;
+  const missing = gaps.filter((g: any) => g.gapLevel === 'missing').length;
 
   return [
     new Paragraph({ children: [new PageBreak()] }),
@@ -335,7 +336,7 @@ function buildExecutiveSummary(assessment) {
         new TableRow({
           children: [
             cell('Overall Risk Rating', { width: 50 }),
-            cell(risk, { width: 50, bold: true, textColor: RISK_COLOUR[risk] || COLOUR.text }),
+            cell(risk, { width: 50, bold: true, textColor: RISK_COLOUR[risk as keyof typeof RISK_COLOUR] || COLOUR.text }),
           ],
         }),
         new TableRow({
@@ -375,7 +376,7 @@ function buildExecutiveSummary(assessment) {
   ];
 }
 
-function buildGapTable(assessment) {
+function buildGapTable(assessment: any) {
   const gaps = assessment.results?.gaps || [];
   const isContract = assessment.framework === 'CONTRACT_A30';
 
@@ -392,7 +393,7 @@ function buildGapTable(assessment) {
       tableHeader: true,
     }),
     ...gaps.map(
-      (g, i) =>
+      (g: any, i: number) =>
         new TableRow({
           children: [
             cell(g.article, { width: 12, fill: i % 2 === 1 ? COLOUR.tableAlt : undefined }),
@@ -429,9 +430,9 @@ function buildGapTable(assessment) {
   ];
 }
 
-function buildDomainBreakdown(assessment) {
+function buildDomainBreakdown(assessment: any) {
   const gaps = assessment.results?.gaps || [];
-  const domains = [...new Set(gaps.map((g) => g.domain))];
+  const domains = [...new Set(gaps.map((g: any) => g.domain))];
   const isContract = assessment.framework === 'CONTRACT_A30';
   const sections = [
     new Paragraph({ children: [new PageBreak()] }),
@@ -439,11 +440,11 @@ function buildDomainBreakdown(assessment) {
   ];
 
   for (const domain of domains) {
-    const domainGaps = gaps.filter((g) => g.domain === domain);
+    const domainGaps = gaps.filter((g: any) => g.domain === domain);
     const counts = {
-      covered: domainGaps.filter((g) => g.gapLevel === 'covered').length,
-      partial: domainGaps.filter((g) => g.gapLevel === 'partial').length,
-      missing: domainGaps.filter((g) => g.gapLevel === 'missing').length,
+      covered: domainGaps.filter((g: any) => g.gapLevel === 'covered').length,
+      partial: domainGaps.filter((g: any) => g.gapLevel === 'partial').length,
+      missing: domainGaps.filter((g: any) => g.gapLevel === 'missing').length,
     };
 
     sections.push(
@@ -454,13 +455,13 @@ function buildDomainBreakdown(assessment) {
       )
     );
 
-    const priorityGaps = domainGaps.filter((g) => g.gapLevel !== 'covered').slice(0, 5);
+    const priorityGaps = domainGaps.filter((g: any) => g.gapLevel !== 'covered').slice(0, 5);
 
     if (priorityGaps.length > 0) {
       sections.push(
         para('Priority gaps requiring attention:', { bold: true }),
         ...priorityGaps.map(
-          (g) =>
+          (g: any) =>
             new Paragraph({
               children: [
                 new TextRun({
@@ -486,7 +487,7 @@ function buildDomainBreakdown(assessment) {
   return sections;
 }
 
-function buildMethodology(assessment) {
+function buildMethodology(assessment: any) {
   const docs = assessment.documents || [];
 
   return [
@@ -506,7 +507,7 @@ function buildMethodology(assessment) {
     ),
     heading2('Source Documents Analysed'),
     ...docs.map(
-      (d) =>
+      (d: any) =>
         new Paragraph({
           children: [
             new TextRun({ text: `• ${d.fileName}`, size: 20, color: COLOUR.text }),
@@ -538,7 +539,7 @@ function buildMethodology(assessment) {
  * @param {string} assessmentId - MongoDB Assessment _id
  * @returns {Promise<Buffer>} Word document buffer
  */
-export async function generateReport(assessmentId) {
+export async function generateReport(assessmentId: string) {
   const assessment = await assessmentRepository.findById(assessmentId);
   if (!assessment) throw new AppError('Assessment not found', 404);
   if (assessment.status !== 'complete') {

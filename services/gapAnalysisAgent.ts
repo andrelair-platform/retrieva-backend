@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- IO/LLM adapter over untyped PDF/DOCX/zip/LLM payloads. */
 /**
  * Gap Analysis — deterministic retrieval → LLM pipeline.
  *
@@ -47,12 +48,12 @@ const CONTRACT_A30_DOMAINS = [
 ];
 
 function getQdrantClient() {
-  const opts = { url: QDRANT_URL };
+  const opts: { url: string; apiKey?: string } = { url: QDRANT_URL };
   if (QDRANT_API_KEY) opts.apiKey = QDRANT_API_KEY;
   return new QdrantClient(opts);
 }
 
-async function runContractA30Pipeline(assessment, emit) {
+async function runContractA30Pipeline(assessment: any, emit: any) {
   const client = getQdrantClient();
   const collectionName = `assessment_${assessment.id}`;
 
@@ -71,7 +72,7 @@ async function runContractA30Pipeline(assessment, emit) {
     'data location processing storage countries regions',
     'service description ICT functions scope',
   ];
-  const allChunks = new Map();
+  const allChunks = new Map<string, any>();
   for (const query of queryPrompts) {
     const qv = await embeddings.embedQuery(query);
     const hits = await client.search(collectionName, {
@@ -79,7 +80,7 @@ async function runContractA30Pipeline(assessment, emit) {
       limit: 20,
       with_payload: true,
     });
-    for (const h of hits) {
+    for (const h of hits as any[]) {
       const content = h.payload?.pageContent || '';
       if (content.length > 50 && !allChunks.has(content)) {
         allChunks.set(content, {
@@ -98,10 +99,10 @@ async function runContractA30Pipeline(assessment, emit) {
 
   const contractContext = contractChunks
     .slice(0, 40)
-    .map((c, i) => `[C${i + 1}] ${c.content.slice(0, 300)}`)
+    .map((c: any, i: number) => `[C${i + 1}] ${c.content.slice(0, 300)}`)
     .join('\n\n');
 
-  const clauseList = CONTRACT_A30_CLAUSES.map((c) => `${c.ref} [${c.category}]: ${c.text}`).join(
+  const clauseList = CONTRACT_A30_CLAUSES.map((c: any) => `${c.ref} [${c.category}]: ${c.text}`).join(
     '\n'
   );
 
@@ -145,7 +146,7 @@ Produce a clause-by-clause review covering all 12 Article 30 obligations.`;
   return JSON.parse(jsonMatch[0]);
 }
 
-async function runDoraPipeline(assessment, emit) {
+async function runDoraPipeline(assessment: any, emit: any) {
   const client = getQdrantClient();
   const collectionName = `assessment_${assessment.id}`;
 
@@ -162,7 +163,7 @@ async function runDoraPipeline(assessment, emit) {
     'third party subcontractors supply chain security',
     'vulnerability management patch management penetration testing',
   ];
-  const allChunks = new Map();
+  const allChunks = new Map<string, any>();
   for (const query of queryPrompts) {
     const qv = await embeddings.embedQuery(query);
     const hits = await client.search(collectionName, {
@@ -170,7 +171,7 @@ async function runDoraPipeline(assessment, emit) {
       limit: 20,
       with_payload: true,
     });
-    for (const h of hits) {
+    for (const h of hits as any[]) {
       const content = h.payload?.pageContent || '';
       if (content.length > 50 && !allChunks.has(content)) {
         allChunks.set(content, {
@@ -186,7 +187,7 @@ async function runDoraPipeline(assessment, emit) {
   emit('Retrieving DORA obligations…', 35);
 
   // Step 2: retrieve DORA obligations
-  const domainArticles = {};
+  const domainArticles: Record<string, any> = {};
   for (const domain of DORA_DOMAINS) {
     const qv = await embeddings.embedQuery(
       `DORA obligations requirements ${domain} financial entity ICT third-party`
@@ -197,7 +198,7 @@ async function runDoraPipeline(assessment, emit) {
       with_payload: true,
       filter: { must: [{ key: 'metadata.domain', match: { value: domain } }] },
     });
-    domainArticles[domain] = hits.map((h) => ({
+    domainArticles[domain] = (hits as any[]).map((h: any) => ({
       article: h.payload?.metadata?.article || '',
       title: h.payload?.metadata?.title || '',
       obligations: h.payload?.metadata?.obligations || [],
@@ -212,13 +213,13 @@ async function runDoraPipeline(assessment, emit) {
 
   const vendorContext = vendorChunks
     .slice(0, 40)
-    .map((c, i) => `[V${i + 1}] ${c.content.slice(0, 300)}`)
+    .map((c: any, i: number) => `[V${i + 1}] ${c.content.slice(0, 300)}`)
     .join('\n\n');
 
   const doraContext = Object.entries(domainArticles)
-    .map(([domain, articles]) => {
+    .map(([domain, articles]: [string, any]) => {
       const lines = articles
-        .map((a) => `${a.article} (${a.title}): ${a.obligations.slice(0, 5).join('; ')}`)
+        .map((a: any) => `${a.article} (${a.title}): ${a.obligations.slice(0, 5).join('; ')}`)
         .join('\n');
       return `=== ${domain} ===\n${lines}`;
     })
@@ -260,29 +261,29 @@ Respond ONLY with a valid JSON object:
 // Main entry point called by the BullMQ worker
 // ---------------------------------------------------------------------------
 
-export async function runGapAnalysis({ assessmentId, userId: _userId, job }) {
+export async function runGapAnalysis({ assessmentId, userId: _userId, job }: any) {
   logger.info('Gap analysis started', { service: 'gap-analysis', assessmentId });
 
   const assessment = await assessmentRepository.findById(assessmentId);
   if (!assessment) throw new Error(`Assessment ${assessmentId} not found`);
 
-  const emit = (msg, pct) => {
+  const emit = (msg: any, pct?: any) => {
     if (job && pct !== undefined) job.updateProgress(pct).catch(() => {});
     logger.debug('Gap analysis progress', { assessmentId, msg, pct });
   };
 
   // Wait for all documents to finish indexing (max 2 min)
-  const hasUnindexed = assessment.documents.some((d) => d.status === 'uploading');
+  const hasUnindexed = assessment.documents.some((d: any) => d.status === 'uploading');
   if (hasUnindexed) {
     let attempts = 0;
     while (attempts < 12) {
       await new Promise((r) => setTimeout(r, 10000));
       const fresh = await assessmentRepository.findById(assessmentId);
-      if (fresh.documents.every((d) => d.status !== 'uploading')) break;
+      if (fresh.documents.every((d: any) => d.status !== 'uploading')) break;
       attempts++;
     }
     const finalCheck = await assessmentRepository.findById(assessmentId);
-    if (finalCheck.documents.every((d) => d.status === 'failed')) {
+    if (finalCheck.documents.every((d: any) => d.status === 'failed')) {
       throw new Error('All document indexing jobs failed — cannot run gap analysis');
     }
   }
@@ -306,7 +307,7 @@ export async function runGapAnalysis({ assessmentId, userId: _userId, job }) {
     assessment.framework === 'CONTRACT_A30' ? CONTRACT_A30_DOMAINS : DORA_DOMAINS;
 
   // Validate and normalise
-  const gaps = (result.gaps || []).map((g) => ({
+  const gaps = (result.gaps || []).map((g: any) => ({
     article: g.article || 'Unknown',
     domain: VALID_DOMAINS.includes(g.domain) ? g.domain : DEFAULT_DOMAIN,
     requirement: g.requirement || '',

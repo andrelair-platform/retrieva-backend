@@ -7,6 +7,7 @@
  * Q&A pairs.
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- LLM instances + questionnaire rows/answers are untyped scoring inputs. */
 import { createLLM } from '../config/llmProvider.js';
 import { vendorQuestionnaireRepository } from '../repositories/drizzle/VendorQuestionnaireRepository.js';
 import logger from '../config/logger.js';
@@ -17,7 +18,7 @@ const SYSTEM_PROMPT = `You are a DORA (Digital Operational Resilience Act) compl
  * Score a single question answer via LLM.
  * Returns { score, gapLevel, reasoning } or falls back to heuristic on error.
  */
-async function scoreQuestion(llm, { doraArticle, questionText, answer }) {
+async function scoreQuestion(llm: any, { doraArticle, questionText, answer }: any) {
   const userPrompt = `Article: ${doraArticle}
 Obligation: ${questionText}
 Vendor answer: ${answer}
@@ -57,7 +58,7 @@ Scoring guide:
     logger.warn('LLM scoring failed for question, using heuristic fallback', {
       service: 'questionnaire-scorer',
       doraArticle,
-      error: err.message,
+      error: err instanceof Error ? err.message : String(err),
     });
     // Heuristic fallback based on answer length
     if (answer && answer.length > 200) {
@@ -74,13 +75,13 @@ Scoring guide:
 /**
  * Generate an executive summary across all scored Q&A pairs.
  */
-async function generateSummary(llm, questionnaire) {
-  const answeredQuestions = questionnaire.questions.filter((q) => q.answer && q.answer.trim());
+async function generateSummary(llm: any, questionnaire: any) {
+  const answeredQuestions = questionnaire.questions.filter((q: any) => q.answer && q.answer.trim());
   if (answeredQuestions.length === 0) return '';
 
   const qaContext = answeredQuestions
     .map(
-      (q) =>
+      (q: any) =>
         `[${q.doraArticle}] ${q.text}\nAnswer: ${q.answer}\nScore: ${q.score}/100 (${q.gapLevel})`
     )
     .join('\n\n');
@@ -103,7 +104,7 @@ Write a 3-5 sentence executive summary of this vendor's DORA compliance posture.
     logger.warn('LLM summary generation failed', {
       service: 'questionnaire-scorer',
       questionnaireId: questionnaire.id,
-      error: err.message,
+      error: err instanceof Error ? err.message : String(err),
     });
     return `Assessment completed for ${questionnaire.vendorName}. Overall score: ${questionnaire.overallScore}/100. Manual review recommended.`;
   }
@@ -115,7 +116,7 @@ Write a 3-5 sentence executive summary of this vendor's DORA compliance posture.
  * @param {string} questionnaireId - MongoDB _id of VendorQuestionnaire
  * @param {object} [job] - BullMQ job (optional, for progress updates)
  */
-export async function runScoring(questionnaireId, job) {
+export async function runScoring(questionnaireId: string, job?: any) {
   // Worker path (no request tenant context) → explicit unscoped by-id lookup.
   const questionnaire = await vendorQuestionnaireRepository.findByIdUnscoped(questionnaireId);
 
@@ -123,7 +124,7 @@ export async function runScoring(questionnaireId, job) {
     throw new Error(`VendorQuestionnaire not found: ${questionnaireId}`);
   }
 
-  const answeredQuestions = questionnaire.questions.filter((q) => q.answer && q.answer.trim());
+  const answeredQuestions = questionnaire.questions.filter((q: any) => q.answer && q.answer.trim());
 
   logger.info('Starting questionnaire scoring', {
     service: 'questionnaire-scorer',
@@ -136,7 +137,7 @@ export async function runScoring(questionnaireId, job) {
 
   // Score all answered questions in parallel
   const scoringResults = await Promise.allSettled(
-    answeredQuestions.map((q) =>
+    answeredQuestions.map((q: any) =>
       scoreQuestion(llm, {
         doraArticle: q.doraArticle,
         questionText: q.text,
@@ -148,14 +149,14 @@ export async function runScoring(questionnaireId, job) {
   if (job) await job.updateProgress(60);
 
   // Apply results back to questions array
-  answeredQuestions.forEach((q, i) => {
+  answeredQuestions.forEach((q: any, i: number) => {
     const result = scoringResults[i];
     const scored =
       result.status === 'fulfilled'
         ? result.value
         : { score: 10, gapLevel: 'missing', reasoning: 'Scoring failed.' };
 
-    const questionInDoc = questionnaire.questions.find((dq) => dq.id === q.id);
+    const questionInDoc = questionnaire.questions.find((dq: any) => dq.id === q.id);
     if (questionInDoc) {
       questionInDoc.score = scored.score;
       questionInDoc.gapLevel = scored.gapLevel;
@@ -164,10 +165,10 @@ export async function runScoring(questionnaireId, job) {
   });
 
   // Compute overall score from all scored questions
-  const scoredQuestions = questionnaire.questions.filter((q) => q.score !== undefined);
+  const scoredQuestions = questionnaire.questions.filter((q: any) => q.score !== undefined);
   const overallScore =
     scoredQuestions.length > 0
-      ? Math.round(scoredQuestions.reduce((sum, q) => sum + q.score, 0) / scoredQuestions.length)
+      ? Math.round(scoredQuestions.reduce((sum: any, q: any) => sum + q.score, 0) / scoredQuestions.length)
       : 0;
 
   questionnaire.overallScore = overallScore;
@@ -178,7 +179,7 @@ export async function runScoring(questionnaireId, job) {
   const summaryLlm = await createLLM({ temperature: 0.2, maxTokens: 500 });
   const summary = await generateSummary(summaryLlm, questionnaire);
 
-  const categories = [...new Set(questionnaire.questions.map((q) => q.category))];
+  const categories = [...new Set(questionnaire.questions.map((q: any) => q.category))];
 
   // Persist the mutated questions + score + results (unscoped — worker path).
   await vendorQuestionnaireRepository.updateByIdUnscoped(questionnaireId, {

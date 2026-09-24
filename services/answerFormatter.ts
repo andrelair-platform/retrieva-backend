@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- LangChain formatting chains + LLM output
+   are untyped; answer/source payloads are heterogeneous. */
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { createLLM } from '../config/llm.js';
@@ -7,7 +9,7 @@ import logger from '../config/logger.js';
 // the array, since not every model honours "ONLY a JSON array" (gemma3 often
 // prefixes "Here's a breakdown:" or "I'm sorry,"). Returns null if no array can
 // be recovered — the caller falls back to a heuristic.
-export function parseJsonArrayLoose(raw) {
+export function parseJsonArrayLoose(raw: unknown) {
   if (typeof raw !== 'string') return null;
   const stripped = raw
     .replace(/```json\s*/gi, '')
@@ -29,11 +31,9 @@ export function parseJsonArrayLoose(raw) {
  * Structures RAG answers into sections, extracts key points, code examples, and suggests related topics
  */
 class AnswerFormatter {
-  constructor() {
-    this.formattingChain = null;
-    this.keyPointsChain = null;
-    this.relatedTopicsChain = null;
-  }
+  formattingChain: any = null;
+  keyPointsChain: any = null;
+  relatedTopicsChain: any = null;
 
   async init() {
     const llm = await createLLM({ purpose: 'formatter' });
@@ -103,7 +103,7 @@ Answer: {answer}`,
    * @param {string} answer - Answer text
    * @returns {Array} Code blocks with language and content
    */
-  extractCodeBlocks(answer) {
+  extractCodeBlocks(answer: string) {
     const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
     const blocks = [];
     let match;
@@ -123,7 +123,7 @@ Answer: {answer}`,
    * @param {string} answer - Answer text
    * @returns {Array} List items
    */
-  extractListItems(answer) {
+  extractListItems(answer: string) {
     const lines = answer.split('\n');
     const listItems = [];
 
@@ -156,7 +156,7 @@ Answer: {answer}`,
    * @param {string} answer - Answer text
    * @returns {Promise<Array>} Key points
    */
-  async extractKeyPoints(answer) {
+  async extractKeyPoints(answer: string) {
     if (!this.keyPointsChain) {
       await this.init();
     }
@@ -175,13 +175,13 @@ Answer: {answer}`,
     } catch (error) {
       logger.warn('Failed to extract key points', {
         service: 'answer-formatter',
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
 
     // Fallback: extract first sentence of each paragraph
-    const paragraphs = answer.split('\n\n').filter((p) => p.trim().length > 0);
-    return paragraphs.slice(0, 3).map((p) => {
+    const paragraphs = answer.split('\n\n').filter((p: any) => p.trim().length > 0);
+    return paragraphs.slice(0, 3).map((p: any) => {
       const firstSentence = p.split(/[.!?]/)[0];
       return firstSentence.length > 80 ? firstSentence.substring(0, 77) + '...' : firstSentence;
     });
@@ -193,7 +193,7 @@ Answer: {answer}`,
    * @param {string} answer - Answer text
    * @returns {Promise<Array>} Related topics
    */
-  async suggestRelatedTopics(question, answer) {
+  async suggestRelatedTopics(question: string, answer: string) {
     if (!this.relatedTopicsChain) {
       await this.init();
     }
@@ -212,7 +212,7 @@ Answer: {answer}`,
     } catch (error) {
       logger.warn('Failed to suggest related topics', {
         service: 'answer-formatter',
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
 
@@ -225,7 +225,7 @@ Answer: {answer}`,
    * @param {string} question - Original question
    * @returns {Promise<Object>} Formatted answer with structure
    */
-  async format(answer, question) {
+  async format(answer: string, question: string) {
     try {
       const codeBlocks = this.extractCodeBlocks(answer);
       const listItems = this.extractListItems(answer);
@@ -246,7 +246,7 @@ Answer: {answer}`,
         structure: {
           hasCodeBlocks: codeBlocks.length > 0,
           hasLists: listItems.length > 0,
-          paragraphCount: answer.split('\n\n').filter((p) => p.trim()).length,
+          paragraphCount: answer.split('\n\n').filter((p: any) => p.trim()).length,
         },
         codeBlocks: codeBlocks,
         listItems: listItems.length > 0 ? listItems : undefined,
@@ -266,7 +266,7 @@ Answer: {answer}`,
     } catch (error) {
       logger.error('Answer formatting failed', {
         service: 'answer-formatter',
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
 
       // Return minimal formatting on error

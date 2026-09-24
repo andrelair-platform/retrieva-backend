@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- the RAG orchestrator wires LangChain chains,
+   vector store, LLM, caches + heterogeneous doc/message payloads; these are untyped boundaries. */
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
@@ -127,7 +129,22 @@ import { conversationRepository as defaultConversationRepository } from '../repo
  * RAG Service with Dependency Injection
  */
 class RAGService {
-  constructor(dependencies = {}) {
+  _injectedLLM: any;
+  llm: any;
+  vectorStoreFactory: any;
+  retrieveRegulationDocs: any;
+  cache: any;
+  answerFormatter: any;
+  logger: any;
+  messageRepo: any;
+  conversationRepo: any;
+  retriever: any;
+  vectorStore: any;
+  rephraseChain: any;
+  _initialized: any;
+  _initPromise: any;
+
+  constructor(dependencies: Record<string, any> = {}) {
     this._injectedLLM = dependencies.llm || null;
     this.llm = null; // Will be set during init()
     this.vectorStoreFactory = dependencies.vectorStoreFactory || defaultVectorStoreFactory;
@@ -203,13 +220,13 @@ class RAGService {
     if (!this._initialized) await this.init();
   }
 
-  _convertToHistory(messages) {
-    return messages.map((msg) =>
+  _convertToHistory(messages: any) {
+    return messages.map((msg: any) =>
       msg.role === 'user' ? new HumanMessage(msg.content) : new AIMessage(msg.content)
     );
   }
 
-  async _rephraseQuery(question, history) {
+  async _rephraseQuery(question: any, history: any) {
     if (history.length === 0) return question;
 
     const rephrased = await this.rephraseChain.invoke({ input: question, chat_history: history });
@@ -221,11 +238,11 @@ class RAGService {
     return rephrased;
   }
 
-  _prepareContext(docs) {
-    const sanitizedDocs = sanitizeDocuments(docs);
-    const rawContext = formatContext(sanitizedDocs);
+  _prepareContext(docs: any) {
+    const sanitizedDocs = sanitizeDocuments(docs as any);
+    const rawContext = formatContext(sanitizedDocs as any);
     const context = sanitizeFormattedContext(rawContext);
-    const sources = formatSources(sanitizedDocs);
+    const sources = formatSources(sanitizedDocs as any);
 
     return { context, sources, sanitizedDocs };
   }
@@ -238,9 +255,9 @@ class RAGService {
    * context (workers/internal), it is a no-op — those callers are trusted.
    */
   _assertWorkspaceAuthorized(
-    workspaceId,
-    conversationOwnerId,
-    { userId, authorizedWorkspaceIds } = {}
+    workspaceId: any,
+    conversationOwnerId: any,
+    { userId, authorizedWorkspaceIds }: any = {}
   ) {
     if (!userId && !authorizedWorkspaceIds) return;
     const ws = workspaceId && workspaceId !== 'default' ? String(workspaceId) : null;
@@ -257,12 +274,12 @@ class RAGService {
     }
   }
 
-  async _resolveQdrantWorkspaceId(workspaceId) {
+  async _resolveQdrantWorkspaceId(workspaceId: any) {
     if (!workspaceId || workspaceId === 'default') return 'default';
     return String(workspaceId);
   }
 
-  async _generateAnswer(question, context, history, metadata = {}) {
+  async _generateAnswer(question: any, context: any, history: any, metadata: any = {}) {
     // Resolve the system prompt from Langfuse (label-routed) with Git fallback, and
     // Mustache-compile the context/responseInstruction into it. The rendered text is
     // a literal SystemMessage; the chat_history + user question stay LangChain-templated.
@@ -286,7 +303,7 @@ class RAGService {
       try {
         llm = await createLLM({ purpose: 'chat', ...mp });
         metadata.langfuseGeneration?.update?.({ modelParameters: mp });
-      } catch (e) {
+      } catch (e: any) {
         this.logger.warn('Request-scoped LLM build failed — using base client', {
           service: 'rag', error: e.message,
         });
@@ -310,9 +327,9 @@ class RAGService {
     };
 
     // Timeout configuration (in ms)
-    const LLM_INVOKE_TIMEOUT = parseInt(process.env.LLM_INVOKE_TIMEOUT) || 60000; // 60s default
-    const LLM_STREAM_INITIAL_TIMEOUT = parseInt(process.env.LLM_STREAM_INITIAL_TIMEOUT) || 30000; // 30s for first chunk
-    const LLM_STREAM_CHUNK_TIMEOUT = parseInt(process.env.LLM_STREAM_CHUNK_TIMEOUT) || 10000; // 10s between chunks
+    const LLM_INVOKE_TIMEOUT = parseInt(process.env.LLM_INVOKE_TIMEOUT || "", 10) || 60000; // 60s default
+    const LLM_STREAM_INITIAL_TIMEOUT = parseInt(process.env.LLM_STREAM_INITIAL_TIMEOUT || "", 10) || 30000; // 30s for first chunk
+    const LLM_STREAM_CHUNK_TIMEOUT = parseInt(process.env.LLM_STREAM_CHUNK_TIMEOUT || "", 10) || 10000; // 10s between chunks
 
     // If onEvent callback is provided, stream with timeout protection
     if (metadata.onEvent) {
@@ -330,7 +347,7 @@ class RAGService {
           metadata.onEvent('chunk', { text: chunk });
         }
         return fullResponse;
-      } catch (error) {
+      } catch (error: any) {
         if (error instanceof LLMTimeoutError) {
           this.logger.error('LLM stream timed out', {
             service: 'rag',
@@ -354,7 +371,7 @@ class RAGService {
     // Non-streaming invoke with timeout protection
     try {
       return await invokeWithTimeout(chain, invokeInput, { callbacks }, LLM_INVOKE_TIMEOUT);
-    } catch (error) {
+    } catch (error: any) {
       if (error instanceof LLMTimeoutError) {
         this.logger.error('LLM invoke timed out', {
           service: 'rag',
@@ -366,7 +383,7 @@ class RAGService {
     }
   }
 
-  async _processAnswer(response, sources, question, context = '') {
+  async _processAnswer(response: any, sources: any, question: any, context = "") {
     const judgeEvaluation = await evaluateAnswer(question, response, sources, context);
     const validation = toValidationResult(judgeEvaluation);
     const citedSources = extractCitedSources(judgeEvaluation, sources);
@@ -395,7 +412,7 @@ class RAGService {
     retrievalMetrics = null,
     startTime,
     extraData = {},
-  }) {
+  }: any) {
     // FIX #2: Output schema validation - ensure answer meets quality standards
     const outputValidation = processOutput(answer, {
       strict: false,
@@ -466,7 +483,7 @@ class RAGService {
         promptLeakDetected: sensitiveInfoScan.promptLeakDetected,
         hasCriticalLeak: sensitiveInfoScan.hasCriticalLeak,
       });
-      sanitizedAnswer = sensitiveInfoScan.text;
+      sanitizedAnswer = sensitiveInfoScan.text as string;
     }
 
     const formattedAnswer = await this.answerFormatter.format(sanitizedAnswer, question);
@@ -502,19 +519,19 @@ class RAGService {
 
     // Only cache if not blocked (don't cache low-quality blocked responses)
     // SECURITY: workspaceId required for tenant isolation
-    if (!finalResult._confidenceBlocked && workspaceId) {
+    if (!(finalResult as any)._confidenceBlocked && workspaceId) {
       await this.cache.set(question, finalResult, workspaceId, conversationId);
     }
 
     return finalResult;
   }
 
-  async _handleCacheHit(cached, requestId, workspaceId = null) {
+  async _handleCacheHit(cached: any, requestId: any, workspaceId: any = null) {
     this.logger.info('Returning cached answer', { service: 'rag', requestId, workspaceId });
     return cached;
   }
 
-  async askWithConversation(question, options = {}) {
+  async askWithConversation(question: any, options: any = {}) {
     const {
       conversationId,
       filters = null,
@@ -611,15 +628,15 @@ class RAGService {
         hasUserFilters: !!filters,
         filterConditions: qdrantFilter?.must?.length || 0,
       });
-    } catch (filterError) {
+    } catch (filterError: any) {
       this.logger.warn('Filter validation failed', {
         service: 'rag',
         error: filterError.message,
         filters,
       });
       const error = new Error(filterError.message);
-      error.statusCode = 400;
-      error.isValidationError = true;
+      (error as any).statusCode = 400;
+      (error as any).isValidationError = true;
       throw error;
     }
 
@@ -654,7 +671,7 @@ class RAGService {
       });
     }
 
-    const vendorDocs = vendorDocsRaw.map((doc) => ({
+    const vendorDocs = vendorDocsRaw.map((doc: any) => ({
       ...doc,
       metadata: { ...(doc.metadata || {}), source: doc.metadata?.source || 'vendor' },
     }));
@@ -668,7 +685,7 @@ class RAGService {
       input: { vendorDocs: vendorDocs.length, regulationDocs: regulationDocs.length },
     });
     const mergedDocs = deduplicateDocuments([...vendorDocs, ...regulationDocs]);
-    const rerankedDocs = rerankDocuments(mergedDocs, searchQuery, 15);
+    const rerankedDocs = rerankDocuments(mergedDocs as any, searchQuery, 15);
     rerankSpan.end({ output: { merged: mergedDocs.length, afterRerank: rerankedDocs.length } });
 
     retrievalSpan.end({
@@ -707,7 +724,7 @@ class RAGService {
     // Retrieval trace logging (gated by env var)
     if (process.env.LOG_RETRIEVAL_TRACE === 'true') {
       const tinyThreshold = 50;
-      const chunks = retrieval.documents.map((doc) => ({
+      const chunks = retrieval.documents.map((doc: any) => ({
         sourceId: doc.metadata?.sourceId || null,
         documentTitle: doc.metadata?.documentTitle || null,
         headingPath: doc.metadata?.heading_path || [],
@@ -764,7 +781,7 @@ class RAGService {
       // ESTIMATE (~4 chars/token) — enough for relative per-session/user consumption
       // trends in the retrieva project without a competing billing source of truth.
       const estIn = Math.ceil((question.length + (context?.length || 0)) / 4);
-      const estOut = Math.ceil((response?.length || 0) / 4);
+      const estOut = Math.ceil(((response as any)?.length || 0) / 4);
       answerGen.end({
         output: response,
         usage: { input: estIn, output: estOut, total: estIn + estOut, unit: 'TOKENS' },
@@ -781,7 +798,7 @@ class RAGService {
       // gating is sacrificed by design — only enable when answer quality is
       // already validated by other means (RAG grounding + retrieval reranking).
       if (process.env.RAG_CHAT_ASYNC_JUDGE === 'true') {
-        const citedSources = extractCitedSourcesFromText(response, sources);
+        const citedSources = extractCitedSourcesFromText(response as any, sources);
         const validation = buildSkippedJudgeValidation(citedSources.length);
 
         await this._saveMessages(conversationId, question, response);
@@ -849,7 +866,7 @@ class RAGService {
 
       // FIX #3: Stricter hallucination blocking
       // Block if hasHallucinations is true (strict mode) OR compound condition (legacy mode)
-      const hallucinationConfig = guardrailsConfig.output.hallucinationBlocking || {};
+      const hallucinationConfig: any = guardrailsConfig.output.hallucinationBlocking || {};
       const shouldBlockHallucination = hallucinationConfig.strictMode
         ? validation.hasHallucinations // Strict: block on hallucination flag alone
         : validation.hasHallucinations && !validation.isGrounded; // Legacy: compound condition
@@ -926,8 +943,8 @@ class RAGService {
         if (retryResult) {
           emit('metadata', {
             confidence: retryResult.validation?.confidence,
-            citationCount: retryResult.citedSources?.length || 0,
-            citedSources: retryResult.citedSources || [],
+            citationCount: (retryResult as any).citedSources?.length || 0,
+            citedSources: (retryResult as any).citedSources || [],
             retriedWithMoreContext: true,
           });
           emit('saved', { conversationId });
@@ -965,7 +982,7 @@ class RAGService {
       emit('done', { message: 'Streaming complete' });
 
       return result;
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error('Error generating answer', {
         service: 'rag',
         error: error.message,
@@ -993,7 +1010,7 @@ class RAGService {
     startTime,
     requestId,
     retryTimeout = guardrailsConfig.generation.retry.retryTimeoutMs,
-  }) {
+  }: any) {
     const retryStartTime = Date.now();
     this.logger.warn('Low quality answer detected - attempting retry with more sources', {
       service: 'rag',
@@ -1015,7 +1032,7 @@ class RAGService {
       // Limit documents for retry to conserve resources
       const limitedDocs = uniqueRetryDocs.slice(0, maxRetryDocs);
       const rerankedRetryDocs = rerankDocuments(
-        limitedDocs,
+        limitedDocs as any,
         searchQuery,
         Math.min(10, maxRetryDocs)
       );
@@ -1071,7 +1088,7 @@ class RAGService {
       }
 
       return null;
-    } catch (error) {
+    } catch (error: any) {
       // SECURITY FIX (LLM04): Don't let retry failures crash the request
       this.logger.error('Retry attempt failed', {
         service: 'rag',
@@ -1088,7 +1105,7 @@ class RAGService {
    * @param {Function} rawEmit - The raw emit function to wrap
    * @returns {Function} Validated emit function
    */
-  _createValidatedEmit(rawEmit) {
+  _createValidatedEmit(rawEmit: any) {
     // Keep this in sync with the events the frontend useStreaming hook handles.
     // `replace` lets the hallucination guard swap the streamed answer for a
     // safe fallback; `saved` notifies the UI that messages have been persisted.
@@ -1103,7 +1120,7 @@ class RAGService {
       'saved',
     ]);
 
-    const validatePayload = (type, data) => {
+    const validatePayload = (type: any, data?: any) => {
       if (typeof data !== 'object' || data === null) {
         return { valid: false, error: 'Payload must be an object' };
       }
@@ -1149,7 +1166,7 @@ class RAGService {
       return { valid: true };
     };
 
-    return (type, data) => {
+    return (type: any, data?: any) => {
       // Validate event type
       if (!validEventTypes.has(type)) {
         this.logger.warn('Invalid streaming event type', {
@@ -1177,7 +1194,7 @@ class RAGService {
 
       try {
         rawEmit(type, enrichedData);
-      } catch (error) {
+      } catch (error: any) {
         this.logger.error('Error emitting streaming event', {
           type,
           error: error.message,
@@ -1191,7 +1208,7 @@ class RAGService {
    * ISSUE #26 FIX: Use MongoDB transaction for atomicity
    * Ensures either both messages are saved or neither is
    */
-  async _saveMessages(conversationId, question, response) {
+  async _saveMessages(conversationId: any, question: any, response: any) {
     try {
       // Persist the user + assistant turns (staggered timestamps so order is
       // deterministic) and bump the conversation counter. Postgres statements are
@@ -1200,7 +1217,7 @@ class RAGService {
       await this.conversationRepo.incrementMessageCount(conversationId, 2);
 
       this.logger.info('Saved messages to database', { service: 'rag', conversationId });
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error('Failed to save messages', {
         service: 'rag',
         conversationId,
