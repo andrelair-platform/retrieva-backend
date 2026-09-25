@@ -77,9 +77,9 @@ export const getInviteInfo = catchAsync(async (req: Request, res: Response) => {
  */
 export const inviteMember = catchAsync(async (req: Request, res: Response) => {
   const inviterId = req.user!.userId;
-  const { email, role = 'analyst' } = req.body;
+  const { email, role = 'analyst', domainRole } = req.body;
 
-  const member = await organizationService.inviteMember(inviterId, { email, role });
+  const member = await organizationService.inviteMember(inviterId, { email, role, domainRole });
 
   sendSuccess(res, 201, 'Invitation sent', {
     member: {

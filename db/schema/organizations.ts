@@ -61,6 +61,10 @@ export const organizationMembers = pgTable(
     userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
     email: text('email').notNull(), // lowercase — enforced in the repo layer
     role: orgMemberRoleEnum('role').notNull().default('analyst'),
+    // RTV-59 AC-2 — an optional ELEVATED domain role the invite carries (e.g. ict_risk_officer /
+    // legal / dpo); on accept it becomes a role_assignment alongside the base role mapped from
+    // `role`. Nullable text (validated against ASSIGNABLE_ROLES in the service, not an enum FK).
+    invitedDomainRole: text('invited_domain_role'),
     status: memberStatusEnum('status').notNull().default('pending'),
     inviteTokenHash: text('invite_token_hash'),
     inviteTokenExpires: timestamp('invite_token_expires', { withTimezone: true }),
