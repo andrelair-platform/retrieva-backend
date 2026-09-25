@@ -1,0 +1,3 @@
+ALTER TABLE "vendor_questionnaires" ADD COLUMN "arrangement_id" uuid;--> statement-breakpoint
+ALTER TABLE "vendor_questionnaires" ADD COLUMN "revoked_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "vendor_questionnaires" ADD CONSTRAINT "vendor_questionnaires_arrangement_id_arrangements_id_fk" FOREIGN KEY ("arrangement_id") REFERENCES "public"."arrangements"("id") ON DELETE set null ON UPDATE no action;
