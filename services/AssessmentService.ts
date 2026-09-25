@@ -10,6 +10,7 @@ import * as storageModule from '../config/storage.js';
 import { generateReport } from './reportGenerator.js';
 import { deleteAssessmentCollection } from './fileIngestionService.js';
 import logger from '../config/logger.js';
+import type { FileIndexJobData, GapAnalysisJobData, ReviewReminderJobData } from '../types/jobs.js';
 
 // Preserve the legacy `_id` field in API responses (value = the uuid `id`) so existing
 // frontend consumers keep working through the Postgres cutover (RTV-49).
@@ -123,12 +124,12 @@ class AssessmentService {
         {
           assessmentId: assessment.id.toString(),
           documentIndex: i,
-          buffer: { data: Array.from(file.buffer) },
+          buffer: { data: Array.from(file.buffer) as number[] },
           fileName: file.originalname,
           fileType: documents[i].fileType,
           vendorName: vendorName.trim(),
           userId,
-        },
+        } satisfies FileIndexJobData,
         { jobId: `fileIndex-${assessment.id}-${i}`, priority: 1 }
       )
     );
@@ -136,7 +137,7 @@ class AssessmentService {
 
     await this.assessmentQueue.add(
       'gapAnalysis',
-      { assessmentId: assessment.id.toString(), userId },
+      { assessmentId: assessment.id.toString(), userId } satisfies GapAnalysisJobData,
       { jobId: `gapAnalysis-${assessment.id}`, delay: files.length * 5000, priority: 2 }
     );
 
@@ -248,7 +249,7 @@ class AssessmentService {
         if (existing) await existing.remove();
         await this.monitoringQueue.add(
           'review-reminder',
-          { workspaceId: assessment.workspaceId.toString() },
+          { workspaceId: assessment.workspaceId.toString() } satisfies ReviewReminderJobData,
           { jobId, delay: delayMs }
         );
 

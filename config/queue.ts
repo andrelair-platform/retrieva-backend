@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { Queue, type ConnectionOptions } from 'bullmq';
 import { redisConnection } from './redis.js';
 import logger from './logger.js';
+import type { AssessmentJobData, QuestionnaireJobData, MonitoringJobData } from '../types/jobs.js';
 
 // BullMQ bundles its own copy of ioredis, so the top-level ioredis instance is a
 // structurally-distinct (but runtime-identical) type — cast at this single boundary.
@@ -17,7 +18,7 @@ const REASSESSMENT_SCAN_INTERVAL_HOURS =
  * - Parsing + embedding uploaded vendor documents
  * - Running the DORA gap analysis agent after indexing
  */
-export const assessmentQueue = new Queue('assessmentJobs', {
+export const assessmentQueue = new Queue<AssessmentJobData>('assessmentJobs', {
   connection,
   defaultJobOptions: {
     attempts: 3,
@@ -39,7 +40,7 @@ export const assessmentQueue = new Queue('assessmentJobs', {
  * Queue for vendor questionnaire scoring jobs
  * Handles LLM-based per-question scoring and executive summary generation
  */
-export const questionnaireQueue = new Queue('questionnaireJobs', {
+export const questionnaireQueue = new Queue<QuestionnaireJobData>('questionnaireJobs', {
   connection,
   defaultJobOptions: {
     attempts: 3,
@@ -65,7 +66,7 @@ export const questionnaireQueue = new Queue('questionnaireJobs', {
  * - Annual review overdue alerts
  * - Assessment overdue alerts (12 months)
  */
-export const monitoringQueue = new Queue('monitoringJobs', {
+export const monitoringQueue = new Queue<MonitoringJobData>('monitoringJobs', {
   connection,
   defaultJobOptions: {
     attempts: 2,

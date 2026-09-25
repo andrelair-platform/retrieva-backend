@@ -6,13 +6,19 @@
  *  - gapAnalysis : Run the DORA gap analysis agent (implemented in Phase 3)
  */
 
-import { Worker, type ConnectionOptions } from "bullmq";
+import { Worker, type ConnectionOptions, type Job } from "bullmq";
 import { redisConnection } from '../config/redis.js';
 import { assessmentRepository } from '../repositories/index.js';
 import { ingestFile, assessmentCollectionName } from '../services/fileIngestionService.js';
 import { withTenantContext } from '../db/tenantContext.js';
 import logger from '../config/logger.js';
 import { connectPg } from '../config/db.js';
+import type {
+  AssessmentJobData,
+  FileIndexJobData,
+  GapAnalysisJobData,
+  ArrangementAssessmentJobData,
+} from '../types/jobs.js';
 
 // Ensure DB is connected when worker runs
 connectPg().catch((err: any) =>
@@ -25,7 +31,7 @@ const CONCURRENCY = parseInt(process.env.ASSESSMENT_WORKER_CONCURRENCY || "", 10
 // Job: fileIndex
 // ---------------------------------------------------------------------------
 
-async function processFileIndex(job: any) {
+async function processFileIndex(job: Job<FileIndexJobData>) {
   const {
     assessmentId,
     documentIndex,
@@ -119,7 +125,7 @@ async function processFileIndex(job: any) {
 // Job: gapAnalysis (stub — full implementation in Phase 3)
 // ---------------------------------------------------------------------------
 
-async function processGapAnalysis(job: any) {
+async function processGapAnalysis(job: Job<GapAnalysisJobData>) {
   const { assessmentId, userId } = job.data;
 
   logger.info('Gap analysis job started', {
@@ -141,7 +147,7 @@ async function processGapAnalysis(job: any) {
 // RTV-41: control-based assessment of an ARRANGEMENT (org-scoped, not workspace-scoped). Runs the
 // evidence-grounded verdict engine and persists findings. Uses organizationId/arrangementId from
 // the job (no assessmentId → the tenant-context wrapper no-ops, which is correct here).
-async function processArrangementAssessment(job: any) {
+async function processArrangementAssessment(job: Job<ArrangementAssessmentJobData>) {
   const { organizationId, arrangementId, userId } = job.data;
   logger.info('Arrangement assessment job started', {
     service: 'assessment-worker',
@@ -159,27 +165,29 @@ async function processArrangementAssessment(job: any) {
 // B2 follow-up: run each job inside its assessment's tenant context so all
 // DB work is workspace-scoped (matching request-path isolation). The bootstrap
 // lookup runs outside any context (unfiltered) purely to resolve the workspace.
-async function runInAssessmentTenantContext(job: any, fn: any) {
-  const { assessmentId, userId } = job.data;
+async function runInAssessmentTenantContext(job: Job<AssessmentJobData>, fn: () => unknown) {
+  // AssessmentJobData is a union — only fileIndex/gapAnalysis carry assessmentId; the
+  // arrangementAssessment job has none (its tenant context no-ops, which is correct).
+  const { assessmentId, userId } = job.data as { assessmentId?: string; userId: string | null };
   const doc = assessmentId
     ? await (assessmentRepository.findById as any)(assessmentId, { select: 'workspaceId', lean: true })
     : null;
   const workspaceId = doc?.workspaceId?.toString();
   if (!workspaceId) return fn();
-  return withTenantContext({ workspaceId, userId }, fn);
+  return withTenantContext({ workspaceId, userId: userId ?? undefined }, fn);
 }
 
-const worker = new Worker(
+const worker = new Worker<AssessmentJobData>(
   'assessmentJobs',
   async (job) =>
     runInAssessmentTenantContext(job, () => {
       switch (job.name) {
         case 'fileIndex':
-          return processFileIndex(job);
+          return processFileIndex(job as Job<FileIndexJobData>);
         case 'gapAnalysis':
-          return processGapAnalysis(job);
+          return processGapAnalysis(job as Job<GapAnalysisJobData>);
         case 'arrangementAssessment':
-          return processArrangementAssessment(job);
+          return processArrangementAssessment(job as Job<ArrangementAssessmentJobData>);
         default:
           logger.warn('Unknown assessment job type', { jobName: job.name, jobId: job.id });
           return undefined;
