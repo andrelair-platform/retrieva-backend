@@ -57,6 +57,13 @@
       "when": 1790300673684,
       "tag": "0007_amusing_jack_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790304722058,
+      "tag": "0008_grant_admins_checker_legal",
+      "breakpoints": true
     }
   ]
 }

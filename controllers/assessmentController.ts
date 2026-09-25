@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { catchAsync, sendSuccess, sendError } from '../utils/index.js';
 import { assessmentService } from '../services/AssessmentService.js';
+import { can } from '../services/security/can.js';
 
 const getAuthorizedIds = (req: Request) => req.authorizedWorkspaces?.map((w: any) => w._id.toString()) || [];
 
@@ -43,6 +44,11 @@ export const downloadReport = catchAsync(async (req: Request, res: Response) => 
 });
 
 export const setRiskDecision = catchAsync(async (req: Request, res: Response) => {
+  // RTV-59 / #347 — a formal risk decision is a management-body act (risk:accept: ict_risk_officer
+  // / group_risk). Roles are now assignable (RTV-59) + backfilled for existing admins (migration 0008).
+  if (!(await can(req.user, 'risk:accept', { organizationId: req.user!.organizationId ?? undefined }))) {
+    return sendError(res, 403, 'You do not have permission to record a risk decision (risk:accept required)');
+  }
   const riskDecision = await assessmentService.setRiskDecision(
     String(req.params.id),
     req.user!.userId,
@@ -53,6 +59,10 @@ export const setRiskDecision = catchAsync(async (req: Request, res: Response) =>
 });
 
 export const setClauseSignoff = catchAsync(async (req: Request, res: Response) => {
+  // RTV-59 / #347 — Art. 30 clause sign-off is a legal act (clause:signoff: legal).
+  if (!(await can(req.user, 'clause:signoff', { organizationId: req.user!.organizationId ?? undefined }))) {
+    return sendError(res, 403, 'You do not have permission to sign off contract clauses (clause:signoff required)');
+  }
   const clauseSignoffs = await assessmentService.setClauseSignoff(
     String(req.params.id),
     req.user!.userId,
