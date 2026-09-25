@@ -135,12 +135,28 @@ vi.mock('../../config/embeddings.js', () => ({
 // App (AFTER mocks)
 // ---------------------------------------------------------------------------
 
+import { randomUUID as ruuid } from 'crypto';
 import app from '../../app.js';
 import { setupTestDatabase, cleanupTestDatabase } from './setup.js';
 import { getDb } from '../../config/db.js';
+import { roleAssignments } from '../../db/schema/index.js';
 import { userRepository } from '../../repositories/drizzle/UserRepository.js';
 import { workspaceRepository } from '../../repositories/drizzle/WorkspaceRepository.js';
 import { workspaceMemberRepository } from '../../repositories/drizzle/WorkspaceMemberRepository.js';
+
+// RTV-59 / #347 — risk-decision + clause-signoff are now capability-gated. Grant the acting user
+// the checker + legal roles (registration grants no domain role). scope_id = the user's org when
+// present, else a placeholder (the scope gate is skipped when the user has no org / isolation off).
+async function grantCheckerLegal(userId) {
+  const u = await userRepository.findById(userId);
+  const scopeId = u?.organizationId || ruuid();
+  for (const role of ['ict_risk_officer', 'legal']) {
+    await getDb()
+      .insert(roleAssignments)
+      .values({ userId, scopeType: 'entity', scopeId, role, status: 'active' })
+      .onConflictDoNothing();
+  }
+}
 
 const AUTH_BASE = '/api/v1/auth';
 const ASSESSMENT_BASE = '/api/v1/assessments';
@@ -206,9 +222,11 @@ describe('Risk Decision & Clause Sign-off Integration Tests', () => {
     const u1 = await createAndLoginUser(request, user1);
     user1Token = u1.token;
     user1Id = u1.userId;
+    await grantCheckerLegal(user1Id); // #347 — user1 performs risk decisions / clause sign-offs
 
     const u2 = await createAndLoginUser(request, user2);
     user2Token = u2.token;
+    // user2 is intentionally left WITHOUT the roles — it exercises the deny paths.
 
     workspaceId = await createWorkspaceForUser(user1Id);
   }, 60000);

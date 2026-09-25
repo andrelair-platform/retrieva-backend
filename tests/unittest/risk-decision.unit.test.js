@@ -36,6 +36,11 @@ vi.mock('../../services/AssessmentService.js', () => ({
   assessmentService: mockService,
 }));
 
+// RTV-59 / #347 — the handlers are now capability-gated. Stub can() (authz is covered by
+// roleProvisioning + risk-decision integration tests); default allow, flipped per-test to prove 403.
+const mockCan = vi.hoisted(() => vi.fn());
+vi.mock('../../services/security/can.js', () => ({ can: mockCan, default: mockCan }));
+
 // ---------------------------------------------------------------------------
 // Subject imports
 // ---------------------------------------------------------------------------
@@ -67,7 +72,18 @@ function makeReqRes(bodyOverrides = {}, paramOverrides = {}) {
 // ---------------------------------------------------------------------------
 
 describe('setRiskDecision', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCan.mockResolvedValue(true);
+  });
+
+  it('returns 403 when the user lacks risk:accept', async () => {
+    mockCan.mockResolvedValue(false);
+    const { req, res, next } = makeReqRes({ decision: 'proceed' });
+    await setRiskDecision(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mockService.setRiskDecision).not.toHaveBeenCalled();
+  });
 
   it('returns 200 with riskDecision from service', async () => {
     const riskDecision = { decision: 'proceed', rationale: 'ok', setAt: new Date() };
@@ -99,7 +115,18 @@ describe('setRiskDecision', () => {
 // ---------------------------------------------------------------------------
 
 describe('setClauseSignoff', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCan.mockResolvedValue(true);
+  });
+
+  it('returns 403 when the user lacks clause:signoff', async () => {
+    mockCan.mockResolvedValue(false);
+    const { req, res, next } = makeReqRes({ clauseRef: 'Art.30(1)', status: 'accepted' });
+    await setClauseSignoff(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mockService.setClauseSignoff).not.toHaveBeenCalled();
+  });
 
   it('returns 200 with clauseSignoffs from service', async () => {
     const signoffs = [{ clauseRef: 'Art.30(1)', status: 'accepted' }];
