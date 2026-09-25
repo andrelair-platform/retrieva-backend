@@ -405,6 +405,17 @@ export const setRiskDecisionSchema = z
   })
   .strict();
 
+// RTV-55 — a checker's decision on an AI-drafted finding. `reason` is optional here (the controller
+// enforces it only when the decision OVERRIDES the AI verdict — a schema can't see the verdict).
+export const findingDecisionSchema = z
+  .object({
+    decision: z.enum(['approve', 'reject', 'reset'], {
+      message: "decision must be 'approve', 'reject', or 'reset'",
+    }),
+    reason: z.string().max(5000).optional(),
+  })
+  .strict();
+
 export const setClauseSignoffSchema = z
   .object({
     clauseRef: z.string().min(1, 'clauseRef is required').max(200),

@@ -29,6 +29,10 @@ export class FindingRepository extends BaseDrizzleRepository {
           confidence: values.confidence ?? null,
           status: values.status ?? 'draft',
           createdBy: values.createdBy ?? null,
+          // re-assessment produces a fresh AI draft → clear any prior human decision (RTV-55).
+          decidedBy: null,
+          decidedAt: null,
+          decisionReason: null,
           updatedAt: new Date(),
         },
       })
@@ -57,11 +61,27 @@ export class FindingRepository extends BaseDrizzleRepository {
     );
   }
 
-  /** Set a finding's status (draft|approved|rejected) — the human-in-the-loop decision (RTV-55). */
-  async setDecision(organizationId: string, id: string, status: string) {
+  /**
+   * Record the human decision on a finding (draft|approved|rejected) — RTV-55. The AI draft
+   * (verdict/rationale/citations) is left intact; only the decision fields change. `decidedBy` is
+   * the checker, `reason` the override justification (null when not an override).
+   */
+  async setDecision(
+    organizationId: string,
+    id: string,
+    status: string,
+    opts: { decidedBy?: string | null; reason?: string | null } = {}
+  ) {
+    const decided = status === 'draft' ? null : new Date();
     const [row] = await this.db
       .update(findings)
-      .set({ status, updatedAt: new Date() })
+      .set({
+        status,
+        decidedBy: status === 'draft' ? null : (opts.decidedBy ?? null),
+        decidedAt: decided,
+        decisionReason: status === 'draft' ? null : (opts.reason ?? null),
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(findings.id, id),

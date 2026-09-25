@@ -41,6 +41,13 @@ export const findings = pgTable(
     confidence: real('confidence'), // coverage-derived (0..1); nullable
     status: findingStatusEnum('status').notNull().default('draft'), // AI drafts; human decides
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    // ── the human decision (RTV-55, ADR §4) — preserved ALONGSIDE the AI draft (verdict/rationale/
+    // citations above), never overwriting it. `decidedBy` is the CHECKER (≠ createdBy = the maker,
+    // SoD); `decisionReason` is required when the decision OVERRIDES the AI verdict (AC-4). All null
+    // while status='draft'; reset to null on re-assessment (a new draft is undecided).
+    decidedBy: uuid('decided_by').references(() => users.id, { onDelete: 'set null' }),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decisionReason: text('decision_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
