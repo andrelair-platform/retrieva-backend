@@ -43,6 +43,13 @@
       "when": 1790053451319,
       "tag": "0005_fresh_diamondback",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790299753681,
+      "tag": "0006_remarkable_typhoid_mary",
+      "breakpoints": true
     }
   ]
 }
