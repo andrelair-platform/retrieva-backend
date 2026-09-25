@@ -1,7 +1,13 @@
 import { Router } from 'express';
-import { getPublicForm, submitResponse } from '../controllers/questionnaireController.js';
+import {
+  getPublicForm,
+  submitResponse,
+  uploadVendorEvidence,
+} from '../controllers/questionnaireController.js';
 import { validateBody, validateParams } from '../middleware/validate.js';
 import { submitQuestionnaireResponseSchema, tokenParamsSchema } from '../validators/schemas.js';
+import { requireVendorPrincipal } from '../middleware/vendorAuth.js';
+import { contractUploadMiddleware } from '../middleware/fileUpload.js';
 
 const router = Router();
 
@@ -29,6 +35,19 @@ router.post(
   validateParams(tokenParamsSchema),
   validateBody(submitQuestionnaireResponseSchema),
   submitResponse
+);
+
+/**
+ * @route  POST /api/v1/questionnaires/respond/:token/evidence
+ * @desc   Upload a supporting document (arrangement-scoped evidence) as the vendor_contact
+ * @access Public (token-gated) — requireVendorPrincipal resolves the single-arrangement principal
+ */
+router.post(
+  '/respond/:token/evidence',
+  validateParams(tokenParamsSchema),
+  requireVendorPrincipal,
+  contractUploadMiddleware,
+  uploadVendorEvidence
 );
 
 export default router;
