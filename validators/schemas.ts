@@ -523,6 +523,8 @@ export const inviteOrgMemberSchema = z
   .object({
     email: z.string().email('Invalid email address').toLowerCase(),
     role: z.enum(['org_admin', 'analyst', 'viewer']).default('analyst'),
+    // RTV-59 AC-2 — optional ELEVATED domain role granted on accept (e.g. ict_risk_officer / legal).
+    domainRole: z.enum(ASSIGNABLE_ROLE_VALUES).optional(),
   })
   .strict();
 

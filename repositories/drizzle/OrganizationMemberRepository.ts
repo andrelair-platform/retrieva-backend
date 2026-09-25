@@ -78,12 +78,19 @@ export class OrganizationMemberRepository extends BaseDrizzleRepository {
 
   // ── invite tokens (ported from the model statics) ───────────────────────────
   /** Create/refresh an invite (upsert on org+email); returns { member, rawToken }. */
-  async createInvite(organizationId: string, email: string, role: string, invitedBy: string) {
+  async createInvite(
+    organizationId: string,
+    email: string,
+    role: string,
+    invitedBy: string,
+    invitedDomainRole: string | null = null
+  ) {
     const rawToken = generateToken(32);
     const values = {
       organizationId,
       email: String(email).toLowerCase(),
       role,
+      invitedDomainRole, // RTV-59 AC-2 — elevated domain role carried to acceptance
       invitedBy,
       status: 'pending',
       inviteTokenHash: sha256(rawToken),
@@ -96,6 +103,7 @@ export class OrganizationMemberRepository extends BaseDrizzleRepository {
         target: [organizationMembers.organizationId, organizationMembers.email],
         set: {
           role: values.role,
+          invitedDomainRole: values.invitedDomainRole,
           invitedBy: values.invitedBy,
           status: 'pending',
           inviteTokenHash: values.inviteTokenHash,

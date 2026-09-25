@@ -5,17 +5,29 @@ import { safeDecrypt } from '../utils/security/fieldEncryption.js';
 import { organizationRepository } from '../repositories/index.js';
 import { organizationMemberRepository } from '../repositories/index.js';
 import { userRepository } from '../repositories/index.js';
+import { roleAssignmentRepository } from '../repositories/index.js';
 import { emailService } from './emailService.js';
 import { setupOrgBilling } from './stripeService.js';
+import { recordAudit } from './auditLogService.js';
+import { ASSIGNABLE_ROLES } from './authz/roleProvisioningService.js';
 import logger from '../config/logger.js';
 
 const VALID_ROLES = ['org_admin', 'analyst', 'viewer'];
 const TRIAL_DAYS = 20;
 
+// RTV-59 AC-2 — the base org-member role maps to a domain role on accept (mirrors the RTV-52
+// backfill), so every new member gets a role_assignment without a manual DB write.
+const BASE_DOMAIN_ROLE: Record<string, string> = {
+  org_admin: 'entity_admin',
+  analyst: 'analyst',
+  viewer: 'viewer',
+};
+
 class OrganizationService {
   organizationRepo: any;
   memberRepo: any;
   userRepo: any;
+  roleAssignmentRepo: any;
   emailService: any;
   setupOrgBilling: any;
   logger: any;
@@ -24,6 +36,7 @@ class OrganizationService {
     this.organizationRepo = deps.organizationRepo || organizationRepository;
     this.memberRepo = deps.memberRepo || organizationMemberRepository;
     this.userRepo = deps.userRepo || userRepository;
+    this.roleAssignmentRepo = deps.roleAssignmentRepo || roleAssignmentRepository;
     this.emailService = deps.emailService || emailService;
     this.setupOrgBilling = deps.setupOrgBilling || setupOrgBilling;
     this.logger = deps.logger || logger;
@@ -124,9 +137,12 @@ class OrganizationService {
     };
   }
 
-  async inviteMember(inviterId: string, { email, role = "analyst" }: any) {
+  async inviteMember(inviterId: string, { email, role = "analyst", domainRole = null }: any) {
     if (!email) throw new AppError('Email is required', 400);
     if (!VALID_ROLES.includes(role)) throw new AppError('Invalid role', 400);
+    if (domainRole && !ASSIGNABLE_ROLES.includes(domainRole)) {
+      throw new AppError(`Invalid domain role '${domainRole}'`, 400);
+    }
 
     const callerMembership = await this.memberRepo.findActiveByUserId(inviterId);
     if (!callerMembership) throw new AppError('You do not belong to an organization', 403);
@@ -141,7 +157,13 @@ class OrganizationService {
       throw new AppError('This user is already an active member', 409);
     }
 
-    const { member, rawToken } = await this.memberRepo.createInvite(orgId, email, role, inviterId);
+    const { member, rawToken } = await this.memberRepo.createInvite(
+      orgId,
+      email,
+      role,
+      inviterId,
+      domainRole
+    );
 
     const org = await this.organizationRepo.findById(orgId);
     const inviter = await this.userRepo.findById(inviterId);
@@ -200,10 +222,34 @@ class OrganizationService {
     await this.memberRepo.activate(member.id, userId);
     await this.userRepo.updateById(userId, { organizationId: member.organizationId });
 
+    // RTV-59 AC-2 — provision domain role_assignments on accept (no manual DB write): the base role
+    // mapped from the org-member role, plus any elevated role the invite carried. Idempotent + audited.
+    const orgId = member.organizationId;
+    const rolesToGrant = [BASE_DOMAIN_ROLE[member.role], member.invitedDomainRole].filter(
+      (r): r is string => Boolean(r)
+    );
+    for (const domainRole of [...new Set(rolesToGrant)]) {
+      await this.roleAssignmentRepo.assign({
+        userId,
+        scopeType: 'entity',
+        scopeId: orgId,
+        role: domainRole,
+      });
+      await recordAudit({
+        organizationId: orgId,
+        actor: userId,
+        action: 'role.assign',
+        targetType: 'user',
+        targetId: userId,
+        metadata: { role: domainRole, scopeType: 'entity', via: 'invite-accept' },
+      });
+    }
+
     this.logger.info('Org invite accepted', {
       service: 'organization',
       orgId: member.organizationId,
       userId,
+      rolesGranted: rolesToGrant,
     });
   }
 
