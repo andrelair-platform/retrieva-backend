@@ -6,13 +6,14 @@ import { catchAsync, sendSuccess } from '../utils/index.js';
  * POST /api/v1/questionnaires
  */
 export const createQuestionnaire = catchAsync(async (req: Request, res: Response) => {
-  const { vendorName, vendorEmail, vendorContactName, workspaceId } = req.body;
+  const { vendorName, vendorEmail, vendorContactName, workspaceId, arrangementId } = req.body;
 
   const questionnaire = await questionnaireService.createQuestionnaire({
     vendorName,
     vendorEmail,
     vendorContactName,
     workspaceId,
+    arrangementId,
     userId: req.user!.userId,
   });
 

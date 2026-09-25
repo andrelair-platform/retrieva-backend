@@ -27,6 +27,17 @@ export class ArrangementRepository extends BaseDrizzleRepository {
     );
   }
 
+  /**
+   * Resolve an arrangement by id with NO tenant/entity scoping — for the PUBLIC vendor portal
+   * (RTV-56), which has no authenticated user or org context and derives the organizationId FROM
+   * the arrangement bound to the invite token. Never call this on an authenticated path (use
+   * findByIdInOrg there); it deliberately bypasses isolation, so the caller must have already
+   * proven access another way (a valid, unexpired, un-revoked vendor token bound to this id).
+   */
+  async findByIdUnscoped(id: string) {
+    return this.findOne(eq(arrangements.id, id));
+  }
+
   /** Set the lifecycle state (RTV-31) — entity-scoped. */
   async setLifecycle(organizationId: string, id: string, lifecycleStatus: string) {
     const [row] = await this.db

@@ -26,7 +26,14 @@ class QuestionnaireService {
     this.logger = deps.logger || logger;
   }
 
-  async createQuestionnaire({ vendorName, vendorEmail, vendorContactName, workspaceId, userId }: any) {
+  async createQuestionnaire({
+    vendorName,
+    vendorEmail,
+    vendorContactName,
+    workspaceId,
+    arrangementId,
+    userId,
+  }: any) {
     if (!vendorName || !vendorEmail) {
       throw new AppError('Vendor name and email are required', 400);
     }
@@ -51,6 +58,7 @@ class QuestionnaireService {
     // the request tenant + require a tenant context this service doesn't rely on).
     const questionnaire = await this.questionnaireRepo.createUnscoped({
       workspaceId,
+      arrangementId: arrangementId || null, // RTV-56 — binds the vendor portal to one arrangement
       templateId: template.id,
       vendorName: vendorName.trim(),
       vendorEmail: vendorEmail.trim().toLowerCase(),

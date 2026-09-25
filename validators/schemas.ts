@@ -521,6 +521,9 @@ export const createQuestionnaireSchema = z
     vendorEmail: z.string().email('Invalid vendor email').toLowerCase(),
     vendorContactName: z.string().max(200).optional(),
     workspaceId: mongoIdSchema,
+    // RTV-56 — binds the vendor portal to ONE arrangement (optional: legacy workspace-only
+    // questionnaires omit it; the arrangement-scoped evidence upload requires it).
+    arrangementId: z.string().uuid('Invalid arrangement id').optional(),
   })
   .strict();
 

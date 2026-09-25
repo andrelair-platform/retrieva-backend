@@ -16,6 +16,7 @@ import { sql } from 'drizzle-orm';
 import { questionnaireStatusEnum } from './enums.js';
 import { workspaces } from './workspaces.js';
 import { users } from './users.js';
+import { arrangements } from './arrangements.js';
 
 export const questionnaireTemplates = pgTable(
   'questionnaire_templates',
@@ -48,8 +49,15 @@ export const vendorQuestionnaires = pgTable(
     vendorName: text('vendor_name').notNull(),
     vendorEmail: text('vendor_email').notNull(), // lowercase — repo layer
     vendorContactName: text('vendor_contact_name').notNull().default(''),
+    // RTV-56 — the vendor portal is scoped to ONE arrangement: a vendor_contact answering this
+    // questionnaire may only reach THIS arrangement's evidence, nothing else. Nullable + set-null on
+    // delete: legacy (workspace-only) questionnaires have none; the portal requires it going forward.
+    arrangementId: uuid('arrangement_id').references(() => arrangements.id, { onDelete: 'set null' }),
     token: text('token'), // public response token; unique when present
     tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }),
+    // RTV-56 — set when a firm revokes the invite before it completes; a set value denies the token
+    // regardless of expiry (revocation, AC-5).
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
     status: questionnaireStatusEnum('status').notNull().default('draft'),
     statusMessage: text('status_message').notNull().default(''),
     sentAt: timestamp('sent_at', { withTimezone: true }),
