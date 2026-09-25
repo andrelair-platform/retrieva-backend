@@ -5,7 +5,8 @@
  *  - scoreQuestionnaire: score all answered questions + generate executive summary
  */
 
-import { Worker, type ConnectionOptions } from "bullmq";
+import { Worker, type ConnectionOptions, type Job } from "bullmq";
+import type { QuestionnaireJobData, ScoreQuestionnaireJobData } from "../types/jobs.js";
 import { redisConnection } from '../config/redis.js';
 import { vendorQuestionnaireRepository } from '../repositories/index.js';
 import { runScoring } from '../services/questionnaireScorer.js';
@@ -19,7 +20,7 @@ connectPg().catch((err) =>
 
 const CONCURRENCY = parseInt(process.env.QUESTIONNAIRE_WORKER_CONCURRENCY || "", 10) || 2;
 
-async function processScoreQuestionnaire(job: any) {
+async function processScoreQuestionnaire(job: Job<ScoreQuestionnaireJobData>) {
   const { questionnaireId } = job.data;
 
   logger.info('Questionnaire scoring job started', {
@@ -44,7 +45,7 @@ async function processScoreQuestionnaire(job: any) {
 // B2 follow-up: run each job inside its questionnaire's tenant context so all
 // DB work is workspace-scoped. The bootstrap lookup runs outside any context
 // (unfiltered) purely to resolve the workspace.
-async function runInQuestionnaireTenantContext(job: any, fn: any) {
+async function runInQuestionnaireTenantContext(job: Job<QuestionnaireJobData>, fn: () => unknown) {
   const { questionnaireId } = job.data;
   const doc = questionnaireId
     ? await (vendorQuestionnaireRepository.findById as any)(questionnaireId, {
@@ -57,13 +58,13 @@ async function runInQuestionnaireTenantContext(job: any, fn: any) {
   return withTenantContext({ workspaceId }, fn);
 }
 
-const worker = new Worker(
+const worker = new Worker<QuestionnaireJobData>(
   'questionnaireJobs',
-  async (job: any) =>
+  async (job) =>
     runInQuestionnaireTenantContext(job, () => {
       switch (job.name) {
         case 'scoreQuestionnaire':
-          return processScoreQuestionnaire(job);
+          return processScoreQuestionnaire(job as Job<ScoreQuestionnaireJobData>);
         default:
           logger.warn('Unknown questionnaire job type', { jobName: job.name, jobId: job.id });
           return undefined;

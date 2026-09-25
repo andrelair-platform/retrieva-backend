@@ -22,7 +22,7 @@ const requireOrg = (req: Request, res: Response) => {
 export const runAssessment = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
-  const { arrangementId } = req.params;
+  const arrangementId = String(req.params.arrangementId);
   const job = await assessmentQueue.add('arrangementAssessment', {
     organizationId,
     arrangementId,

@@ -7,6 +7,7 @@ import { vendorQuestionnaireRepository } from '../repositories/index.js';
 import { questionnaireQueue } from '../config/queue.js';
 import { emailService } from './emailService.js';
 import logger from '../config/logger.js';
+import type { ScoreQuestionnaireJobData } from '../types/jobs.js';
 
 const TOKEN_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
@@ -220,7 +221,7 @@ class QuestionnaireService {
 
       await this.questionnaireQueue.add(
         'scoreQuestionnaire',
-        { questionnaireId: String(questionnaire.id) },
+        { questionnaireId: String(questionnaire.id) } satisfies ScoreQuestionnaireJobData,
         { jobId: `scoreQuestionnaire-${questionnaire.id}` }
       );
 

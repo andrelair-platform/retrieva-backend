@@ -6,6 +6,7 @@
  */
 
 import { Worker, type ConnectionOptions } from "bullmq";
+import type { MonitoringJobData, ReviewReminderJobData } from "../types/jobs.js";
 import { redisConnection } from '../config/redis.js';
 import {
   runMonitoringAlerts,
@@ -15,7 +16,7 @@ import {
 import { runPeriodicReassessment } from '../services/lifecycle/periodicReassessment.js';
 import logger from '../config/logger.js';
 
-const worker = new Worker(
+const worker = new Worker<MonitoringJobData>(
   'monitoringJobs',
   async (job) => {
     if (job.name === 'run-monitoring-alerts') {
@@ -30,10 +31,10 @@ const worker = new Worker(
       logger.info('Sending review reminder', {
         service: 'monitoringWorker',
         jobId: job.id,
-        workspaceId: job.data.workspaceId,
+        workspaceId: (job.data as ReviewReminderJobData).workspaceId,
       });
-      await sendReviewReminderAlert(job.data.workspaceId);
-      return { sent: true, workspaceId: job.data.workspaceId };
+      await sendReviewReminderAlert((job.data as ReviewReminderJobData).workspaceId);
+      return { sent: true, workspaceId: (job.data as ReviewReminderJobData).workspaceId };
     } else if (job.name === 'run-periodic-reassessment') {
       logger.info('Running periodic re-assessment scan', {
         service: 'monitoringWorker',
