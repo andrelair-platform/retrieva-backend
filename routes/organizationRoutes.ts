@@ -9,6 +9,11 @@ import {
   getMembers,
   removeMember,
 } from '../controllers/organizationController.js';
+import {
+  listRoleAssignments,
+  assignRole,
+  revokeRole,
+} from '../controllers/roleAssignmentController.js';
 import { validateBody, validateParams, validateQuery } from '../middleware/validate.js';
 import {
   createOrganizationSchema,
@@ -16,6 +21,8 @@ import {
   acceptOrgInviteSchema,
   orgInviteInfoQuerySchema,
   memberIdParamsSchema,
+  assignRoleSchema,
+  listRoleAssignmentsQuerySchema,
 } from '../validators/schemas.js';
 
 const router = express.Router();
@@ -39,6 +46,26 @@ router.delete(
   authenticate,
   validateParams(memberIdParamsSchema),
   removeMember
+);
+
+// Domain-role provisioning (RTV-59) — can('user:manage')-gated in the controller.
+router.get(
+  '/role-assignments',
+  authenticate,
+  validateQuery(listRoleAssignmentsQuerySchema),
+  listRoleAssignments
+);
+router.post(
+  '/role-assignments',
+  authenticate,
+  validateBody(assignRoleSchema),
+  assignRole
+);
+router.delete(
+  '/role-assignments',
+  authenticate,
+  validateBody(assignRoleSchema),
+  revokeRole
 );
 
 export default router;

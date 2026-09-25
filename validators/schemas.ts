@@ -405,6 +405,33 @@ export const setRiskDecisionSchema = z
   })
   .strict();
 
+// RTV-59 — domain-role provisioning. `role` is restricted to the entity-scope working roles that
+// are assignable via the admin endpoint (group_* + external vendor_contact are excluded).
+export const ASSIGNABLE_ROLE_VALUES = [
+  'entity_admin',
+  'analyst',
+  'ict_risk_officer',
+  'legal',
+  'dpo',
+  'business_owner',
+  'auditor',
+  'viewer',
+] as const;
+
+export const assignRoleSchema = z
+  .object({
+    userId: z.string().uuid('Invalid user id'),
+    role: z.enum(ASSIGNABLE_ROLE_VALUES, {
+      message: `role must be one of: ${ASSIGNABLE_ROLE_VALUES.join(', ')}`,
+    }),
+  })
+  .strict();
+
+// GET query — NOT strict (GET endpoints commonly receive extra params).
+export const listRoleAssignmentsQuerySchema = z.object({
+  userId: z.string().uuid('Invalid user id'),
+});
+
 // RTV-55 — a checker's decision on an AI-drafted finding. `reason` is optional here (the controller
 // enforces it only when the decision OVERRIDES the AI verdict — a schema can't see the verdict).
 export const findingDecisionSchema = z
