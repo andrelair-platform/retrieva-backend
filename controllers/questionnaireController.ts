@@ -91,6 +91,27 @@ export const deleteQuestionnaire = catchAsync(async (req: Request, res: Response
 });
 
 /**
+ * POST /api/v1/questionnaires/:id/revoke  (RTV-56 — staff, workspace-gated)
+ */
+export const revokeQuestionnaire = catchAsync(async (req: Request, res: Response) => {
+  const authorizedWorkspaceIds = req.authorizedWorkspaces?.map((w: any) => w._id.toString()) || [];
+
+  const questionnaire = await questionnaireService.revokeQuestionnaire(
+    String(req.params.id),
+    req.user!.userId,
+    authorizedWorkspaceIds
+  );
+
+  sendSuccess(res, 200, 'Questionnaire invitation revoked', {
+    questionnaire: {
+      id: questionnaire.id,
+      status: questionnaire.status,
+      revokedAt: questionnaire.revokedAt,
+    },
+  });
+});
+
+/**
  * POST /api/v1/questionnaires/:id/send
  */
 export const sendQuestionnaire = catchAsync(async (req: Request, res: Response) => {

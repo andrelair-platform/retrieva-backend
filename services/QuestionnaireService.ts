@@ -128,6 +128,35 @@ class QuestionnaireService {
     });
   }
 
+  /**
+   * Revoke a questionnaire invite (RTV-56 AC-5). Sets `revokedAt` so resolveVendorPrincipal denies
+   * the token from now on (the vendor's access ends immediately). The token value is kept so the
+   * denial is the informative `revoked` reason rather than a bare not-found. Workspace-gated.
+   */
+  async revokeQuestionnaire(id: string, userId: string, authorizedWorkspaceIds: any) {
+    const questionnaire = await this.questionnaireRepo.findByIdUnscoped(id);
+    if (!questionnaire) throw new AppError('Questionnaire not found', 404);
+    if (!authorizedWorkspaceIds.includes(String(questionnaire.workspaceId))) {
+      throw new AppError('Access denied', 403);
+    }
+    if (questionnaire.revokedAt) {
+      throw new AppError('This questionnaire invitation is already revoked', 400);
+    }
+
+    const updated = await this.questionnaireRepo.updateByIdUnscoped(questionnaire.id, {
+      revokedAt: new Date(),
+      statusMessage: 'Invitation revoked',
+    });
+
+    this.logger.info('VendorQuestionnaire revoked', {
+      service: 'questionnaire-service',
+      questionnaireId: id,
+      userId,
+    });
+
+    return updated;
+  }
+
   async sendQuestionnaire(id: string, { userName, userEmail }: any, authorizedWorkspaces: any) {
     const authorizedWorkspaceIds = authorizedWorkspaces.map((w: any) => String(w._id));
     const questionnaire = await this.questionnaireRepo.findByIdUnscoped(id);

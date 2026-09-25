@@ -5,6 +5,7 @@ import {
   getQuestionnaire,
   deleteQuestionnaire,
   sendQuestionnaire,
+  revokeQuestionnaire,
 } from '../controllers/questionnaireController.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireWorkspaceAccess } from '../middleware/workspaceAuth.js';
@@ -75,6 +76,19 @@ router.post(
   validateParams(idParamsSchema),
   validateBody(sendQuestionnaireSchema),
   sendQuestionnaire
+);
+
+/**
+ * @route  POST /api/v1/questionnaires/:id/revoke
+ * @desc   Revoke a vendor invitation — ends the vendor's token access immediately (RTV-56)
+ * @access Private
+ */
+router.post(
+  '/:id/revoke',
+  authenticate,
+  requireWorkspaceAccess,
+  validateParams(idParamsSchema),
+  revokeQuestionnaire
 );
 
 /**
