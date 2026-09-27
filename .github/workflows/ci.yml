@@ -68,6 +68,11 @@ jobs:
       - name: Typecheck (strict, allowJs:false — RTV-25 folded)
         run: npm run typecheck
 
+      # RTV-40 clause→control mapping regression gate — deterministic (no LLM, no DB), so it runs
+      # here fail-fast: a library-pattern edit that degrades mapping precision/recall fails the build.
+      - name: Clause→control mapping eval gate
+        run: npm run evaluate:clause-mapping
+
       - name: Unit + integration tests
         run: npm run test:coverage
         env:

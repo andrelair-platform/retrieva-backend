@@ -1,0 +1,150 @@
+{
+  "description": "RTV-40 labelled clause->control eval set. Each case is a contract clause and the DORA controls it AFFECTS (expectedControls, by control-library id). The eval harness (scripts/evaluateClauseMapping.js) + the CI gate (tests/unittest/clauseMapping.test.js) measure the deterministic PATTERN mapper's precision/recall against these labels, so mapping quality can't silently regress when the library patterns change. Model-free by design; the LLM-assist path is exercised separately by unit tests.",
+  "libraryVersion": "1.0.0",
+  "cases": [
+    {
+      "id": "sla-1",
+      "clause": "The Provider shall meet the service level targets set out in Schedule B, including quantitative and qualitative performance targets measured monthly.",
+      "source": "Schedule B, §2.1",
+      "expectedControls": ["DORA-30.2e-SLA"]
+    },
+    {
+      "id": "audit-1",
+      "clause": "The Financial Entity shall have the right to audit the Provider, including unrestricted rights of access and on-site inspection of the Provider's premises.",
+      "source": "Clause 14",
+      "expectedControls": ["DORA-30.3e-AUDIT-RIGHTS"]
+    },
+    {
+      "id": "audit-2",
+      "clause": "The Provider shall permit pooled audits organised jointly by several financial entities relying on the same service.",
+      "source": "Clause 14.3",
+      "expectedControls": ["DORA-30.3e-AUDIT-RIGHTS"]
+    },
+    {
+      "id": "exit-1",
+      "clause": "The Financial Entity maintains an exit strategy and a documented exit plan enabling transition to an alternative provider without disruption.",
+      "source": "Governance Policy §7",
+      "expectedControls": ["DORA-28.8-EXIT-STRATEGY"]
+    },
+    {
+      "id": "security-1",
+      "clause": "The Provider shall maintain ICT security measures aligned with recognised security standards, and holds ISO 27001 certification and a SOC 2 Type II report.",
+      "source": "Schedule D, §1",
+      "expectedControls": ["DORA-30.3d-ICT-SECURITY"]
+    },
+    {
+      "id": "bcp-1",
+      "clause": "The Provider shall maintain a business continuity plan and disaster recovery arrangements, subject to annual resilience testing.",
+      "source": "Schedule D, §4",
+      "expectedControls": ["DORA-30.3c-BCP"]
+    },
+    {
+      "id": "subco-1",
+      "clause": "Subcontracting of the services requires prior notification of changes to any subprocessors, and the Financial Entity retains a right to object.",
+      "source": "Clause 9",
+      "expectedControls": ["DORA-30.SUBCONTRACTING"]
+    },
+    {
+      "id": "incident-1",
+      "clause": "The Provider shall provide assistance in the case of an ICT incident and ensure prompt notification of incidents affecting the services.",
+      "source": "Clause 11",
+      "expectedControls": ["DORA-30.2f-INCIDENT-ASSISTANCE"]
+    },
+    {
+      "id": "incident-2",
+      "clause": "The Provider shall maintain an incident response capability available to the Financial Entity at no additional cost.",
+      "source": "Clause 11.2",
+      "expectedControls": ["DORA-30.2f-INCIDENT-ASSISTANCE"]
+    },
+    {
+      "id": "datloc-1",
+      "clause": "This clause specifies the regions or countries where data is to be processed and the storage location of all backups.",
+      "source": "Schedule E, §2",
+      "expectedControls": ["DORA-30.2b-DATA-LOCATION"]
+    },
+    {
+      "id": "datloc-2",
+      "clause": "All processing shall take place only at the storage location approved in writing by the Financial Entity.",
+      "source": "Schedule E, §3",
+      "expectedControls": ["DORA-30.2b-DATA-LOCATION"]
+    },
+    {
+      "id": "dataprot-1",
+      "clause": "The Provider shall ensure the availability, authenticity, integrity and confidentiality of personal data processed under this agreement.",
+      "source": "Schedule E, §5",
+      "expectedControls": ["DORA-30.2c-DATA-PROTECTION"]
+    },
+    {
+      "id": "termrights-1",
+      "clause": "The Financial Entity has the right to terminate the agreement for material breach subject to a thirty-day notice period.",
+      "source": "Clause 12.1",
+      "expectedControls": ["DORA-30.2h-TERMINATION-RIGHTS"]
+    },
+    {
+      "id": "termrights-2",
+      "clause": "Either party may exercise its termination rights in the circumstances described in clause 12.",
+      "source": "Clause 12.4",
+      "expectedControls": ["DORA-30.2h-TERMINATION-RIGHTS"]
+    },
+    {
+      "id": "transition-1",
+      "clause": "Upon termination, the Provider shall provide exit assistance during a transition period, including the return and deletion of data and support for data portability.",
+      "source": "Clause 13",
+      "expectedControls": ["DORA-30.2i-TRANSITION-ASSISTANCE"]
+    },
+    {
+      "id": "strategy-1",
+      "clause": "The management body has adopted a third-party risk strategy and a policy on the use of ICT services supporting the firm's key activities.",
+      "source": "Governance Policy §1",
+      "expectedControls": ["DORA-28.2-STRATEGY"]
+    },
+    {
+      "id": "register-1",
+      "clause": "The Financial Entity maintains a register of information covering all contractual arrangements supporting each critical or important function.",
+      "source": "Governance Policy §3",
+      "expectedControls": ["DORA-28.3-REGISTER"]
+    },
+    {
+      "id": "dd-1",
+      "clause": "Prior to entering the arrangement the Financial Entity performs due diligence and a risk assessment prior to contracting, and checks for any conflict of interest.",
+      "source": "Governance Policy §4",
+      "expectedControls": ["DORA-28.4-DUE-DILIGENCE"]
+    },
+    {
+      "id": "monitoring-1",
+      "clause": "The Financial Entity conducts ongoing monitoring of the Provider, including a periodic service performance review measuring performance against agreed metrics.",
+      "source": "Governance Policy §6",
+      "expectedControls": ["DORA-28.7-MONITORING"]
+    },
+    {
+      "id": "svcdesc-1",
+      "clause": "Schedule A sets out a full description of the services and the scope of services, listing the functions to be provided by the Provider.",
+      "source": "Schedule A, §1",
+      "expectedControls": ["DORA-30.2a-SERVICE-DESCRIPTION"]
+    },
+    {
+      "id": "authority-1",
+      "clause": "The Provider agrees to cooperate with the competent authorities and any resolution authorities, ensuring full regulatory cooperation.",
+      "source": "Clause 15",
+      "expectedControls": ["DORA-30.2g-AUTHORITY-COOPERATION"]
+    },
+    {
+      "id": "slafull-1",
+      "clause": "This schedule forms the full service level agreement, sets precise quantitative service targets, and provides for updates and revisions on an annual basis.",
+      "source": "Schedule B, §1",
+      "expectedControls": ["DORA-30.3a-SLA-FULL", "DORA-30.2e-SLA"]
+    },
+    {
+      "id": "negative-govlaw",
+      "clause": "This Agreement is governed by the laws of France and any dispute shall be submitted to the exclusive jurisdiction of the courts of Paris.",
+      "source": "Clause 20",
+      "expectedControls": []
+    },
+    {
+      "id": "negative-fees",
+      "clause": "The total fees payable under this Agreement are set out in Schedule C and shall be invoiced monthly in arrears within thirty days.",
+      "source": "Schedule C",
+      "expectedControls": []
+    }
+  ]
+}
