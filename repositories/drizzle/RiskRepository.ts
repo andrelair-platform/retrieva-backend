@@ -50,6 +50,36 @@ export class RiskRepository extends BaseDrizzleRepository {
       )
     );
   }
+
+  /**
+   * Advance a risk through the remediation lifecycle. The caller validates the transition + the
+   * capability (riskLifecycle.ts); this persists the new status and the appended remediation log
+   * (the immutable per-transition trail lives in `remediation` + the audit log).
+   */
+  async setStatus(
+    organizationId: string,
+    id: string,
+    status: string,
+    values: { remediation?: unknown[]; ownerId?: string | null } = {}
+  ) {
+    const [row] = await this.db
+      .update(risks)
+      .set({
+        status,
+        ...(values.remediation !== undefined ? { remediation: values.remediation } : {}),
+        ...(values.ownerId !== undefined ? { ownerId: values.ownerId } : {}),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(risks.id, id),
+          eq(risks.organizationId, organizationId),
+          entityScopeCondition(risks.organizationId, { action: 'risk:read' })
+        )
+      )
+      .returning();
+    return row ?? null;
+  }
 }
 
 export const riskRepository = new RiskRepository();

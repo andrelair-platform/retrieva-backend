@@ -15,6 +15,7 @@ import { can } from '../../services/security/can.js';
 import {
   decideFinding,
   getRisks,
+  updateRiskStatus,
 } from '../../modules/arrangementAssessment/arrangementAssessment.controller.js';
 import { CAPABILITY_MAP_VERSION } from '../../config/authz/capabilities.js';
 
@@ -52,6 +53,17 @@ const mkChecker = async () => {
     .where(sql`id = ${c.id}`);
   await seedRole(c.id, orgA.id, 'ict_risk_officer');
   return { userId: c.id, organizationId: orgA.id, platformAdmin: false };
+};
+
+// an analyst holds risk:manage (remediation) but NOT risk:accept (the checker's).
+const mkAnalyst = async () => {
+  const a = await mkUser();
+  await db
+    .update(users)
+    .set({ organizationId: orgA.id })
+    .where(sql`id = ${a.id}`);
+  await seedRole(a.id, orgA.id, 'analyst');
+  return { userId: a.id, organizationId: orgA.id, platformAdmin: false };
 };
 
 let db, userA, orgA, graphA, finding;
@@ -337,6 +349,91 @@ describe('RTV-55 findings approval (real pg)', () => {
       expect(res.statusCode).toBe(200);
       expect(res.body.data.risks).toHaveLength(1);
       expect(res.body.data.risks[0].controlId).toBe('DORA-30.3d-ICT-SECURITY');
+    });
+  });
+
+  // ── RTV-43 follow-up: the risk remediation lifecycle (manage vs accept, SoD) ─────────────────
+  describe('RTV-43 risk lifecycle', () => {
+    // open a fresh risk by approving a non_compliant finding as a checker; return the risk row.
+    const openRisk = async (controlId = 'DORA-30.3d-ICT-SECURITY') => {
+      const checker = await mkChecker();
+      const gap = await findingRepository.upsertForControl({
+        organizationId: orgA.id,
+        arrangementId: graphA.arrangements.franceClaims.id,
+        controlId,
+        libraryVersion: '1.0.0',
+        verdict: 'non_compliant',
+        status: 'draft',
+      });
+      const res = await invoke(decideFinding, {
+        user: checker,
+        params: { arrangementId: gap.arrangementId, findingId: gap.id },
+        body: { decision: 'approve', reason: 'accepted with remediation plan' },
+      });
+      return res.body.data.risk;
+    };
+
+    it('an analyst (risk:manage) can progress open → mitigating; the log + audit record it', async () => {
+      const risk = await openRisk();
+      const analyst = await mkAnalyst();
+      const res = await invoke(updateRiskStatus, {
+        user: analyst,
+        params: { arrangementId: risk.arrangementId, riskId: risk.id },
+        body: { status: 'mitigating', reason: 'owner assigned' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data.risk.status).toBe('mitigating');
+      expect(res.body.data.risk.remediation).toHaveLength(1);
+      expect(res.body.data.risk.remediation[0]).toMatchObject({ from: 'open', to: 'mitigating' });
+
+      const audit = await auditLogRepository.listByOrg(orgA.id);
+      expect(
+        audit.find((a) => a.action === 'risk.mitigating' && a.targetId === risk.id)
+      ).toBeTruthy();
+    });
+
+    it('an analyst CANNOT accept a risk (risk:accept is the checker’s) → 403', async () => {
+      const risk = await openRisk();
+      const analyst = await mkAnalyst();
+      const res = await invoke(updateRiskStatus, {
+        user: analyst,
+        params: { arrangementId: risk.arrangementId, riskId: risk.id },
+        body: { status: 'accepted', reason: 'residual risk tolerable' },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.body.message).toMatch(/permission to accept/i);
+    });
+
+    it('a checker accepts a risk WITH a rationale → 200; WITHOUT → 400', async () => {
+      const risk = await openRisk();
+      const checker = await mkChecker();
+      const denied = await invoke(updateRiskStatus, {
+        user: checker,
+        params: { arrangementId: risk.arrangementId, riskId: risk.id },
+        body: { status: 'accepted' },
+      });
+      expect(denied.statusCode).toBe(400);
+      expect(denied.body.message).toMatch(/reason is required to accept/i);
+
+      const ok = await invoke(updateRiskStatus, {
+        user: checker,
+        params: { arrangementId: risk.arrangementId, riskId: risk.id },
+        body: { status: 'accepted', reason: 'management body accepts the residual risk' },
+      });
+      expect(ok.statusCode).toBe(200);
+      expect(ok.body.data.risk.status).toBe('accepted');
+    });
+
+    it('rejects an illegal transition (open → mitigated) with 400', async () => {
+      const risk = await openRisk();
+      const analyst = await mkAnalyst();
+      const res = await invoke(updateRiskStatus, {
+        user: analyst,
+        params: { arrangementId: risk.arrangementId, riskId: risk.id },
+        body: { status: 'mitigated' },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.body.message).toMatch(/cannot transition/i);
     });
   });
 });
