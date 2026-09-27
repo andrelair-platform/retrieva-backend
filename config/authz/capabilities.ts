@@ -14,7 +14,9 @@
  * The role→action rows below are the full v1 policy; bump CAPABILITY_MAP_VERSION on change.
  */
 
-export const CAPABILITY_MAP_VERSION = '1.0.0';
+// 1.1.0 (RTV-43): added the `risk:manage` verb — remediation-loop progress (open → mitigating →
+// mitigated → closed), kept distinct from `risk:accept` (the formal management-body acceptance).
+export const CAPABILITY_MAP_VERSION = '1.1.0';
 
 // Convenience: every resource, read-only (auditor / read roles).
 const READ_ALL = {
@@ -38,6 +40,7 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
     user: ['manage'],
     assessment: ['read', 'create', 'edit', 'delete'],
     finding: ['read', 'create', 'edit'],
+    risk: ['read', 'manage'],
     evidence: ['read', 'upload', 'classify', 'delete'],
     arrangement: ['read', 'create', 'edit'],
     register: ['read', 'export'],
@@ -45,7 +48,7 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
   group_risk: {
     ...READ_ALL,
     finding: ['read', 'approve'],
-    risk: ['read', 'accept'],
+    risk: ['read', 'accept', 'manage'],
     register: ['read', 'export', 'attest'],
   },
   group_compliance: {
@@ -62,14 +65,17 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
     workspace: ['read', 'manage', 'invite'],
     assessment: ['read', 'create', 'edit', 'delete'],
     finding: ['read', 'create', 'edit'],
+    risk: ['read', 'manage'],
     evidence: ['read', 'upload', 'classify', 'delete'],
     arrangement: ['read', 'create', 'edit'],
     register: ['read', 'export'],
   },
   analyst: {
-    // the "maker": drafts assessments + collects evidence
+    // the "maker": drafts assessments + collects evidence + works the remediation loop (but the
+    // formal risk ACCEPTANCE is the checker's — analyst has risk:manage, not risk:accept).
     assessment: ['read', 'create', 'edit'],
     finding: ['read', 'create', 'edit'], // draft only; approve is the checker (SoD, RTV-55)
+    risk: ['read', 'manage'],
     evidence: ['read', 'upload', 'classify'],
     arrangement: ['read', 'create', 'edit'],
     register: ['read'],
@@ -79,7 +85,7 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
     // the "checker": signs off findings / risk acceptance (management-body delegate)
     ...READ_ALL,
     finding: ['read', 'approve'],
-    risk: ['read', 'accept'],
+    risk: ['read', 'accept', 'manage'],
     register: ['read', 'export', 'attest'],
   },
   legal: {

@@ -4,10 +4,11 @@ import {
   getFindings,
   decideFinding,
   getRisks,
+  updateRiskStatus,
 } from './arrangementAssessment.controller.js';
 import { authenticate } from '../../middleware/auth.js';
 import { validateBody } from '../../middleware/validate.js';
-import { findingDecisionSchema } from '../../validators/schemas.js';
+import { findingDecisionSchema, riskStatusUpdateSchema } from '../../validators/schemas.js';
 
 // Assessment engine (RTV-41). ORG-scoped, arrangement-centric — resolve applicable controls
 // (RTV-39) → gather evidence (RTV-37) → evidence-grounded, cited verdicts (ADR §5). Mounted with
@@ -30,5 +31,14 @@ router.patch(
 
 // GET /api/v1/arrangements/:arrangementId/risks — the remediation loop (approved gaps) (RTV-43)
 router.get('/:arrangementId/risks', authenticate, getRisks);
+
+// PATCH /api/v1/arrangements/:arrangementId/risks/:riskId — advance the risk lifecycle (RTV-43):
+// manage (progress) vs accept (management-body sign-off) are capability-gated in the handler.
+router.patch(
+  '/:arrangementId/risks/:riskId',
+  authenticate,
+  validateBody(riskStatusUpdateSchema),
+  updateRiskStatus
+);
 
 export default router;
