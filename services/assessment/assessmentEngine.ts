@@ -20,6 +20,7 @@ import { recordAudit } from '../auditLogService.js';
 import { startTrace } from '../../config/tracing.js';
 import logger from '../../config/logger.js';
 import { assessControl } from './verdict.js';
+import { computeCoverage } from './coverage.js';
 import { evidenceRetriever } from './evidenceRetriever.js';
 import { makeVerdictJudge } from './verdictLlm.js';
 
@@ -94,6 +95,10 @@ export async function assessArrangement(
     findings.push(finding);
   }
 
+  // Arrangement-level coverage (RTV-42, ADR §5): "control/evidence coverage", never "% compliant";
+  // confidence is evidence-derived, and insufficient-evidence controls drag it down (honest number).
+  const coverage = computeCoverage(findings);
+
   // Record the assessment run in the immutable audit trail (RTV-37).
   await recordAudit({
     organizationId,
@@ -102,18 +107,27 @@ export async function assessArrangement(
     targetType: 'arrangement',
     targetId: arrangementId,
     evidenceRefs: [],
-    metadata: { libraryVersion, cif, verdictBreakdown: breakdown },
+    metadata: {
+      libraryVersion,
+      cif,
+      verdictBreakdown: breakdown,
+      coverage: coverage.coverage,
+      confidence: coverage.confidence,
+      applicableControls: coverage.applicableControls,
+    },
   });
 
-  trace.update?.({ output: { libraryVersion, breakdown } });
+  trace.update?.({ output: { libraryVersion, breakdown, coverage } });
   logger.info('assessment run complete', {
     service: 'assessment-engine',
     arrangementId,
     libraryVersion,
     breakdown,
+    coverage: coverage.coverage,
+    confidence: coverage.confidence,
   });
 
-  return { libraryVersion, cif, breakdown, findings };
+  return { libraryVersion, cif, breakdown, coverage, findings };
 }
 
 export const assessmentEngine = { assessArrangement };
