@@ -12,6 +12,7 @@ import {
 import { CAPABILITY_MAP_VERSION } from '../../config/authz/capabilities.js';
 import { recordAudit } from '../../services/auditLogService.js';
 import { markFindingStaleness } from '../../services/assessment/verdict.js';
+import { computeCoverage } from '../../services/assessment/coverage.js';
 
 // The assessment engine is ORG-scoped and arrangement-centric (RTV-41). Every handler keys off
 // req.user!.organizationId — never a caller-supplied org — so tenants can't cross. Row-level
@@ -50,7 +51,14 @@ export const getFindings = catchAsync(async (req: Request, res: Response) => {
     evidenceRepository.resolveForArrangement(organizationId, String(req.params.arrangementId)),
   ]);
   const { findings: withStaleness, staleCount } = markFindingStaleness(findings, evidence);
-  sendSuccess(res, 200, 'Assessment findings', { findings: withStaleness, staleCount });
+  // Arrangement-level coverage metric (RTV-42): "control/evidence coverage" + evidence-derived
+  // confidence + the per-control breakdown — so the UI shows an honest number, never "% compliant".
+  const coverage = computeCoverage(findings);
+  sendSuccess(res, 200, 'Assessment findings', {
+    findings: withStaleness,
+    staleCount,
+    coverage,
+  });
 });
 
 // PATCH /api/v1/arrangements/:arrangementId/findings/:findingId — the human-in-the-loop decision
