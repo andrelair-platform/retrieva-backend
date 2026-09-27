@@ -5,6 +5,11 @@ import { findingRepository, evidenceRepository, riskRepository } from '../../rep
 import { can } from '../../services/security/can.js';
 import { verdictWarrantsRisk, buildRiskFromFinding } from '../../services/assessment/findingRisk.js';
 import {
+  canTransition,
+  capabilityForTransition,
+  isAcceptance,
+} from '../../services/assessment/riskLifecycle.js';
+import {
   DECISION_STATUS,
   isSelfApproval,
   isVerdictOverride,
@@ -177,4 +182,68 @@ export const getRisks = catchAsync(async (req: Request, res: Response) => {
     String(req.params.arrangementId)
   );
   sendSuccess(res, 200, 'Arrangement risks', { risks });
+});
+
+// PATCH /api/v1/arrangements/:arrangementId/risks/:riskId — advance a risk through the remediation
+// lifecycle (RTV-43 follow-up). Progress transitions (mitigating/mitigated/closed/reopen) need
+// `risk:manage`; the formal ACCEPTANCE (→ accepted) is the management-body decision, needs
+// `risk:accept` + a rationale (SoD, mirroring the finding override). Each transition appends to the
+// risk's remediation log and writes an immutable audit entry.
+export const updateRiskStatus = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  const status = req.body?.status as string;
+  const reason: string | undefined =
+    typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim() : undefined;
+
+  const risk = await riskRepository.findByIdInOrg(organizationId, String(req.params.riskId));
+  if (!risk || risk.arrangementId !== req.params.arrangementId) {
+    return sendError(res, 404, 'Risk not found');
+  }
+
+  // 1) valid transition on the state machine.
+  if (!canTransition(risk.status, status)) {
+    return sendError(res, 400, `Cannot transition a risk from '${risk.status}' to '${status}'`);
+  }
+
+  // 2) capability gate — accept vs manage (SoD: acceptance is the checker's alone).
+  const capability = capabilityForTransition(status);
+  if (!(await can(req.user, capability, { organizationId }))) {
+    return sendError(res, 403, `You do not have permission to ${capability.split(':')[1]} risks`);
+  }
+
+  // 3) the acceptance decision must carry a rationale (management-body accountability).
+  if (isAcceptance(status) && !reason) {
+    return sendError(res, 400, 'A reason is required to accept a risk');
+  }
+
+  // append the transition to the immutable-per-entry remediation log.
+  const log = Array.isArray(risk.remediation) ? risk.remediation : [];
+  const entry = {
+    at: new Date().toISOString(),
+    by: req.user!.userId,
+    from: risk.status,
+    to: status,
+    reason: reason ?? null,
+  };
+  const updated = await riskRepository.setStatus(organizationId, risk.id, status, {
+    remediation: [...log, entry],
+  });
+  await recordAudit({
+    organizationId,
+    actor: req.user!.userId,
+    action: `risk.${status}`,
+    targetType: 'risk',
+    targetId: risk.id,
+    evidenceRefs: [risk.controlId],
+    metadata: {
+      arrangementId: risk.arrangementId,
+      findingId: risk.findingId,
+      from: risk.status,
+      to: status,
+      reason: reason ?? null,
+      capability,
+    },
+  });
+  sendSuccess(res, 200, 'Risk updated', { risk: updated });
 });

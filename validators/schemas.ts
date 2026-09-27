@@ -443,6 +443,18 @@ export const findingDecisionSchema = z
   })
   .strict();
 
+// RTV-43 risk lifecycle — advance a risk through the remediation loop. `reason` is required for the
+// `accepted` transition (the management-body acceptance rationale); enforced in the controller since
+// the schema can't know the source status. Transition validity is checked against the state machine.
+export const riskStatusUpdateSchema = z
+  .object({
+    status: z.enum(['open', 'mitigating', 'mitigated', 'accepted', 'closed'], {
+      message: "status must be 'open', 'mitigating', 'mitigated', 'accepted', or 'closed'",
+    }),
+    reason: z.string().max(5000).optional(),
+  })
+  .strict();
+
 export const setClauseSignoffSchema = z
   .object({
     clauseRef: z.string().min(1, 'clauseRef is required').max(200),
