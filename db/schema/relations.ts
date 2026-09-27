@@ -18,6 +18,7 @@ import { arrangements } from './arrangements.js';
 import { evidence } from './evidence.js';
 import { auditLog } from './auditLog.js';
 import { findings } from './findings.js';
+import { risks } from './risks.js';
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   // user.organizationId → organizations (the org the user belongs to)
@@ -256,7 +257,7 @@ export const arrangementsRelations = relations(arrangements, ({ one, many }) => 
   findings: many(findings), // assessment findings (RTV-41)
 }));
 
-export const findingsRelations = relations(findings, ({ one }) => ({
+export const findingsRelations = relations(findings, ({ one, many }) => ({
   organization: one(organizations, {
     fields: [findings.organizationId],
     references: [organizations.id],
@@ -268,6 +269,33 @@ export const findingsRelations = relations(findings, ({ one }) => ({
   createdByUser: one(users, {
     fields: [findings.createdBy],
     references: [users.id],
+  }),
+  risks: many(risks), // gaps approved into the remediation loop (RTV-43)
+}));
+
+// ── Risk register + remediation loop (RTV-43) ───────────────────────────────────
+export const risksRelations = relations(risks, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [risks.organizationId],
+    references: [organizations.id],
+  }),
+  arrangement: one(arrangements, {
+    fields: [risks.arrangementId],
+    references: [arrangements.id],
+  }),
+  finding: one(findings, {
+    fields: [risks.findingId],
+    references: [findings.id],
+  }),
+  openedByUser: one(users, {
+    fields: [risks.openedBy],
+    references: [users.id],
+    relationName: 'risk_opened_by',
+  }),
+  owner: one(users, {
+    fields: [risks.ownerId],
+    references: [users.id],
+    relationName: 'risk_owner',
   }),
 }));
 

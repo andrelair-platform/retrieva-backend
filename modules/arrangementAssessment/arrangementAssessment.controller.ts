@@ -1,8 +1,9 @@
 import type { Request, Response, NextFunction } from "express";
 import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import { assessmentQueue } from '../../config/queue.js';
-import { findingRepository, evidenceRepository } from '../../repositories/index.js';
+import { findingRepository, evidenceRepository, riskRepository } from '../../repositories/index.js';
 import { can } from '../../services/security/can.js';
+import { verdictWarrantsRisk, buildRiskFromFinding } from '../../services/assessment/findingRisk.js';
 import {
   DECISION_STATUS,
   isSelfApproval,
@@ -129,5 +130,59 @@ export const decideFinding = catchAsync(async (req: Request, res: Response) => {
       capabilityMapVersion: CAPABILITY_MAP_VERSION,
     },
   });
-  sendSuccess(res, 200, 'Finding decision recorded', { finding: updated });
+
+  // AC-3: approving a GAP verdict routes it into the remediation loop as a Risk the human owns.
+  // Idempotent (one risk per finding), so a re-approval never duplicates. compliant/not_applicable
+  // approvals open no risk. The audit trail records the risk creation for defensibility.
+  let risk = null;
+  if (status === 'approved' && verdictWarrantsRisk(finding.verdict)) {
+    const derived = buildRiskFromFinding(finding);
+    risk = await riskRepository.createFromFinding({
+      organizationId,
+      arrangementId: finding.arrangementId,
+      findingId: finding.id,
+      controlId: finding.controlId,
+      libraryVersion: finding.libraryVersion,
+      sourceVerdict: derived.sourceVerdict,
+      title: derived.title,
+      description: derived.description,
+      severity: derived.severity,
+      openedBy: req.user!.userId,
+    });
+    if (risk) {
+      await recordAudit({
+        organizationId,
+        actor: req.user!.userId,
+        action: 'risk.created',
+        targetType: 'risk',
+        targetId: risk.id,
+        evidenceRefs: [finding.controlId],
+        metadata: {
+          arrangementId: finding.arrangementId,
+          findingId: finding.id,
+          sourceVerdict: derived.sourceVerdict,
+          severity: derived.severity,
+          libraryVersion: finding.libraryVersion,
+        },
+      });
+    }
+  }
+
+  sendSuccess(res, 200, 'Finding decision recorded', { finding: updated, risk });
+});
+
+// GET /api/v1/arrangements/:arrangementId/risks — the remediation loop for this arrangement: the
+// gap-findings a checker approved into tracked Risks (RTV-43, AC-3). Gated by the `risk:read`
+// capability; row-level isolation (RTV-54) applies via the repo's entity scope.
+export const getRisks = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  if (!(await can(req.user, 'risk:read', { organizationId }))) {
+    return sendError(res, 403, 'You do not have permission to read risks');
+  }
+  const risks = await riskRepository.listByArrangement(
+    organizationId,
+    String(req.params.arrangementId)
+  );
+  sendSuccess(res, 200, 'Arrangement risks', { risks });
 });

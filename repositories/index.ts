@@ -64,3 +64,6 @@ export { AuditLogRepository, auditLogRepository } from './drizzle/AuditLogReposi
 
 // Assessment findings (RTV-41)
 export { FindingRepository, findingRepository } from './drizzle/FindingRepository.js';
+
+// Risk register + remediation loop (RTV-43)
+export { RiskRepository, riskRepository } from './drizzle/RiskRepository.js';
