@@ -71,7 +71,10 @@ function makeDeps(overrides = {}) {
     uploadFile: vi.fn(),
     downloadFileStream: vi.fn(),
   };
-  const assessmentQueue = { add: vi.fn().mockResolvedValue({ id: 'j1' }) };
+  const assessmentQueue = {
+    add: vi.fn().mockResolvedValue({ id: 'j1' }),
+    getJobs: vi.fn().mockResolvedValue([]),
+  };
   const monitoringQueue = {
     getJob: vi.fn().mockResolvedValue(null),
     add: vi.fn().mockResolvedValue({ id: 'j2' }),
@@ -334,7 +337,9 @@ describe('AssessmentService.setClauseSignoff', () => {
   });
 
   it('throws 400 when framework is not CONTRACT_A30', async () => {
-    deps.assessmentRepo.findByIdUnscoped.mockResolvedValue(makeAssessmentDoc({ framework: 'DORA' }));
+    deps.assessmentRepo.findByIdUnscoped.mockResolvedValue(
+      makeAssessmentDoc({ framework: 'DORA' })
+    );
     await expect(
       svc.setClauseSignoff(ASSESSMENT_ID, USER_ID, AUTH_IDS, {
         clauseRef: 'Art.30(1)',
@@ -422,5 +427,54 @@ describe('AssessmentService.deleteAssessment', () => {
 
     expect(deps.assessmentRepo.deleteByIdUnscoped).toHaveBeenCalledWith(ASSESSMENT_ID);
     expect(deps.deleteAssessmentCollection).toHaveBeenCalledWith(ASSESSMENT_ID);
+  });
+
+  // #438 — remove orphaned BullMQ jobs on delete (fileIndex-<id>-N / gapAnalysis-<id>).
+  it('#438: removes only the queued jobs belonging to the deleted assessment', async () => {
+    deps.assessmentRepo.findByIdUnscoped.mockResolvedValue(makeAssessmentDoc());
+    const fileJob = {
+      id: `fileIndex-${ASSESSMENT_ID}-0`,
+      data: { assessmentId: ASSESSMENT_ID },
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    const gapJob = {
+      id: `gapAnalysis-${ASSESSMENT_ID}`,
+      data: { assessmentId: ASSESSMENT_ID },
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    const otherJob = {
+      id: 'gapAnalysis-other',
+      data: { assessmentId: 'other' },
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    deps.assessmentQueue.getJobs.mockResolvedValue([fileJob, otherJob, gapJob]);
+
+    await svc.deleteAssessment(ASSESSMENT_ID, USER_ID, AUTH_IDS);
+
+    expect(fileJob.remove).toHaveBeenCalledOnce();
+    expect(gapJob.remove).toHaveBeenCalledOnce();
+    expect(otherJob.remove).not.toHaveBeenCalled(); // a different assessment's job is untouched
+    expect(deps.assessmentRepo.deleteByIdUnscoped).toHaveBeenCalledWith(ASSESSMENT_ID);
+  });
+
+  it('#438: a locked/active job that cannot be removed does not fail the delete', async () => {
+    deps.assessmentRepo.findByIdUnscoped.mockResolvedValue(makeAssessmentDoc());
+    const locked = {
+      id: `fileIndex-${ASSESSMENT_ID}-0`,
+      data: { assessmentId: ASSESSMENT_ID },
+      remove: vi.fn().mockRejectedValue(new Error('job is locked')),
+    };
+    deps.assessmentQueue.getJobs.mockResolvedValue([locked]);
+
+    await expect(svc.deleteAssessment(ASSESSMENT_ID, USER_ID, AUTH_IDS)).resolves.toBeUndefined();
+    expect(deps.assessmentRepo.deleteByIdUnscoped).toHaveBeenCalledWith(ASSESSMENT_ID);
+  });
+
+  it('#438: a queue outage (getJobs throws) is swallowed — the delete still proceeds', async () => {
+    deps.assessmentRepo.findByIdUnscoped.mockResolvedValue(makeAssessmentDoc());
+    deps.assessmentQueue.getJobs.mockRejectedValue(new Error('redis down'));
+
+    await expect(svc.deleteAssessment(ASSESSMENT_ID, USER_ID, AUTH_IDS)).resolves.toBeUndefined();
+    expect(deps.assessmentRepo.deleteByIdUnscoped).toHaveBeenCalledWith(ASSESSMENT_ID);
   });
 });

@@ -348,9 +348,58 @@ class AssessmentService {
       })
     );
 
+    // #438 — remove orphaned BullMQ jobs (fileIndex-<id>-N / gapAnalysis-<id>) so they stop holding
+    // Redis locks + flooding the worker logs with lock-renewal errors after the assessment is gone.
+    await this.removeQueuedJobsForAssessment(id);
+
     await this.assessmentRepo.deleteByIdUnscoped(id);
 
     this.logger.info('Assessment deleted', { service: 'assessment', assessmentId: id, userId });
+  }
+
+  /**
+   * Remove the queued/scheduled BullMQ jobs tied to an assessment (#438). Both job types carry
+   * `data.assessmentId`, so we match on that (plus the jobId patterns as a belt-and-suspenders).
+   * Best-effort + never throws: an ACTIVE (locked) job can't always be force-removed — it finishes
+   * or fails and is then gone; the point is to clear waiting/delayed/failed jobs that would otherwise
+   * linger. Isolated so the delete never fails because of queue cleanup.
+   */
+  async removeQueuedJobsForAssessment(id: string) {
+    const states = ['waiting', 'delayed', 'prioritized', 'paused', 'active', 'failed', 'completed'];
+    let jobs: any[] = [];
+    try {
+      jobs = (await this.assessmentQueue.getJobs(states)) || [];
+    } catch (err: any) {
+      this.logger.warn('Could not list queue jobs for deleted assessment', {
+        assessmentId: id,
+        error: err?.message,
+      });
+      return;
+    }
+    const sid = String(id);
+    const mine = jobs.filter(
+      (j: any) =>
+        j &&
+        (String(j.data?.assessmentId) === sid ||
+          String(j.id || '').includes(`fileIndex-${sid}-`) ||
+          String(j.id || '') === `gapAnalysis-${sid}`)
+    );
+    await Promise.all(
+      mine.map((j: any) =>
+        Promise.resolve(j.remove()).catch((err: any) =>
+          this.logger.warn('Failed to remove queued job for deleted assessment', {
+            assessmentId: id,
+            jobId: j.id,
+            error: err?.message,
+          })
+        )
+      )
+    );
+    this.logger.info('Removed queued jobs for deleted assessment', {
+      service: 'assessment',
+      assessmentId: id,
+      removed: mine.length,
+    });
   }
 }
 
