@@ -1,5 +1,10 @@
 import { Router } from 'express';
-import { runAssessment, getFindings, decideFinding } from './arrangementAssessment.controller.js';
+import {
+  runAssessment,
+  getFindings,
+  decideFinding,
+  getRisks,
+} from './arrangementAssessment.controller.js';
 import { authenticate } from '../../middleware/auth.js';
 import { validateBody } from '../../middleware/validate.js';
 import { findingDecisionSchema } from '../../validators/schemas.js';
@@ -22,5 +27,8 @@ router.patch(
   validateBody(findingDecisionSchema),
   decideFinding
 );
+
+// GET /api/v1/arrangements/:arrangementId/risks — the remediation loop (approved gaps) (RTV-43)
+router.get('/:arrangementId/risks', authenticate, getRisks);
 
 export default router;

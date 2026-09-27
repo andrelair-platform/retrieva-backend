@@ -71,6 +71,13 @@
       "when": 1790306063069,
       "tag": "0009_sloppy_sphinx",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790531735850,
+      "tag": "0010_curved_tempest",
+      "breakpoints": true
     }
   ]
 }

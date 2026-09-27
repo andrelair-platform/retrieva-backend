@@ -119,6 +119,19 @@ export const verdictEnum = pgEnum('verdict', [
 ]);
 export const findingStatusEnum = pgEnum('finding_status', ['draft', 'approved', 'rejected']);
 
+// Risk register + remediation loop (RTV-43, ADR §5). An APPROVED gap-finding routes into a Risk the
+// human owns (management-body accountability). severity is derived from the finding verdict; status
+// is the remediation state machine (open → mitigating → mitigated → closed), with `accepted` as the
+// explicit risk-acceptance terminal (an ict_risk_officer/legal `risk:accept`).
+export const riskSeverityEnum = pgEnum('risk_severity', ['low', 'medium', 'high', 'critical']);
+export const riskStatusEnum = pgEnum('risk_status', [
+  'open',
+  'mitigating',
+  'mitigated',
+  'accepted',
+  'closed',
+]);
+
 export const questionnaireStatusEnum = pgEnum('questionnaire_status', [
   'draft',
   'sent',

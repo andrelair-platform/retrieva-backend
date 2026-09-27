@@ -9,10 +9,13 @@ import { startPg, stopPg } from './pgSetup.js';
 import { connectPg, disconnectPg, getDb } from '../../config/db.js';
 import { runMigrations } from '../../db/migrate.js';
 import { users, organizations, roleAssignments } from '../../db/schema/index.js';
-import { findingRepository, auditLogRepository } from '../../repositories/index.js';
+import { findingRepository, auditLogRepository, riskRepository } from '../../repositories/index.js';
 import { seedArrangementGraph } from '../fixtures/arrangements.js';
 import { can } from '../../services/security/can.js';
-import { decideFinding } from '../../modules/arrangementAssessment/arrangementAssessment.controller.js';
+import {
+  decideFinding,
+  getRisks,
+} from '../../modules/arrangementAssessment/arrangementAssessment.controller.js';
 import { CAPABILITY_MAP_VERSION } from '../../config/authz/capabilities.js';
 
 // Invoke a catchAsync Express handler directly against real pg (no HTTP): the SoD logic under test
@@ -74,7 +77,7 @@ describe('RTV-55 findings approval (real pg)', () => {
   });
   beforeEach(async () => {
     await db.execute(
-      sql`truncate table findings, audit_log, evidence, arrangements, business_functions, ict_services, provider_dependencies, provider_nodes, legal_entities, role_assignments, organizations, users restart identity cascade`
+      sql`truncate table risks, findings, audit_log, evidence, arrangements, business_functions, ict_services, provider_dependencies, provider_nodes, legal_entities, role_assignments, organizations, users restart identity cascade`
     );
     userA = await mkUser();
     [orgA] = await db.insert(organizations).values({ name: 'A', ownerId: userA.id }).returning();
@@ -239,5 +242,101 @@ describe('RTV-55 findings approval (real pg)', () => {
     const entry = audit.find((a) => a.action === 'finding.approve' && a.targetId === problem.id);
     expect(entry.metadata.override).toBe(true);
     expect(entry.metadata.reason).toMatch(/compensating control/i);
+  });
+
+  // ── RTV-43 AC-3: approved gap-findings route into the remediation loop as Risks ──────────────
+  describe('RTV-43 findings → risk register', () => {
+    const approveGap = async (checker, controlId, verdict) => {
+      const gap = await findingRepository.upsertForControl({
+        organizationId: orgA.id,
+        arrangementId: graphA.arrangements.franceClaims.id,
+        controlId,
+        libraryVersion: '1.0.0',
+        verdict,
+        status: 'draft',
+      });
+      const res = await invoke(decideFinding, {
+        user: checker,
+        params: { arrangementId: gap.arrangementId, findingId: gap.id },
+        body: { decision: 'approve', reason: 'Accepted with remediation plan' },
+      });
+      return { gap, res };
+    };
+
+    it('approving a non_compliant finding opens a high-severity Risk + a risk.created audit entry', async () => {
+      const checker = await mkChecker();
+      const { gap, res } = await approveGap(checker, 'DORA-30.3d-ICT-SECURITY', 'non_compliant');
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data.risk).toBeTruthy();
+      expect(res.body.data.risk.severity).toBe('high');
+      expect(res.body.data.risk.status).toBe('open');
+      expect(res.body.data.risk.sourceVerdict).toBe('non_compliant');
+
+      const risks = await riskRepository.listByArrangement(orgA.id, gap.arrangementId);
+      expect(risks).toHaveLength(1);
+      expect(risks[0].findingId).toBe(gap.id);
+      expect(risks[0].openedBy).toBe(checker.userId);
+
+      const audit = await auditLogRepository.listByOrg(orgA.id);
+      expect(
+        audit.find((a) => a.action === 'risk.created' && a.targetId === risks[0].id)
+      ).toBeTruthy();
+    });
+
+    it('an insufficient_evidence gap opens a low-severity Risk', async () => {
+      const checker = await mkChecker();
+      const { res } = await approveGap(checker, 'DORA-28.8-EXIT', 'insufficient_evidence');
+      expect(res.body.data.risk.severity).toBe('low');
+    });
+
+    it('approving a CLEAN verdict opens no Risk (approval closes the loop)', async () => {
+      const checker = await mkChecker();
+      // the beforeEach `finding` is a compliant draft.
+      const res = await invoke(decideFinding, {
+        user: checker,
+        params: { arrangementId: finding.arrangementId, findingId: finding.id },
+        body: { decision: 'approve' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data.risk).toBeNull();
+      expect(await riskRepository.listByArrangement(orgA.id, finding.arrangementId)).toHaveLength(
+        0
+      );
+    });
+
+    it('re-approving the same gap-finding is idempotent — one Risk, not duplicated', async () => {
+      const checker = await mkChecker();
+      const gap = await findingRepository.upsertForControl({
+        organizationId: orgA.id,
+        arrangementId: graphA.arrangements.franceClaims.id,
+        controlId: 'DORA-30.2e-SLA',
+        libraryVersion: '1.0.0',
+        verdict: 'partial',
+        status: 'draft',
+      });
+      const call = () =>
+        invoke(decideFinding, {
+          user: checker,
+          params: { arrangementId: gap.arrangementId, findingId: gap.id },
+          body: { decision: 'approve', reason: 'partial coverage accepted' },
+        });
+      await call();
+      await call(); // second approval must not create a second risk
+      expect(await riskRepository.listByArrangement(orgA.id, gap.arrangementId)).toHaveLength(1);
+    });
+
+    it('GET risks is gated by risk:read and returns the arrangement remediation loop', async () => {
+      const checker = await mkChecker();
+      await approveGap(checker, 'DORA-30.3d-ICT-SECURITY', 'non_compliant');
+
+      // the checker (ict_risk_officer) holds risk:read, so the remediation loop is visible.
+      const res = await invoke(getRisks, {
+        user: checker,
+        params: { arrangementId: graphA.arrangements.franceClaims.id },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data.risks).toHaveLength(1);
+      expect(res.body.data.risks[0].controlId).toBe('DORA-30.3d-ICT-SECURITY');
+    });
   });
 });

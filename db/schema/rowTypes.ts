@@ -31,6 +31,7 @@ import type {
   evidence,
   auditLog,
   findings,
+  risks,
 } from './index.js';
 
 // ── core identity / tenancy ─────────────────────────────────────────────────
@@ -78,6 +79,8 @@ export type AuditLogRow = typeof auditLog.$inferSelect;
 export type AuditLogInsert = typeof auditLog.$inferInsert;
 export type FindingRow = typeof findings.$inferSelect;
 export type FindingInsert = typeof findings.$inferInsert;
+export type RiskRow = typeof risks.$inferSelect;
+export type RiskInsert = typeof risks.$inferInsert;
 
 // ── critical-function legacy graph (pre-arrangement model) ──────────────────
 export type CriticalFunctionRow = typeof criticalFunctions.$inferSelect;
