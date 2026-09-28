@@ -82,6 +82,45 @@ export function contractUploadMiddleware(req: Request, res: Response, next: Next
   });
 }
 
+// Bulk estate import (RTV-69) — one CSV/XLSX/XLS spreadsheet, field `estate`. CSV is allowed here
+// (it is not in the contract/assessment allow-lists) with its several real-world mime types.
+const ESTATE_EXTENSIONS = new Set(['.csv', '.xlsx', '.xls']);
+const ESTATE_MIME_TYPES = new Set([
+  'text/csv',
+  'application/csv',
+  'application/vnd.ms-excel', // browsers often send this for .csv too
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain', // some clients label .csv as text/plain
+  'application/octet-stream', // fallback some clients use
+]);
+const uploadEstate = multer({
+  storage,
+  limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024, files: 1 },
+  fileFilter(_req: any, file: any, cb: any) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!ESTATE_EXTENSIONS.has(ext) || !ESTATE_MIME_TYPES.has(file.mimetype)) {
+      return cb(
+        new AppError(`Unsupported estate file: ${ext} (${file.mimetype}). Allowed: csv, xlsx, xls`, 400)
+      );
+    }
+    cb(null, true);
+  },
+}).single('estate');
+
+/** Runs multer for a single `estate` spreadsheet (csv/xlsx/xls), converting MulterError → AppError. */
+export function estateUploadMiddleware(req: Request, res: Response, next: NextFunction) {
+  uploadEstate(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return next(new AppError(`File too large. Max size is ${MAX_FILE_SIZE_MB}MB`, 400));
+      }
+      return next(new AppError(`Upload error: ${err.message}`, 400));
+    }
+    if (err) return next(err);
+    next();
+  });
+}
+
 /**
  * Express middleware that runs multer and converts MulterError to AppError.
  * Place this in the route chain before validateBody and the controller.

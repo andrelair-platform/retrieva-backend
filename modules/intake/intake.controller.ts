@@ -5,6 +5,7 @@ import { parseFile } from '../../services/fileIngestionService.js';
 import { extractArrangementProposal } from '../../services/intake/contractExtractionService.js';
 import { confirmProposal } from '../../services/intake/arrangementIntakeService.js';
 import { summarizeControlTouchpoints } from '../../services/intake/controlTouchpoints.js';
+import { parseEstateSheet, importEstate } from '../../services/intake/estateImport.js';
 import {
   legalEntityRepository,
   businessFunctionRepository,
@@ -81,4 +82,35 @@ export const confirmIntake = catchAsync(async (req: Request, res: Response) => {
   });
 
   sendSuccess(res, 201, 'Arrangement created from contract', { arrangement });
+});
+
+// POST /api/v1/arrangements/intake/import[?dryRun=true] — bulk import an estate from CSV/XLSX (RTV-69).
+// field `estate`. dryRun=true validates + previews (nothing persisted). Multi-entity: the `legal
+// entity` column routes each row to its branch; idempotent on the natural key (re-run safe).
+export const importEstateFromFile = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  if (!req.file) return sendError(res, 400, 'A CSV/XLSX estate file is required (field: estate)');
+
+  let rows;
+  try {
+    rows = parseEstateSheet(req.file.buffer);
+  } catch {
+    return sendError(res, 422, 'Could not parse the spreadsheet — is it a valid CSV/XLSX?');
+  }
+  if (!rows.length) return sendError(res, 422, 'The spreadsheet has no data rows');
+
+  const dryRun = req.query.dryRun === 'true' || req.body?.dryRun === true;
+  const summary = await importEstate({
+    organizationId,
+    userId: req.user!.userId,
+    rows,
+    dryRun,
+  });
+
+  const verb = dryRun ? 'Estate import preview (dry run — nothing persisted)' : 'Estate imported';
+  sendSuccess(res, dryRun ? 200 : 201, verb, {
+    ...summary,
+    source: { fileName: req.file.originalname, rows: rows.length },
+  });
 });
