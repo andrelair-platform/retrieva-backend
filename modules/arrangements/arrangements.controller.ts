@@ -171,6 +171,9 @@ export const transitionLifecycle = catchAsync(async (req: Request, res: Response
 export const listArrangementEvidence = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
+  // Branch isolation (RTV-35/36) — findByIdInOrg is legal-entity scoped.
+  if (!(await arrangementRepository.findByIdInOrg(organizationId, String(req.params.id))))
+    return sendError(res, 404, 'Arrangement not found');
   const evidence = await evidenceRepository.resolveForArrangement(
     organizationId,
     String(req.params.id)
@@ -181,6 +184,9 @@ export const listArrangementEvidence = catchAsync(async (req: Request, res: Resp
 export const attachArrangementEvidence = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
+  // Branch isolation (RTV-35/36) — can't attach evidence to another branch's arrangement.
+  if (!(await arrangementRepository.findByIdInOrg(organizationId, String(req.params.id))))
+    return sendError(res, 404, 'Arrangement not found');
   const { document } = req.body;
   if (!document) return sendError(res, 400, 'document is required');
   const source = req.body.source ?? '';
@@ -206,6 +212,9 @@ export const ingestArrangementEvidence = catchAsync(async (req: Request, res: Re
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   if (!req.file) return sendError(res, 400, 'A document file is required (field: contract)');
+  // Branch isolation (RTV-35/36) — can't ingest into another branch's arrangement.
+  if (!(await arrangementRepository.findByIdInOrg(organizationId, String(req.params.id))))
+    return sendError(res, 404, 'Arrangement not found');
 
   const ext = path.extname(req.file.originalname).replace('.', '').toLowerCase();
   const text = await parseFile(req.file.buffer, ext, req.file.originalname);
