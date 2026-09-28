@@ -24,6 +24,7 @@
     "seed:compliance": "node scripts/seedComplianceKb.js",
     "seed:compliance:reset": "node scripts/seedComplianceKb.js --reset",
     "seed:controls": "node --import tsx scripts/seedControlLibrary.js",
+    "seed:ktayl-register": "node --import tsx scripts/seedKtaylRegister.ts",
     "evaluate": "node scripts/evaluate.js",
     "evaluate:clause-mapping": "node --import tsx scripts/evaluateClauseMapping.js",
     "db:generate": "drizzle-kit generate",
