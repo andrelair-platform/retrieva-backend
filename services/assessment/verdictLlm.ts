@@ -6,11 +6,9 @@
  */
 import { createLLM } from '../../config/llmProvider.js';
 import { getCallbacks } from '../../config/tracing.js';
+import { resolveVerdictJudgePrompt } from '../../config/promptManager.js';
 import logger from '../../config/logger.js';
-import {
-  VERDICT_JUDGE_SYSTEM_PROMPT,
-  buildVerdictUserPrompt,
-} from '../../prompts/assessmentPrompts.js';
+import { buildVerdictUserPrompt } from '../../prompts/assessmentPrompts.js';
 
 /**
  * @param {{ sessionId?: string }} [ctx] trace session (the arrangement id) — nests the per-control
@@ -20,11 +18,17 @@ import {
 export function makeVerdictJudge(ctx: { sessionId?: string } = {}) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- control + evidence spans are heterogeneous domain objects
   return async function llmJudge(control: any, spans: any[]) {
-    const llm = await createLLM({ purpose: 'judge', temperature: 0, maxTokens: 1024 });
+    // Langfuse-managed (label-routed dev=`latest`/prod=`production`), Git constant as fallback.
+    const { text: systemPrompt, modelParams } = await resolveVerdictJudgePrompt();
+    const llm = await createLLM({
+      purpose: 'judge',
+      temperature: modelParams.temperature ?? 0,
+      maxTokens: modelParams.maxTokens ?? 1024,
+    });
     const callbacks = getCallbacks({ feature: 'assessment-verdict', sessionId: ctx.sessionId });
     const response = await llm.invoke(
       [
-        { role: 'system', content: VERDICT_JUDGE_SYSTEM_PROMPT },
+        { role: 'system', content: systemPrompt },
         { role: 'user', content: buildVerdictUserPrompt(control, spans) },
       ],
       { callbacks }

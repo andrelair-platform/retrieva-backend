@@ -25,6 +25,7 @@
     "seed:compliance:reset": "node scripts/seedComplianceKb.js --reset",
     "seed:controls": "node --import tsx scripts/seedControlLibrary.js",
     "seed:ktayl-register": "node --import tsx scripts/seedKtaylRegister.ts",
+    "seed:langfuse-prompts": "node --import tsx scripts/seedLangfusePrompts.ts",
     "evaluate": "node scripts/evaluate.js",
     "evaluate:clause-mapping": "node --import tsx scripts/evaluateClauseMapping.js",
     "evaluate:verdicts": "node --import tsx scripts/evaluateVerdicts.js",
