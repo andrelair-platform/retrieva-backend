@@ -15,6 +15,17 @@ import { buildVerdictUserPrompt } from '../../prompts/assessmentPrompts.js';
  *   judge calls under the assessment run.
  * @returns {(control:object, spans:object[]) => Promise<{verdict:string, rationale:string, citedIndices:number[]}>}
  */
+// How many times to attempt the judge call before giving up to insufficient_evidence. Isolated
+// calls return valid JSON reliably, but under sequential load the gateway/small model occasionally
+// returns an empty/non-JSON completion (a transient hiccup, not a real "insufficient" verdict). One
+// retry recovers those without changing a genuine grade. Configurable for tests / tuning.
+const JUDGE_MAX_ATTEMPTS = Number(process.env.VERDICT_JUDGE_MAX_ATTEMPTS) || 3;
+
+/**
+ * @param {{ sessionId?: string }} [ctx] trace session (the arrangement id) — nests the per-control
+ *   judge calls under the assessment run.
+ * @returns {(control:object, spans:object[]) => Promise<{verdict:string, rationale:string, citedIndices:number[]}>}
+ */
 export function makeVerdictJudge(ctx: { sessionId?: string } = {}) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- control + evidence spans are heterogeneous domain objects
   return async function llmJudge(control: any, spans: any[]) {
@@ -29,29 +40,47 @@ export function makeVerdictJudge(ctx: { sessionId?: string } = {}) {
       jsonMode: true,
     });
     const callbacks = getCallbacks({ feature: 'assessment-verdict', sessionId: ctx.sessionId });
-    const response = await llm.invoke(
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: buildVerdictUserPrompt(control, spans) },
-      ],
-      { callbacks }
-    );
-    const content =
-      typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-    const match = content.match(/\{[\s\S]*\}/);
-    if (!match) {
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: buildVerdictUserPrompt(control, spans) },
+    ];
+
+    // Retry the transient no-JSON / empty completion (see JUDGE_MAX_ATTEMPTS). A parseable response
+    // returns immediately; only a genuinely unrecoverable result falls back to insufficient_evidence.
+    for (let attempt = 1; attempt <= JUDGE_MAX_ATTEMPTS; attempt++) {
+      let content = '';
+      try {
+        const response = await llm.invoke(messages, { callbacks });
+        content =
+          typeof response.content === 'string'
+            ? response.content
+            : JSON.stringify(response.content);
+        const match = content.match(/\{[\s\S]*\}/);
+        if (match) {
+          const parsed = JSON.parse(match[0]);
+          return {
+            verdict: parsed.verdict,
+            rationale: parsed.rationale || '',
+            citedIndices: Array.isArray(parsed.citedIndices) ? parsed.citedIndices : [],
+          };
+        }
+      } catch (err) {
+        // A JSON.parse throw on a partial brace, or an invoke error — treat like a no-JSON attempt.
+        logger.warn('assessment verdict: judge attempt errored', {
+          service: 'assessment-engine',
+          controlId: control.id,
+          attempt,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       logger.warn('assessment verdict: judge returned no JSON', {
         service: 'assessment-engine',
         controlId: control.id,
+        attempt,
+        maxAttempts: JUDGE_MAX_ATTEMPTS,
       });
-      // Let the pure engine treat an unparseable result as insufficient (human review).
-      return { verdict: 'insufficient_evidence', rationale: '', citedIndices: [] };
     }
-    const parsed = JSON.parse(match[0]);
-    return {
-      verdict: parsed.verdict,
-      rationale: parsed.rationale || '',
-      citedIndices: Array.isArray(parsed.citedIndices) ? parsed.citedIndices : [],
-    };
+    // Exhausted retries — let the pure engine treat it as insufficient (human review, §5).
+    return { verdict: 'insufficient_evidence', rationale: '', citedIndices: [] };
   };
 }
