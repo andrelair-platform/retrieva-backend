@@ -18,6 +18,7 @@ import {
   CONTRACT_A30_SYSTEM_PROMPT,
   DORA_SYSTEM_PROMPT,
 } from '../prompts/gapAnalysisPrompts.js';
+import { VERDICT_JUDGE_SYSTEM_PROMPT } from '../prompts/assessmentPrompts.js';
 import logger from './logger.js';
 
 const PROMPT_LABEL = process.env.LANGFUSE_PROMPT_LABEL || 'latest';
@@ -28,7 +29,12 @@ export const PROMPT_NAMES = {
   contractA30: 'retrieva-contract-a30-system',
   doraGap: 'retrieva-dora-gap-system',
   visionCaption: 'retrieva-vision-caption',
+  verdictJudge: 'retrieva-verdict-judge',
 };
+
+// The verdict judge runs at temperature 0 (deterministic grading). A Langfuse prompt-config edit
+// may narrow model params within the safeModelParams clamp, but 0 is the governed default.
+const VERDICT_JUDGE_CONFIG = { temperature: 0, maxTokens: 1024 };
 
 // Guardrail bounds for params read from the (externally-editable) Langfuse prompt
 // config — a bad/unbounded playground value can never reach prod (DORA change-safety).
@@ -143,6 +149,19 @@ export function resolveDoraPrompt() {
 /** Vision figure-caption prompt (static). Fallback text passed by the caller. */
 export function resolveVisionCaptionPrompt(fallbackTemplate: string) {
   return resolveManagedPrompt({ name: PROMPT_NAMES.visionCaption, fallbackTemplate });
+}
+
+/**
+ * DORA verdict-judge system prompt (assessment engine, RTV-41/RTV-65). Static prompt, calibrated
+ * against the labelled verdict gold set. Managed in Langfuse (label-routed dev=`latest`/
+ * prod=`production`) so calibration is a UI relabel, not a redeploy; the Git constant is the fallback.
+ */
+export function resolveVerdictJudgePrompt() {
+  return resolveManagedPrompt({
+    name: PROMPT_NAMES.verdictJudge,
+    fallbackTemplate: VERDICT_JUDGE_SYSTEM_PROMPT,
+    fallbackConfig: VERDICT_JUDGE_CONFIG,
+  });
 }
 
 export const __testables = { renderMustacheLite, safeModelParams, PROMPT_LABEL, RAG_PROMPT_NAME };
