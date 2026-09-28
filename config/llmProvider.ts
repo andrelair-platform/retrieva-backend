@@ -106,6 +106,11 @@ interface LLMConfig {
   baseUrl?: string;
   apiKey?: string;
   seed?: number | null;
+  // Force structured JSON output (OpenAI `response_format: json_object`, which LiteLLM maps to the
+  // provider's native JSON mode, e.g. Ollama `format: json`). Use for prompts that MUST return JSON
+  // — the prompt itself must mention "JSON" (an OpenAI json_object requirement). The gateway/model
+  // must support it; treat as best-effort for callers that already tolerate non-JSON via a fallback.
+  jsonMode?: boolean;
 }
 
 async function createGatewayLLM(config: LLMConfig) {
@@ -136,6 +141,8 @@ async function createGatewayLLM(config: LLMConfig) {
     ...(config.topP !== undefined && { topP: config.topP }),
     stop: guardrailsConfig.generation.stopSequences,
     ...(seed !== null && seed !== undefined && { seed }),
+    // OpenAI-compatible structured-output flag; LiteLLM maps it to the provider's JSON mode.
+    ...(config.jsonMode && { modelKwargs: { response_format: { type: 'json_object' } } }),
   });
 }
 
