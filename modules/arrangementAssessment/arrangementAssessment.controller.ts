@@ -42,6 +42,9 @@ export const runAssessment = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   const arrangementId = String(req.params.arrangementId);
+  // Branch isolation (RTV-35/36) — can't run an assessment on another branch's arrangement.
+  if (!(await arrangementRepository.findByIdInOrg(organizationId, arrangementId)))
+    return sendError(res, 404, 'Arrangement not found');
   const job = await assessmentQueue.add('arrangementAssessment', {
     organizationId,
     arrangementId,
@@ -89,6 +92,9 @@ export const getFindings = catchAsync(async (req: Request, res: Response) => {
 export const decideFinding = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
+  // Branch isolation (RTV-35/36) — can't decide a finding on another branch's arrangement.
+  if (!(await arrangementRepository.findByIdInOrg(organizationId, String(req.params.arrangementId))))
+    return sendError(res, 404, 'Arrangement not found');
   const decision = req.body?.decision as FindingDecision;
   const status = DECISION_STATUS[decision];
   if (!status) return sendError(res, 400, "decision must be 'approve', 'reject' or 'reset'");
@@ -222,6 +228,9 @@ export const updateRiskStatus = catchAsync(async (req: Request, res: Response) =
   const reason: string | undefined =
     typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim() : undefined;
 
+  // Branch isolation (RTV-35/36) — can't change a risk on another branch's arrangement.
+  if (!(await arrangementRepository.findByIdInOrg(organizationId, String(req.params.arrangementId))))
+    return sendError(res, 404, 'Arrangement not found');
   const risk = await riskRepository.findByIdInOrg(organizationId, String(req.params.riskId));
   if (!risk || risk.arrangementId !== req.params.arrangementId) {
     return sendError(res, 404, 'Risk not found');

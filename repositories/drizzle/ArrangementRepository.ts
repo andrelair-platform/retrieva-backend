@@ -48,7 +48,8 @@ export class ArrangementRepository extends BaseDrizzleRepository {
         and(
           eq(arrangements.id, id),
           eq(arrangements.organizationId, organizationId),
-          entityScopeCondition(arrangements.organizationId, { action: 'arrangement:edit' })
+          entityScopeCondition(arrangements.organizationId, { action: 'arrangement:edit' }),
+          legalEntityScopeCondition(arrangements.legalEntityId, { action: 'arrangement:edit' })
         )
       )
       .returning();
