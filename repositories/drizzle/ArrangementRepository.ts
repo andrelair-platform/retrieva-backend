@@ -10,7 +10,7 @@
 import { and, eq, desc, sql } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
 import { arrangements, findings } from '../../db/schema/index.js';
-import { entityScopeCondition } from '../../services/security/entityScope.js';
+import { entityScopeCondition, legalEntityScopeCondition } from '../../services/security/entityScope.js';
 
 export class ArrangementRepository extends BaseDrizzleRepository {
   constructor(opts = {}) {
@@ -22,7 +22,8 @@ export class ArrangementRepository extends BaseDrizzleRepository {
       and(
         eq(arrangements.id, id),
         eq(arrangements.organizationId, organizationId),
-        entityScopeCondition(arrangements.organizationId, { action: 'arrangement:read' })
+        entityScopeCondition(arrangements.organizationId, { action: 'arrangement:read' }),
+        legalEntityScopeCondition(arrangements.legalEntityId, { action: 'arrangement:read' })
       )
     );
   }
@@ -58,7 +59,8 @@ export class ArrangementRepository extends BaseDrizzleRepository {
     return this.find(
       and(
         eq(arrangements.organizationId, organizationId),
-        entityScopeCondition(arrangements.organizationId, { action: 'arrangement:read' })
+        entityScopeCondition(arrangements.organizationId, { action: 'arrangement:read' }),
+        legalEntityScopeCondition(arrangements.legalEntityId, { action: 'arrangement:read' })
       ),
       { orderBy: [desc(arrangements.createdAt)] }
     );
@@ -70,7 +72,8 @@ export class ArrangementRepository extends BaseDrizzleRepository {
       and(
         eq(arrangements.organizationId, organizationId),
         eq(arrangements.providerId, providerId),
-        entityScopeCondition(arrangements.organizationId, { action: 'arrangement:read' })
+        entityScopeCondition(arrangements.organizationId, { action: 'arrangement:read' }),
+        legalEntityScopeCondition(arrangements.legalEntityId, { action: 'arrangement:read' })
       ),
       { orderBy: [desc(arrangements.createdAt)] }
     );
@@ -82,7 +85,8 @@ export class ArrangementRepository extends BaseDrizzleRepository {
       and(
         eq(arrangements.organizationId, organizationId),
         eq(arrangements.businessFunctionId, businessFunctionId),
-        entityScopeCondition(arrangements.organizationId, { action: 'arrangement:read' })
+        entityScopeCondition(arrangements.organizationId, { action: 'arrangement:read' }),
+        legalEntityScopeCondition(arrangements.legalEntityId, { action: 'arrangement:read' })
       ),
       { orderBy: [desc(arrangements.createdAt)] }
     );

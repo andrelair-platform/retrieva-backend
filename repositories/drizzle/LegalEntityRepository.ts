@@ -6,7 +6,7 @@
 import { and, eq, asc } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
 import { legalEntities } from '../../db/schema/index.js';
-import { entityScopeCondition } from '../../services/security/entityScope.js';
+import { entityScopeCondition, legalEntityScopeCondition } from '../../services/security/entityScope.js';
 
 export class LegalEntityRepository extends BaseDrizzleRepository {
   constructor(opts = {}) {
@@ -17,7 +17,8 @@ export class LegalEntityRepository extends BaseDrizzleRepository {
     return this.find(
       and(
         eq(legalEntities.organizationId, organizationId),
-        entityScopeCondition(legalEntities.organizationId, { action: 'arrangement:read' })
+        entityScopeCondition(legalEntities.organizationId, { action: 'arrangement:read' }),
+        legalEntityScopeCondition(legalEntities.id, { action: 'arrangement:read' })
       ),
       { orderBy: [asc(legalEntities.name)] }
     );

@@ -44,9 +44,10 @@ export const workspaceMemberRoleEnum = pgEnum('workspace_member_role', [
 export const messageRoleEnum = pgEnum('message_role', ['user', 'assistant']);
 
 // Authorization redesign (RTV-51/52). Scope hierarchy mirrors the domain hierarchy
-// (ADR §1). v1: 'entity' scope_id references organizations.id (org = legal entity);
-// 'group' is supported but has no rows/read-across until RTV-35/36.
-export const scopeTypeEnum = pgEnum('scope_type', ['group', 'entity']);
+// (ADR §1). 'entity' scope_id references organizations.id (org-level); 'legal_entity' scope_id
+// references legal_entities.id (a BRANCH restriction within a group org — RTV-35/36); 'group' is
+// reserved for cross-tenant read-across (still dormant).
+export const scopeTypeEnum = pgEnum('scope_type', ['group', 'entity', 'legal_entity']);
 // Full governance role set (ADR §2). platform_admin is a boolean on users, not here.
 export const domainRoleEnum = pgEnum('domain_role', [
   // group scope

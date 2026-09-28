@@ -78,6 +78,13 @@
       "when": 1790531735850,
       "tag": "0010_curved_tempest",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790608743974,
+      "tag": "0011_unusual_mastermind",
+      "breakpoints": true
     }
   ]
 }

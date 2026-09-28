@@ -17,6 +17,9 @@ export interface EntityScope {
   platformAdmin: boolean;
   readAcross: boolean;
   entityIds: string[];
+  // RTV-35/36 — legal-entity (branch) restriction. When non-empty, the user is scoped to these
+  // legal_entity ids and reads are filtered on `legal_entity_id` (not just org). Empty = org-wide.
+  legalEntityIds: string[];
 }
 
 const entityContext = new AsyncLocalStorage<{ scope: EntityScope | null }>();

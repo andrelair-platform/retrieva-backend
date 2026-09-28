@@ -52,12 +52,18 @@ export function computeScope(
   assignments: RoleAssignmentRow[] | null | undefined
 ): EntityScope {
   if (user?.platformAdmin === true)
-    return { platformAdmin: true, readAcross: false, entityIds: [] };
+    return { platformAdmin: true, readAcross: false, entityIds: [], legalEntityIds: [] };
   const list = assignments || [];
   const readAcross = list.some((a) => GROUP_ROLES.has(a.role));
   const ids = new Set(list.filter((a) => a.scopeType === 'entity').map((a) => String(a.scopeId)));
   if (user?.organizationId) ids.add(String(user.organizationId));
-  return { platformAdmin: false, readAcross, entityIds: [...ids] };
+  // RTV-35/36 — legal-entity (branch) scope: the distinct legal_entity ids the user is restricted
+  // to. Separate from org-level `entityIds` (which unions the home org); a non-empty set narrows
+  // reads to those branches. Empty = org-wide (today's behaviour, unchanged).
+  const legalEntityIds = [
+    ...new Set(list.filter((a) => a.scopeType === 'legal_entity').map((a) => String(a.scopeId))),
+  ];
+  return { platformAdmin: false, readAcross, entityIds: [...ids], legalEntityIds };
 }
 
 /** Does a resolved scope permit this entity id? (platform_admin / group = always). */
@@ -72,7 +78,8 @@ export function scopeAllowsEntity(
 
 /** Async: resolve + memoize the scope for a user (used by the request middleware). */
 export async function resolveEntityScope(user: CanUser | null | undefined): Promise<EntityScope> {
-  if (!user || !user.userId) return { platformAdmin: false, readAcross: false, entityIds: [] };
+  if (!user || !user.userId)
+    return { platformAdmin: false, readAcross: false, entityIds: [], legalEntityIds: [] };
   const memo = user as unknown as Record<symbol, EntityScope>;
   if (memo[SCOPE_MEMO]) return memo[SCOPE_MEMO];
   const assignments =
@@ -120,4 +127,43 @@ export function entityScopeCondition(
 
   // enforce
   return scope.entityIds.length ? inArray(orgColumn, scope.entityIds) : sql`false`;
+}
+
+/**
+ * RTV-35/36 — branch (legal-entity) isolation. Filters a `legal_entity_id`-style column to the
+ * legal entities the ACTIVE user is scoped to. Only applies to a **branch-restricted** user
+ * (`legalEntityIds` non-empty); an org-wide user (org_admin / group / no branch scope) is NOT
+ * narrowed here, so this is additive on top of org isolation and backward-compatible.
+ *
+ *   off / no scope / platform_admin / group read-across / not branch-restricted → undefined
+ *   shadow, branch-restricted                                                    → undefined + LOG
+ *   enforce, branch-restricted                                                   → inArray(col, legalEntityIds)
+ *
+ * @param {import('drizzle-orm/pg-core').PgColumn} legalEntityColumn
+ * @param {{action?:string}} [ctx]
+ */
+export function legalEntityScopeCondition(
+  legalEntityColumn: PgColumn,
+  ctx: { action?: string } = {}
+): SQL | undefined {
+  const mode = getIsolationMode();
+  if (mode === 'off') return undefined;
+
+  const scope = getEntityScope();
+  if (!scope) return undefined; // trusted/background path (no request context)
+  if (scope.platformAdmin || scope.readAcross) return undefined;
+  if (!scope.legalEntityIds || scope.legalEntityIds.length === 0) return undefined; // org-wide user
+
+  if (mode === 'shadow') {
+    logger.info('branch-isolation shadow: would scope query to legal entities', {
+      service: 'entity-isolation',
+      legalEntityIds: scope.legalEntityIds,
+      column: legalEntityColumn?.name,
+      ...ctx,
+    });
+    return undefined;
+  }
+
+  // enforce — a branch-restricted user only sees rows in their legal entities.
+  return inArray(legalEntityColumn, scope.legalEntityIds);
 }
