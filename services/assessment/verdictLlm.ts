@@ -24,6 +24,9 @@ export function makeVerdictJudge(ctx: { sessionId?: string } = {}) {
       purpose: 'judge',
       temperature: modelParams.temperature ?? 0,
       maxTokens: modelParams.maxTokens ?? 1024,
+      // The judge MUST return JSON; force provider JSON mode so a small model can't emit prose that
+      // falls back to insufficient_evidence. The prompt already says "Return ONLY a valid JSON object".
+      jsonMode: true,
     });
     const callbacks = getCallbacks({ feature: 'assessment-verdict', sessionId: ctx.sessionId });
     const response = await llm.invoke(
