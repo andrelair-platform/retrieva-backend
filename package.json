@@ -27,6 +27,7 @@
     "seed:ktayl-register": "node --import tsx scripts/seedKtaylRegister.ts",
     "evaluate": "node scripts/evaluate.js",
     "evaluate:clause-mapping": "node --import tsx scripts/evaluateClauseMapping.js",
+    "evaluate:verdicts": "node --import tsx scripts/evaluateVerdicts.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --import tsx db/migrate.ts",
     "db:studio": "drizzle-kit studio",
