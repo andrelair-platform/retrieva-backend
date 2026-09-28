@@ -14,23 +14,38 @@ Return ONLY a valid JSON object:
   "citedIndices": [0, 2]
 }
 
-Decision rules — apply IN ORDER, pick the first that matches:
-1. "not_applicable": an excerpt shows the control genuinely does not apply to this arrangement (e.g. the service processes no data, for a data-location control).
-2. "non_compliant": an excerpt EXPLICITLY states the requirement is absent, refused, or contradicted (e.g. "no business continuity plan", "no right to audit", "no exit strategy"). Explicit negation only.
-3. "compliant": an excerpt states the control's requirement IS met — even briefly. A clear statement that the required clause / measure / certificate / right exists is sufficient.
-4. "partial": the requirement is addressed but with a STATED gap, limitation, condition, or ambiguity (e.g. "audit limited to one remote review", "security is best-effort", "no quantitative targets").
+Decision procedure — answer these questions IN ORDER:
 
-Calibration (critical — avoid over-flagging):
-- Grade the excerpts at FACE VALUE. Do NOT downgrade a clear, satisfying statement to "partial" merely because it is short or not exhaustive — absent a stated gap, a clear statement is "compliant".
-- Do NOT use "non_compliant" for missing detail, brevity, or silence — that is "partial" (or, if nothing addresses the control at all, the engine handles absence separately). Reserve "non_compliant" for an EXPLICIT contradiction/negation in an excerpt.
-- Cite the exact excerpt indices you relied on in "citedIndices".
+Q1. Do the excerpts show the control does not apply here (e.g. no data is processed, for a data-location control)? → not_applicable.
+
+Q2. Is the control addressed AT ALL — does any excerpt affirmatively state the required thing exists, is provided, or is done?
+   - If NO excerpt addresses it, and an excerpt EXPLICITLY says it is absent / refused / disclaimed / "no such right" → non_compliant.
+   - Otherwise continue.
+
+Q3. The control IS addressed. Is there a STATED limitation, qualifier, restriction, or gap on it?
+   - NO limitation stated → compliant.
+   - YES, a limitation is stated → partial.
+
+CRITICAL — "partial" vs "non_compliant" (the single most common mistake):
+A restriction, weakness, or missing detail is NOT a refusal. If the control is done in ANY form — even weakly, partially, or with caveats — the verdict is "partial", never "non_compliant".
+- "partial" triggers (control exists but limited): "limited to", "only once", "best effort", "generally accepted standard", "no quantitative targets", "at the provider's discretion", on-site not permitted BUT remote allowed, notice given for some changes only.
+- "non_compliant" triggers (control wholly absent/refused): "contains no ... obligations", "disclaims any ...", "grants no right", "there is no exit strategy", "does not provide ... at all".
+Reserve non_compliant for TOTAL absence or explicit refusal of the whole control.
+
+CRITICAL — do not under-call "compliant" (the "partial" phrase test):
+"partial" is ONLY valid if you can quote the SPECIFIC limiting phrase from an excerpt in your rationale (e.g. "limited to", "only", "best effort", "no quantitative", "at ... discretion"). Before you answer "partial", find that phrase and cite its index. If you CANNOT quote an explicit limiting phrase that is actually written in the excerpts, the verdict is "compliant" — not "partial".
+Never downgrade to "partial" because the statement is brief, lists fewer items than you expected, omits an evidence type, or because more detail "would be nice". A missing nice-to-have is NOT a limitation. Grade only the words in the excerpts, at face value. An affirmative statement that the required thing exists, with no limiting phrase present, is "compliant" — full stop.
 
 Worked examples — these teach the grading PRINCIPLE (paraphrased, not real cases):
-- Control "encryption of data at rest"; excerpt: "Customer data is encrypted at rest." → compliant. (A clear statement the requirement is met; brevity is irrelevant — do not downgrade to partial.)
-- Control "key management"; excerpt: "Keys are rotated." → compliant. (The requirement exists and no gap is stated; do not demand more detail.)
-- Control "penetration testing"; excerpt: "Pen tests are performed, but only once every three years and never shared with the client." → partial. (The control IS addressed but with a stated restriction — a limitation, not a total absence. NOT non_compliant.)
-- Control "recovery-time objective"; excerpt: "Recovery is 'best effort'; no committed RTO is defined." → partial. ("No committed RTO" is a gap in an otherwise-addressed control, NOT a refusal of the whole control — so NOT non_compliant.)
-- Control "sub-processor notification"; excerpt: "The provider gives no notice of sub-processor changes and grants no right to object." → non_compliant. (Explicit total negation of the requirement.)`;
+- Control "encryption of data at rest"; excerpt: "Customer data is encrypted at rest." → compliant. (Affirmative, no limitation.)
+- Control "service description"; excerpt: "A full description of the services and their scope is set out in the schedule." → compliant. (Brevity is irrelevant; do not downgrade.)
+- Control "incident assistance"; excerpt: "The provider assists during ICT incidents and notifies within 24 hours." → compliant. (The requirement is stated to exist.)
+- Control "penetration testing"; excerpt: "Pen tests are performed, but only every three years and never shared with the client." → partial. (Done but limited — NOT non_compliant.)
+- Control "service levels"; excerpt: "Service is provided 'to a generally accepted standard'; no quantitative targets are specified." → partial. (An SLA exists qualitatively; the gap makes it partial, not a refusal.)
+- Control "audit rights"; excerpt: "Audit is limited to one remote review per year; on-site inspection is not permitted." → partial. (Audit rights DO exist but restricted — NOT non_compliant.)
+- Control "sub-processor notification"; excerpt: "The provider gives no notice of sub-processor changes and grants no right to object." → non_compliant. (Total refusal of the requirement.)
+
+Cite the exact excerpt indices you relied on in "citedIndices".`;
 
 /** Build the user prompt for a control + its retrieved evidence spans. */
 export function buildVerdictUserPrompt(control: any, spans: any[]) {

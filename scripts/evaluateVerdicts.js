@@ -11,6 +11,14 @@
  * run per-push in CI; run it manually or on a schedule (like scripts/evaluate.js), typically in-pod
  * on dev:  RETRIEVA env → node --import tsx scripts/evaluateVerdicts.js
  *
+ * IN-POD NOTE: the runtime image excludes tests/ (dockerignore), so the gold set is not on disk in a
+ * deployed pod. Copy it in and point the script at it via VERDICT_EVAL_PATH, e.g.:
+ *   kubectl cp tests/fixtures/verdictEval.json <pod>:/tmp/verdictEval.json
+ *   VERDICT_EVAL_PATH=/tmp/verdictEval.json node --import tsx scripts/evaluateVerdicts.js
+ *
+ * It measures whatever the deployed judge resolves from Langfuse (label-routed: dev=latest,
+ * prod=production), so it grades the LIVE managed prompt, not a hard-coded string.
+ *
  * Usage:  node --import tsx scripts/evaluateVerdicts.js [--min-accuracy=0.7] [--verbose]
  */
 import { readFile } from 'fs/promises';
@@ -22,9 +30,14 @@ import { getControls } from '../services/controlLibraryService.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Baseline on dev 2026-09-28: 14/23 = 61%. Every miss was adjacent-class in the SAFE direction
-// (compliant→partial, partial→non_compliant) — the judge over-flags but never over-passes. The gate
-// default is a "don't regress below today" floor; the TARGET is ≥0.85 after judge-prompt calibration.
+// Calibration history on dev (23-case gold set, ollama-cloud judge):
+//   Git v0 (uncalibrated) .... 0.61   over-flagged: compliant→partial, partial→non_compliant
+//   Langfuse v2 ............... 0.826  ordered decision procedure + partial/non_compliant separator
+//   Langfuse v3 (production) .. 0.870  + "partial requires a quotable limiting phrase" rule  ✅ ≥0.85
+// v3 is labelled production+latest in the retrieva Langfuse project. partial & non_compliant are now
+// P=R=1.00; every remaining miss is compliant→insufficient_evidence (a malformed-JSON fallback on the
+// small model) — SAFE direction, over-pass count stays 0. Gate default 0.6 = "don't regress"; the
+// achieved target is 0.85. Calibrate further as new Langfuse versions (no redeploy), not code edits.
 function parseArgs(argv) {
   const a = { minAccuracy: 0.6, verbose: false };
   for (const arg of argv.slice(2)) {
@@ -36,10 +49,10 @@ function parseArgs(argv) {
 
 async function main() {
   const args = parseArgs(process.argv);
-  const raw = await readFile(
-    join(__dirname, '..', 'tests', 'fixtures', 'verdictEval.json'),
-    'utf-8'
-  );
+  // VERDICT_EVAL_PATH lets an in-pod run point at a copied gold set (tests/ is not in the image).
+  const evalPath =
+    process.env.VERDICT_EVAL_PATH || join(__dirname, '..', 'tests', 'fixtures', 'verdictEval.json');
+  const raw = await readFile(evalPath, 'utf-8');
   const evalSet = JSON.parse(raw);
   const controls = getControls(evalSet.libraryVersion);
   const byId = new Map(controls.map((c) => [c.id, c]));
