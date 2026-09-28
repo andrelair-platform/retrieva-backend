@@ -4,6 +4,7 @@ import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import { parseFile } from '../../services/fileIngestionService.js';
 import { extractArrangementProposal } from '../../services/intake/contractExtractionService.js';
 import { confirmProposal } from '../../services/intake/arrangementIntakeService.js';
+import { summarizeControlTouchpoints } from '../../services/intake/controlTouchpoints.js';
 import {
   legalEntityRepository,
   businessFunctionRepository,
@@ -50,9 +51,14 @@ export const proposeFromContract = catchAsync(async (req: Request, res: Response
     ictServiceId: services.find((s: any) => norm(s.name) === norm(proposal.ictServiceName))?.id ?? null,
   };
 
+  // RTV-34/40 — which DORA controls this contract's clauses touch (deterministic pattern preview),
+  // so the human sees the contract's DORA surface before confirming the arrangement.
+  const controlTouchpoints = summarizeControlTouchpoints(text);
+
   sendSuccess(res, 200, 'Arrangement proposal', {
     proposal,
     matches,
+    controlTouchpoints,
     source: { fileName: req.file.originalname, parsedChars: text.length },
   });
 });
