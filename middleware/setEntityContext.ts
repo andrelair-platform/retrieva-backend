@@ -13,7 +13,12 @@ import logger from '../config/logger.js';
 
 // Fail-closed sentinel: an empty scope denies every entity under `enforce` (and is a no-op
 // under off/shadow), so a resolution error never silently opens isolation.
-const DENY_ALL = { platformAdmin: false, readAcross: false, entityIds: [] as string[] };
+const DENY_ALL = {
+  platformAdmin: false,
+  readAcross: false,
+  entityIds: [] as string[],
+  legalEntityIds: [] as string[],
+};
 
 export const setEntityContext = async (req: Request, _res: Response, next: NextFunction) => {
   if (!req.user?.userId) return next(); // unauthenticated: route guards still apply

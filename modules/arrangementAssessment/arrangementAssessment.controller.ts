@@ -1,7 +1,12 @@
 import type { Request, Response, NextFunction } from "express";
 import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import { assessmentQueue } from '../../config/queue.js';
-import { findingRepository, evidenceRepository, riskRepository } from '../../repositories/index.js';
+import {
+  findingRepository,
+  evidenceRepository,
+  riskRepository,
+  arrangementRepository,
+} from '../../repositories/index.js';
 import { can } from '../../services/security/can.js';
 import { verdictWarrantsRisk, buildRiskFromFinding } from '../../services/assessment/findingRisk.js';
 import {
@@ -52,6 +57,13 @@ export const runAssessment = catchAsync(async (req: Request, res: Response) => {
 export const getFindings = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
+  // Branch isolation (RTV-35/36): resolve the arrangement first — findByIdInOrg is legal-entity
+  // scoped, so a branch-restricted user can't read another branch's findings.
+  const arrangement = await arrangementRepository.findByIdInOrg(
+    organizationId,
+    String(req.params.arrangementId)
+  );
+  if (!arrangement) return sendError(res, 404, 'Arrangement not found');
   const [findings, evidence] = await Promise.all([
     findingRepository.listByArrangement(organizationId, String(req.params.arrangementId)),
     evidenceRepository.resolveForArrangement(organizationId, String(req.params.arrangementId)),
@@ -185,6 +197,12 @@ export const getRisks = catchAsync(async (req: Request, res: Response) => {
   if (!(await can(req.user, 'risk:read', { organizationId }))) {
     return sendError(res, 403, 'You do not have permission to read risks');
   }
+  // Branch isolation (RTV-35/36) — the arrangement read is legal-entity scoped.
+  const arrangement = await arrangementRepository.findByIdInOrg(
+    organizationId,
+    String(req.params.arrangementId)
+  );
+  if (!arrangement) return sendError(res, 404, 'Arrangement not found');
   const risks = await riskRepository.listByArrangement(
     organizationId,
     String(req.params.arrangementId)
