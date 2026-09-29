@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.2.0](https://github.com/andrelair-platform/retrieva-backend/compare/retrieva-backend-v1.1.0...retrieva-backend-v1.2.0) (2026-09-29)
+
+
+### Features
+
+* **assessment:** llm-as-reranker to isolate the on-topic clause ([#618](https://github.com/andrelair-platform/retrieva-backend/issues/618)) ([#82](https://github.com/andrelair-platform/retrieva-backend/issues/82)) ([960b04b](https://github.com/andrelair-platform/retrieva-backend/commit/960b04b9613955f9a9f3bd9477cfd06ef210bdbd))
+* **assessment:** real-document benchmark vs validated human baseline (rtv-66) ([#80](https://github.com/andrelair-platform/retrieva-backend/issues/80)) ([24bc453](https://github.com/andrelair-platform/retrieva-backend/commit/24bc4532420a183232933a065c6f9bc2e70b7028))
+* **assessment:** route verdict judge through langfuse prompt management ([#73](https://github.com/andrelair-platform/retrieva-backend/issues/73)) ([2f6d625](https://github.com/andrelair-platform/retrieva-backend/commit/2f6d6254bec26981dda2a63434610d6213e64af5))
+* **assessment:** verdict eval gate + llm trust benchmark (rtv-65) ([#72](https://github.com/andrelair-platform/retrieva-backend/issues/72)) ([8bfea45](https://github.com/andrelair-platform/retrieva-backend/commit/8bfea45d0c2ba2a1b720f93b9aec2e443be3ca71))
+* **authz:** branch isolation on the write paths (rtv-35) ([#71](https://github.com/andrelair-platform/retrieva-backend/issues/71)) ([e7e360f](https://github.com/andrelair-platform/retrieva-backend/commit/e7e360f4f012c750ad90555191b0de70d53fcf4b))
+* **authz:** per-legal-entity branch read isolation (rtv-35 slice) ([#70](https://github.com/andrelair-platform/retrieva-backend/issues/70)) ([7c8714d](https://github.com/andrelair-platform/retrieva-backend/commit/7c8714d4ed7d9a8fc6351f15c5cdcca083009660))
+* **decision-inbox:** bulk accept-high-confidence via shared sod/audit service (rtv-67) ([#79](https://github.com/andrelair-platform/retrieva-backend/issues/79)) ([80bcaac](https://github.com/andrelair-platform/retrieva-backend/commit/80bcaac742cab81477e28c80fe034bfcbb1dd5f5))
+* **decision-inbox:** cross-arrangement decision queue (rtv-67, read side) ([#78](https://github.com/andrelair-platform/retrieva-backend/issues/78)) ([bd8e0c0](https://github.com/andrelair-platform/retrieva-backend/commit/bd8e0c0e9cc2887649c49026315d27d2bb64b69f))
+* **evidence:** evidence library foundation — categories + checklist ([#226](https://github.com/andrelair-platform/retrieva-backend/issues/226)) ([#83](https://github.com/andrelair-platform/retrieva-backend/issues/83)) ([57213e3](https://github.com/andrelair-platform/retrieva-backend/commit/57213e3e3aa6a8e3dace8e8755cff5848872e3c8))
+* **evidence:** institution-side evidence collection requests (rtv-227) ([#85](https://github.com/andrelair-platform/retrieva-backend/issues/85)) ([9a34319](https://github.com/andrelair-platform/retrieva-backend/commit/9a34319ed9ab2a76ed22042eaebf21f946f18e63))
+* **evidence:** public vendor evidence portal surface (rtv-227) ([#86](https://github.com/andrelair-platform/retrieva-backend/issues/86)) ([4ca6a09](https://github.com/andrelair-platform/retrieva-backend/commit/4ca6a097756ba13b5e390bc93b5aa86ac5581ca4))
+* **intake:** bulk estate import from csv/excel (rtv-69) ([#76](https://github.com/andrelair-platform/retrieva-backend/issues/76)) ([0653e1f](https://github.com/andrelair-platform/retrieva-backend/commit/0653e1fbe75fd1e3b83822d2608841cf38e0f95e))
+* **intake:** surface dora control touchpoints on contract intake (rtv-34) ([#68](https://github.com/andrelair-platform/retrieva-backend/issues/68)) ([894fd47](https://github.com/andrelair-platform/retrieva-backend/commit/894fd478cee0debbc9a127bb2e558b449ea98fed))
+* **seed:** seed the dora register with ktayl real suppliers (rtv-58) ([#69](https://github.com/andrelair-platform/retrieva-backend/issues/69)) ([c70bdb2](https://github.com/andrelair-platform/retrieva-backend/commit/c70bdb2535524ce82b5301e7421c0a848c438f3f))
+
+
+### Bug Fixes
+
+* **assessment:** force provider json mode for the verdict judge ([#75](https://github.com/andrelair-platform/retrieva-backend/issues/75)) ([003e5c9](https://github.com/andrelair-platform/retrieva-backend/commit/003e5c9bfedcf83507159713b4c9a71619f571ec))
+* **assessment:** judge returns insufficient on absence, not non_compliant (rtv-617) ([#81](https://github.com/andrelair-platform/retrieva-backend/issues/81)) ([3141295](https://github.com/andrelair-platform/retrieva-backend/commit/31412957f454ff4a759d015570244966f3b8ddf9))
+* **assessment:** reconcile git fallback to the calibrated v3 judge prompt ([#74](https://github.com/andrelair-platform/retrieva-backend/issues/74)) ([e056fc5](https://github.com/andrelair-platform/retrieva-backend/commit/e056fc5bda7ad0a5af8f9908fc29b2dde96e39bc))
+* **assessment:** remove orphaned bullmq jobs on assessment delete ([#438](https://github.com/andrelair-platform/retrieva-backend/issues/438)) ([#66](https://github.com/andrelair-platform/retrieva-backend/issues/66)) ([8bca13c](https://github.com/andrelair-platform/retrieva-backend/commit/8bca13c541b18fb8d3ed89efd0e2387198c14f0c))
+* **assessment:** retry the verdict judge on a transient no-json completion ([#77](https://github.com/andrelair-platform/retrieva-backend/issues/77)) ([1db3021](https://github.com/andrelair-platform/retrieva-backend/commit/1db30213632fd28591bb5f7c6f3712b540c5f452))
+* **evidence:** resolve route collision, make attach category-aware ([#84](https://github.com/andrelair-platform/retrieva-backend/issues/84)) ([c82cff2](https://github.com/andrelair-platform/retrieva-backend/commit/c82cff2e9694dc10406e19469342b00820318af1))
+
 ## [1.1.0](https://github.com/andrelair-platform/retrieva-backend/compare/retrieva-backend-v1.0.0...retrieva-backend-v1.1.0) (2026-09-27)
 
 
