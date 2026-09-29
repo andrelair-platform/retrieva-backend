@@ -6,6 +6,7 @@ import { parseFile } from '../../services/fileIngestionService.js';
 import { indexArrangementText } from '../../services/assessment/arrangementRag.js';
 import { can } from '../../services/security/can.js';
 import { recordAudit } from '../../services/auditLogService.js';
+import { ALL_EVIDENCE_CATEGORIES } from '../../services/evidence/categories.js';
 import {
   canTransition,
   nextState,
@@ -191,6 +192,13 @@ export const attachArrangementEvidence = catchAsync(async (req: Request, res: Re
   if (!document) return sendError(res, 400, 'document is required');
   const source = req.body.source ?? '';
   const version = req.body.version ?? '';
+  // Evidence Library (RTV-64 / #226): optional canonical category + validity so the record counts on
+  // the checklist and expiry is tracked. Category validated when present; absent = uncategorised.
+  const category = req.body.category ?? null;
+  if (category && !ALL_EVIDENCE_CATEGORIES.includes(category)) {
+    return sendError(res, 400, `category must be one of: ${ALL_EVIDENCE_CATEGORIES.join(', ')}`);
+  }
+  const validityUntil = req.body.validityUntil ? new Date(req.body.validityUntil) : null;
   // Metadata-only evidence (no file yet — RTV-14 intake wires storageKey later); hash the metadata
   // so a duplicate attach dedups.
   const evidence = await evidenceRepository.createDeduped({
@@ -200,6 +208,8 @@ export const attachArrangementEvidence = catchAsync(async (req: Request, res: Re
     document,
     source,
     version,
+    category,
+    validityUntil,
     hash: sha256(`arrangement:${req.params.id}|${document}|${source}|${version}`),
     createdBy: req.user!.userId,
   });
