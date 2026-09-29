@@ -31,13 +31,15 @@ import { getControls } from '../services/controlLibraryService.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Calibration history on dev (23-case gold set, ollama-cloud judge):
-//   Git v0 (uncalibrated) .... 0.61   over-flagged: compliant→partial, partial→non_compliant
-//   Langfuse v2 ............... 0.826  ordered decision procedure + partial/non_compliant separator
-//   Langfuse v3 (production) .. 0.870  + "partial requires a quotable limiting phrase" rule  ✅ ≥0.85
-// v3 is labelled production+latest in the retrieva Langfuse project. partial & non_compliant are now
-// P=R=1.00; every remaining miss is compliant→insufficient_evidence (a malformed-JSON fallback on the
-// small model) — SAFE direction, over-pass count stays 0. Gate default 0.6 = "don't regress"; the
-// achieved target is 0.85. Calibrate further as new Langfuse versions (no redeploy), not code edits.
+//   Git v0 (uncalibrated) ......... 0.61   over-flagged: compliant→partial, partial→non_compliant
+//   Langfuse v2 ................... 0.826  ordered decision procedure + partial/non_compliant separator
+//   Langfuse v3 .................. 0.870  + "partial requires a quotable limiting phrase" rule
+//   + retry-on-transient-no-JSON .. 1.000  (23/23) — the malformed-JSON fallbacks recovered
+//   Langfuse v6 (production, RTV-617) 0.957 + "absence → insufficient_evidence, not non_compliant"
+// v6 trades one clean-compliant → insufficient_evidence (safe) for ZERO false non_compliant on real
+// docs (RTV-66) — a false "FAIL" is the worst error for a compliance tool, so v6 is promoted despite
+// the 1.000→0.957 synthetic dip. over-pass count stays 0. v6 = production+latest. Real-doc agreement
+// is retrieval-bound at ~0.50 regardless of prompt → see #618. Calibrate as Langfuse versions, not code.
 function parseArgs(argv) {
   const a = { minAccuracy: 0.6, verbose: false };
   for (const arg of argv.slice(2)) {
