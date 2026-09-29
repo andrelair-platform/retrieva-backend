@@ -51,6 +51,22 @@ export class FindingRepository extends BaseDrizzleRepository {
     );
   }
 
+  /**
+   * All AI-drafted findings still awaiting a human decision, across the org (RTV-67 decision inbox).
+   * Least-confident first (nulls sort first under asc) so the readings that most need judgment top
+   * the queue. Entity-scoped (RTV-54).
+   */
+  async listPendingByOrg(organizationId: string) {
+    return this.find(
+      and(
+        eq(findings.organizationId, organizationId),
+        eq(findings.status, 'draft'),
+        entityScopeCondition(findings.organizationId, { action: 'finding:read' })
+      ),
+      { orderBy: [asc(findings.confidence)] }
+    );
+  }
+
   async findByIdInOrg(organizationId: string, id: string) {
     return this.findOne(
       and(
