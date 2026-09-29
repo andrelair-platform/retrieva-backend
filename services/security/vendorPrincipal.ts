@@ -20,7 +20,12 @@ export type VendorCapability = (typeof VENDOR_CAPABILITIES)[number];
 
 export interface VendorPrincipal {
   kind: 'vendor_contact';
-  questionnaireId: string;
+  /** Set when the token is a questionnaire invite (RTV-56). */
+  questionnaireId?: string;
+  /** Set when the token is an evidence collection request (RTV-227 / #227). */
+  evidenceRequestId?: string;
+  /** For an evidence-request principal: the categories this vendor was asked for (upload constraint). */
+  requestedCategories?: string[];
   /** The single arrangement this principal may touch — the whole point of the scope. */
   arrangementId: string;
   /** Resolved FROM the arrangement (the questionnaire itself is workspace-keyed) — for evidence + audit. */

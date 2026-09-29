@@ -80,6 +80,11 @@ export class EvidenceRequestRepository extends BaseDrizzleRepository {
     if (!token) return null;
     return this.findOne(eq(evidenceCollectionRequests.token, token));
   }
+
+  /** Vendor submitted — closes the request to further uploads (Slice 2). No-op if not pending. */
+  async markFulfilled(id: string) {
+    return this.updateById(id, { status: 'fulfilled', fulfilledAt: new Date() });
+  }
 }
 
 export const evidenceRequestRepository = new EvidenceRequestRepository();

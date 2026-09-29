@@ -11,6 +11,7 @@
  */
 import type { Request, Response, NextFunction } from 'express';
 import { resolveVendorPrincipal, type VendorRejectReason } from '../services/security/vendorPrincipal.js';
+import { resolveEvidenceRequestPrincipal } from '../services/security/evidenceRequestPrincipal.js';
 import { sendError } from '../utils/index.js';
 
 const REASON: Record<VendorRejectReason, { status: number; message: string }> = {
@@ -25,11 +26,39 @@ const REASON: Record<VendorRejectReason, { status: number; message: string }> = 
   no_org: { status: 404, message: 'The linked arrangement no longer exists' },
 };
 
+// Evidence-request flavour of the deny-reason messages (RTV-227 / #227) — same statuses, wording that
+// matches an evidence link rather than a questionnaire.
+const EVIDENCE_REASON: Record<VendorRejectReason, { status: number; message: string }> = {
+  not_found: { status: 404, message: 'Invalid or unknown evidence request link' },
+  revoked: { status: 403, message: 'This evidence request has been revoked' },
+  complete: { status: 409, message: 'This evidence request is already complete' },
+  expired: { status: 410, message: 'This evidence request link has expired' },
+  no_arrangement: { status: 403, message: 'This evidence request is not linked to an arrangement' },
+  no_org: { status: 404, message: 'The linked arrangement no longer exists' },
+};
+
 export async function requireVendorPrincipal(req: Request, res: Response, next: NextFunction) {
   const token = String(req.params.token || '');
   const resolution = await resolveVendorPrincipal(token);
   if (!resolution.ok) {
     const { status, message } = REASON[resolution.reason];
+    return sendError(res, status, message);
+  }
+  req.vendor = resolution.principal;
+  next();
+}
+
+// RTV-227 / #227 — resolves an evidence-collection-request token to a single-arrangement principal.
+// Mirrors requireVendorPrincipal exactly; kept separate so the two token namespaces never cross.
+export async function requireEvidenceRequestPrincipal(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  const token = String(req.params.token || '');
+  const resolution = await resolveEvidenceRequestPrincipal(token);
+  if (!resolution.ok) {
+    const { status, message } = EVIDENCE_REASON[resolution.reason];
     return sendError(res, status, message);
   }
   req.vendor = resolution.principal;
