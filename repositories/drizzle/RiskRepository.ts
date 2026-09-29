@@ -41,6 +41,22 @@ export class RiskRepository extends BaseDrizzleRepository {
     );
   }
 
+  /**
+   * All OPEN risks across the org — the ones awaiting the human's first remediation decision
+   * (RTV-67 decision inbox). Excludes in-flight (mitigating/mitigated) + terminal (accepted/closed).
+   * Entity-scoped (RTV-54).
+   */
+  async listOpenByOrg(organizationId: string) {
+    return this.find(
+      and(
+        eq(risks.organizationId, organizationId),
+        eq(risks.status, 'open'),
+        entityScopeCondition(risks.organizationId, { action: 'risk:read' })
+      ),
+      { orderBy: [desc(risks.createdAt)] }
+    );
+  }
+
   async findByIdInOrg(organizationId: string, id: string) {
     return this.findOne(
       and(

@@ -19,6 +19,7 @@ import assessmentRoutes from './routes/assessmentRoutes.js';
 import complianceRoutes from './routes/complianceRoutes.js';
 import concentrationRoutes from './modules/concentration/concentration.routes.js';
 import registerRoutes from './modules/register/register.routes.js';
+import decisionQueueRoutes from './modules/decisionQueue/decisionQueue.routes.js';
 import arrangementAssessmentRoutes from './modules/arrangementAssessment/arrangementAssessment.routes.js';
 import {
   arrangementsRouter,
@@ -291,6 +292,15 @@ app.use(
 // Register of Information (RT.02.01) — org-scoped projection of the arrangement graph (RTV-38);
 // setEntityContext applies RTV-54 row-level isolation to the graph reads.
 app.use('/api/v1/register', optionalAuth, requireActivePlan, setEntityContext, registerRoutes);
+// Decision inbox (RTV-67) — org-scoped cross-arrangement queue of draft findings + open risks;
+// setEntityContext applies RTV-54 isolation so it spans exactly the arrangements the caller may see.
+app.use(
+  '/api/v1/decision-queue',
+  optionalAuth,
+  requireActivePlan,
+  setEntityContext,
+  decisionQueueRoutes
+);
 // Arrangement-graph CRUD (RTV-36/37) + the RTV-41 assessment engine — both org-scoped on
 // /api/v1/arrangements; setEntityContext applies RTV-54 isolation. Dimensions live at
 // /api/v1/arrangement-graph. CRUD is registered before the assessment router (literal paths first).
