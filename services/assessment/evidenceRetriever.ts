@@ -11,6 +11,13 @@
  */
 import { evidenceRepository } from '../../repositories/index.js';
 import { searchArrangementSpans } from './arrangementRag.js';
+import {
+  RERANK_ENABLED,
+  RERANK_CANDIDATES,
+  rerankSpans,
+  makeRerankSelector,
+  type RerankSelector,
+} from './rerank.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous assessment domain objects
 type AnyObj = Record<string, any>;
@@ -50,8 +57,8 @@ function coveredTypes(control: AnyObj, matched: AnyObj[]) {
 export async function gatherEvidence(
   control: AnyObj,
   arrangement: AnyObj,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable span search (stubbed in tests)
-  deps: { searchSpans?: (...args: any[]) => Promise<any[]> } = {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable span search + rerank selector (stubbed in tests)
+  deps: { searchSpans?: (...args: any[]) => Promise<any[]>; rerankSelector?: RerankSelector } = {}
 ) {
   const searchSpans = deps.searchSpans || searchArrangementSpans;
   const all: AnyObj[] = await evidenceRepository.resolveForArrangement(
@@ -69,7 +76,15 @@ export async function gatherEvidence(
 
   // Real document spans matching the control's patterns (empty unless a doc was ingested).
   const query = [control.title, ...(control.clauseMatchPatterns || [])].filter(Boolean).join(' ');
-  const ragSpans = await searchSpans(arrangement.id, query);
+  // When reranking is enabled, retrieve MORE candidates then let the reranker isolate the on-topic
+  // clause(s) for the judge (#618). Off by default → identical behaviour to before (topK default).
+  let ragSpans = RERANK_ENABLED
+    ? await searchSpans(arrangement.id, query, RERANK_CANDIDATES)
+    : await searchSpans(arrangement.id, query);
+  if (RERANK_ENABLED && ragSpans.length > 1) {
+    const selector = deps.rerankSelector || makeRerankSelector({ sessionId: arrangement.id });
+    ragSpans = await rerankSpans(control, ragSpans, selector);
+  }
   const spans = [...ragSpans, ...metaSpans];
 
   return {
