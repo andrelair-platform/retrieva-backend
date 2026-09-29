@@ -20,6 +20,7 @@ import complianceRoutes from './routes/complianceRoutes.js';
 import concentrationRoutes from './modules/concentration/concentration.routes.js';
 import registerRoutes from './modules/register/register.routes.js';
 import decisionQueueRoutes from './modules/decisionQueue/decisionQueue.routes.js';
+import evidenceRoutes from './modules/evidence/evidence.routes.js';
 import arrangementAssessmentRoutes from './modules/arrangementAssessment/arrangementAssessment.routes.js';
 import {
   arrangementsRouter,
@@ -311,6 +312,14 @@ app.use(
   requireActivePlan,
   setEntityContext,
   intakeRoutes
+);
+// Evidence Library (RTV-64 / #226) — before the CRUD router so literal `/:id/evidence` wins over `/:id`.
+app.use(
+  '/api/v1/arrangements',
+  optionalAuth,
+  requireActivePlan,
+  setEntityContext,
+  evidenceRoutes
 );
 app.use(
   '/api/v1/arrangements',

@@ -1,0 +1,2 @@
+CREATE TYPE "public"."evidence_category" AS ENUM('master_service_agreement', 'dora_addendum', 'soc2_report', 'iso27001_cert', 'vendor_dora_attestation', 'subprocessor_list', 'bcp_dr_plan', 'exit_strategy', 'risk_classification');--> statement-breakpoint
+ALTER TABLE "evidence" ADD COLUMN "category" "evidence_category";
