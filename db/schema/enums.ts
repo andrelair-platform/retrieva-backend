@@ -97,6 +97,22 @@ export const exitDifficultyEnum = pgEnum('exit_difficulty', ['low', 'medium', 'h
 // vs arrangement-local (entity-private).
 export const evidenceScopeEnum = pgEnum('evidence_scope', ['provider', 'arrangement']);
 
+// Evidence Library categories (RTV-64 / #226) — the canonical DORA Art. 28/30 evidence types a piece
+// of evidence can be classified as. Nullable on `evidence` (legacy/uncategorised records stay null);
+// the checklist maps an arrangement's expected categories against what's present. Metadata (label,
+// expectedSource, frameworks) lives in services/evidence/categories.ts, keyed by these values.
+export const evidenceCategoryEnum = pgEnum('evidence_category', [
+  'master_service_agreement',
+  'dora_addendum',
+  'soc2_report',
+  'iso27001_cert',
+  'vendor_dora_attestation',
+  'subprocessor_list',
+  'bcp_dr_plan',
+  'exit_strategy',
+  'risk_classification',
+]);
+
 // Arrangement lifecycle (RTV-31, ADR §6) — one state machine entered by three triggers.
 export const arrangementLifecycleEnum = pgEnum('arrangement_lifecycle', [
   'prospect',

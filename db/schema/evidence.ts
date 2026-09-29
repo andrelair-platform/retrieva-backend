@@ -9,7 +9,7 @@
 // this story adds the model, not new parsing.
 import { pgTable, uuid, text, timestamp, index, check } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import { evidenceScopeEnum } from './enums.js';
+import { evidenceScopeEnum, evidenceCategoryEnum } from './enums.js';
 import { organizations } from './organizations.js';
 import { providerNodes } from './providerDependencies.js';
 import { arrangements } from './arrangements.js';
@@ -24,6 +24,9 @@ export const evidence = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: 'cascade' }),
     scope: evidenceScopeEnum('scope').notNull(),
+    // Evidence Library category (RTV-64 / #226) — nullable: legacy/uncategorised records stay null and
+    // don't satisfy a checklist item. Metadata keyed by this in services/evidence/categories.ts.
+    category: evidenceCategoryEnum('category'),
     // polymorphic target — exactly one set per scope (enforced by the CHECK below)
     providerId: uuid('provider_id').references(() => providerNodes.id, { onDelete: 'cascade' }),
     arrangementId: uuid('arrangement_id').references(() => arrangements.id, {

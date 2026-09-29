@@ -85,6 +85,13 @@
       "when": 1790608743974,
       "tag": "0011_unusual_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790695890961,
+      "tag": "0012_redundant_tempest",
+      "breakpoints": true
     }
   ]
 }
