@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/auth.js';
-import { getDecisionQueue } from './decisionQueue.controller.js';
+import { getDecisionQueue, acceptHighConfidence } from './decisionQueue.controller.js';
 
 // Decision inbox (RTV-67) — ORG-scoped, mounted at /api/v1/decision-queue with setEntityContext
 // (RTV-54 isolation). The read side of "the human's job is to decide": one cross-arrangement queue
@@ -10,5 +10,8 @@ const router = Router();
 
 // GET /api/v1/decision-queue — draft findings + open risks awaiting a decision, urgency-sorted.
 router.get('/', authenticate, getDecisionQueue);
+
+// POST /api/v1/decision-queue/accept-high-confidence — bulk-approve confident drafts (RTV-55 SoD/audit).
+router.post('/accept-high-confidence', authenticate, acceptHighConfidence);
 
 export default router;

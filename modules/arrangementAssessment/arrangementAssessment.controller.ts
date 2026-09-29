@@ -8,7 +8,7 @@ import {
   arrangementRepository,
 } from '../../repositories/index.js';
 import { can } from '../../services/security/can.js';
-import { verdictWarrantsRisk, buildRiskFromFinding } from '../../services/assessment/findingRisk.js';
+import { applyFindingDecision } from '../../services/assessment/applyFindingDecision.js';
 import {
   canTransition,
   capabilityForTransition,
@@ -16,11 +16,8 @@ import {
 } from '../../services/assessment/riskLifecycle.js';
 import {
   DECISION_STATUS,
-  isSelfApproval,
-  isVerdictOverride,
   type FindingDecision,
 } from '../../services/security/separationOfDuties.js';
-import { CAPABILITY_MAP_VERSION } from '../../config/authz/capabilities.js';
 import { recordAudit } from '../../services/auditLogService.js';
 import { markFindingStaleness } from '../../services/assessment/verdict.js';
 import { computeCoverage } from '../../services/assessment/coverage.js';
@@ -114,84 +111,20 @@ export const decideFinding = catchAsync(async (req: Request, res: Response) => {
     return sendError(res, 404, 'Finding not found');
   }
 
-  // 2) maker ≠ checker (AC-2) — cannot decide your own draft, whatever roles you hold.
-  if (isSelfApproval(finding, req.user!.userId)) {
-    return sendError(
-      res,
-      403,
-      'Separation of duties: you cannot decide a finding you authored — a different checker must review it'
-    );
-  }
-
-  // 3) override reason (AC-4) — overriding the AI verdict must be justified.
-  if (isVerdictOverride(finding.verdict, decision) && !reason) {
-    return sendError(
-      res,
-      400,
-      `A reason is required to ${decision} against the AI verdict '${finding.verdict}'`
-    );
-  }
-
-  const updated = await findingRepository.setDecision(organizationId, finding.id, status, {
-    decidedBy: req.user!.userId,
-    reason: reason ?? null,
-  });
-  await recordAudit({
+  // Gates 2 (maker≠checker) + 3 (override reason), persist, audit, and open the remediation risk —
+  // via the shared no-bypass decision service (also used by the RTV-67 decision-inbox bulk action).
+  const result = await applyFindingDecision({
     organizationId,
-    actor: req.user!.userId,
-    action: `finding.${decision}`,
-    targetType: 'finding',
-    targetId: finding.id,
-    evidenceRefs: [finding.controlId],
-    metadata: {
-      arrangementId: finding.arrangementId,
-      verdict: finding.verdict,
-      status,
-      override: isVerdictOverride(finding.verdict, decision),
-      reason: reason ?? null,
-      libraryVersion: finding.libraryVersion,
-      capabilityMapVersion: CAPABILITY_MAP_VERSION,
-    },
+    finding,
+    decision,
+    reason: reason ?? null,
+    userId: req.user!.userId,
   });
-
-  // AC-3: approving a GAP verdict routes it into the remediation loop as a Risk the human owns.
-  // Idempotent (one risk per finding), so a re-approval never duplicates. compliant/not_applicable
-  // approvals open no risk. The audit trail records the risk creation for defensibility.
-  let risk = null;
-  if (status === 'approved' && verdictWarrantsRisk(finding.verdict)) {
-    const derived = buildRiskFromFinding(finding);
-    risk = await riskRepository.createFromFinding({
-      organizationId,
-      arrangementId: finding.arrangementId,
-      findingId: finding.id,
-      controlId: finding.controlId,
-      libraryVersion: finding.libraryVersion,
-      sourceVerdict: derived.sourceVerdict,
-      title: derived.title,
-      description: derived.description,
-      severity: derived.severity,
-      openedBy: req.user!.userId,
-    });
-    if (risk) {
-      await recordAudit({
-        organizationId,
-        actor: req.user!.userId,
-        action: 'risk.created',
-        targetType: 'risk',
-        targetId: risk.id,
-        evidenceRefs: [finding.controlId],
-        metadata: {
-          arrangementId: finding.arrangementId,
-          findingId: finding.id,
-          sourceVerdict: derived.sourceVerdict,
-          severity: derived.severity,
-          libraryVersion: finding.libraryVersion,
-        },
-      });
-    }
+  if (!result.ok) {
+    return sendError(res, result.code === 'self_approval' ? 403 : 400, result.message);
   }
 
-  sendSuccess(res, 200, 'Finding decision recorded', { finding: updated, risk });
+  sendSuccess(res, 200, 'Finding decision recorded', { finding: result.finding, risk: result.risk });
 });
 
 // GET /api/v1/arrangements/:arrangementId/risks — the remediation loop for this arrangement: the
