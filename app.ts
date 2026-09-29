@@ -29,6 +29,7 @@ import {
 import intakeRoutes from './modules/intake/intake.routes.js';
 import questionnaireRoutes from './routes/questionnaireRoutes.js';
 import questionnairePublicRoutes from './routes/questionnairePublicRoutes.js';
+import publicEvidenceRoutes from './routes/publicEvidenceRoutes.js';
 import organizationRoutes from './routes/organizationRoutes.js';
 import billingRoutes from './routes/billingRoutes.js';
 import { handleStripeWebhook } from './controllers/billingController.js';
@@ -261,6 +262,9 @@ app.use('/api/v1/billing', billingRoutes);
 // workspace owner previewing their own link from a paused-plan org) can't 402
 // a route a vendor with no Retrieva account must be able to reach.
 app.use('/api/v1/questionnaires', questionnairePublicRoutes);
+
+// Unguarded: public vendor evidence portal (RTV-227 / #227) — token-gated, same rationale as above.
+app.use('/api/v1/public/evidence', publicEvidenceRoutes);
 
 // Paid routes — optionalAuth sets req.user when a token is present so the
 // plan guard can check it.
