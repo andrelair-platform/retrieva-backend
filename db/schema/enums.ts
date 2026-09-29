@@ -113,6 +113,16 @@ export const evidenceCategoryEnum = pgEnum('evidence_category', [
   'risk_classification',
 ]);
 
+// Evidence collection request lifecycle (RTV-227 / #227) — the institution asks a vendor for the
+// evidence categories the checklist (#226) shows missing. `pending` = created, awaiting the vendor;
+// `fulfilled` = the vendor submitted (set by the Slice-2 public surface); `revoked` = the firm
+// cancelled the invite before it completed (denies the token regardless of expiry).
+export const evidenceRequestStatusEnum = pgEnum('evidence_request_status', [
+  'pending',
+  'fulfilled',
+  'revoked',
+]);
+
 // Arrangement lifecycle (RTV-31, ADR §6) — one state machine entered by three triggers.
 export const arrangementLifecycleEnum = pgEnum('arrangement_lifecycle', [
   'prospect',

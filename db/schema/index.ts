@@ -17,6 +17,7 @@ export * from './ictServices.js';
 export * from './arrangements.js';
 // Evidence + audit trail (RTV-37)
 export * from './evidence.js';
+export * from './evidenceRequests.js';
 export * from './auditLog.js';
 // Assessment findings (RTV-41)
 export * from './findings.js';
