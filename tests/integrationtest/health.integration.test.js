@@ -236,12 +236,13 @@ describe('Health Check API Integration Tests', () => {
   });
 
   // =============================================================================
-  // API Documentation (Swagger removed in MVP)
+  // API Documentation (Swagger UI — wired in RTV-74; see openapi.integration.test.ts)
   // =============================================================================
   describe('GET /api-docs', () => {
-    it('should return 404 as Swagger docs are not available in MVP', async () => {
-      const res = await request.get('/api-docs/');
-      expect(res.status).toBe(404);
+    it('serves the Swagger UI (RTV-74)', async () => {
+      const res = await request.get('/api-docs/').redirects(1);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/html/);
     });
   });
 });
