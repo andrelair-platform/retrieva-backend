@@ -22,6 +22,7 @@ let app: any;
 let doc: any;
 let declaredRoutes: () => Array<{ method: string; path: string }>;
 let routesOf: (r: unknown) => Array<{ method: string; path: string }>;
+let enrichmentKeys: () => string[];
 let API_MOUNTS: Array<{ router: unknown }>;
 let healthRoutes: unknown;
 
@@ -34,6 +35,7 @@ beforeAll(async () => {
   doc = spec.buildOpenApiDocument();
   declaredRoutes = spec.declaredRoutes;
   routesOf = spec.routesOf;
+  enrichmentKeys = spec.enrichmentKeys;
   API_MOUNTS = (await import('../../openapi/mounts.js')).API_MOUNTS;
   healthRoutes = (await import('../../routes/healthRoutes.js')).default;
 });
@@ -102,5 +104,32 @@ describe('RTV-74 corrects the hand-written drift', () => {
       Object.values(item).some((op: any) => Array.isArray(op.security) && op.security.length === 0)
     );
     expect(publicPaths.length).toBeGreaterThan(0);
+  });
+});
+
+describe('RTV-74 schema enrichment', () => {
+  it('every enrichment key maps to a real declared route (no path typos)', () => {
+    const declared = new Set(
+      declaredRoutes().map((r) => `${r.method} ${r.path.replace(/:([A-Za-z0-9_]+)/g, '{$1}')}`)
+    );
+    const orphanKeys = enrichmentKeys().filter((k) => !declared.has(k));
+    expect(orphanKeys).toEqual([]);
+  });
+
+  it('attaches the real request-body schema to an enriched endpoint (POST login)', () => {
+    const op = doc.paths['/api/v1/auth/login']?.post;
+    const schema = op?.requestBody?.content?.['application/json']?.schema;
+    expect(schema).toBeDefined();
+    // loginSchema requires email + password.
+    expect(schema.properties?.email).toBeDefined();
+    expect(schema.properties?.password).toBeDefined();
+  });
+
+  it('registers the shared ApiResponse envelope component and references it in 200s', () => {
+    expect(doc.components?.schemas?.ApiResponse).toBeDefined();
+    const okSchema = doc.paths['/api/v1/auth/login']?.post?.responses?.['200']?.content?.[
+      'application/json'
+    ]?.schema;
+    expect(okSchema?.$ref).toBe('#/components/schemas/ApiResponse');
   });
 });
