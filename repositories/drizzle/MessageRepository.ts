@@ -64,15 +64,36 @@ export class MessageRepository extends BaseDrizzleRepository {
     return this.create({ conversationId, role: 'assistant', content });
   }
 
-  async addMessagePair(conversationId: string, userMessage: string, assistantMessage: string) {
+  async addMessagePair(
+    conversationId: string,
+    userMessage: string,
+    assistantMessage: string,
+    assistantTraceId?: string | null
+  ) {
     // Stagger the timestamps so the user turn deterministically precedes the assistant
     // turn: both rows in a single INSERT would otherwise share the same now() and tie
     // on ordering (Mongo relied on implicit insertion order; SQL needs an explicit key).
+    // RTV-73: the assistant row carries the Langfuse trace id so feedback can score it.
     const now = Date.now();
     return this.createMany([
       { conversationId, role: 'user', content: userMessage, timestamp: new Date(now) },
-      { conversationId, role: 'assistant', content: assistantMessage, timestamp: new Date(now + 1) },
+      {
+        conversationId,
+        role: 'assistant',
+        content: assistantMessage,
+        timestamp: new Date(now + 1),
+        langfuseTraceId: assistantTraceId ?? null,
+      },
     ]);
+  }
+
+  /** RTV-73 — set (or clear with null) a message's user rating. Returns the decrypted row. */
+  async setFeedback(messageId: string, feedback: 'positive' | 'negative' | null) {
+    const row = await this.updateById(messageId, {
+      feedback,
+      feedbackAt: feedback ? new Date() : null,
+    });
+    return this._decrypt(row as MessageRow);
   }
 
   async deleteByConversation(conversationId: string) {

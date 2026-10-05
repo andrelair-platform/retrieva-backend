@@ -55,6 +55,14 @@ export const messages = pgTable(
     content: text('content').notNull(), // encrypted at rest
     // [{ id, title, content, url, pageId, score, section, type }]
     sources: jsonb('sources').notNull().default([]),
+    // RTV-73 — per-message user rating ('positive' | 'negative'), nullable until rated / cleared.
+    // The durable analytics record; also pushed to Langfuse as a `user_rating` score.
+    feedback: text('feedback'),
+    feedbackAt: timestamp('feedback_at', { withTimezone: true }),
+    // RTV-73 — the Langfuse trace id of the generation that produced this assistant message,
+    // captured at answer time so feedback can attach a score to the right trace. Null when
+    // tracing is disabled or for user-role messages.
+    langfuseTraceId: text('langfuse_trace_id'),
     timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })

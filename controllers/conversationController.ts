@@ -114,6 +114,7 @@ export const getConversation = catchAsync(async (req: Request, res: Response) =>
       role: m.role,
       content: m.content,
       sources: allowSources ? m.sources || [] : [],
+      feedback: m.feedback ?? null, // RTV-73 — persisted user rating so the UI reflects it on reload
       timestamp: m.timestamp,
     })),
     pagination: {
@@ -149,6 +150,23 @@ export const askQuestion = catchAsync(async (req: Request, res: Response) => {
   sendSuccess(res, 200, 'Question answered successfully', {
     answer,
     conversationId: id,
+  });
+});
+
+/**
+ * Submit (or clear) feedback on an assistant message
+ * POST /api/v1/conversations/:id/messages/:messageId/feedback
+ */
+export const submitMessageFeedback = catchAsync(async (req: Request, res: Response) => {
+  const id = String(req.params.id);
+  const messageId = String(req.params.messageId);
+  const userId = getUserId(req);
+  const { feedback } = req.body;
+
+  const message = await conversationService.submitMessageFeedback(id, messageId, userId, feedback);
+
+  sendSuccess(res, 200, 'Feedback recorded', {
+    message: { id: message.id, feedback: message.feedback ?? null },
   });
 });
 
