@@ -18,8 +18,23 @@ import {
 } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import { API_MOUNTS } from './mounts.js';
+import { ENRICHMENTS } from './enrich.js';
 
 extendZodWithOpenApi(z);
+
+/** Shared success envelope emitted by sendSuccess() — `{ status, message, data }`. */
+const ApiResponseEnvelope = z
+  .object({
+    status: z.literal('success'),
+    message: z.string(),
+    data: z.unknown().optional(),
+  })
+  .openapi('ApiResponse');
+
+/** Keys of ENRICHMENTS — exported so the completeness test can validate them against real routes. */
+export function enrichmentKeys(): string[] {
+  return Object.keys(ENRICHMENTS);
+}
 
 export interface MethodPath {
   method: string;
@@ -86,6 +101,12 @@ export function buildOpenApiDocument() {
     description:
       'JWT access token, set as an httpOnly cookie on login. A Bearer Authorization header is also accepted.',
   });
+  registry.register('ApiResponse', ApiResponseEnvelope);
+
+  const okResponse = {
+    description: 'Success',
+    content: { 'application/json': { schema: ApiResponseEnvelope } },
+  };
 
   const seen = new Set<string>();
   for (const mount of API_MOUNTS) {
@@ -96,24 +117,30 @@ export function buildOpenApiDocument() {
       if (seen.has(key)) continue; // same method+path from two mounts → one entry
       seen.add(key);
 
+      const enrichment = ENRICHMENTS[key];
       const params = pathParams(fullExpress);
-      const request = params.length
-        ? {
-            params: z.object(
-              Object.fromEntries(params.map((p) => [p, z.string().openapi({ example: '…' })]))
-            ),
-          }
-        : undefined;
+
+      // request = path params (always, when present) + enriched body/query (where known).
+      const request: Record<string, unknown> = {};
+      if (params.length) {
+        request.params = z.object(
+          Object.fromEntries(params.map((p) => [p, z.string().openapi({ example: '…' })]))
+        );
+      }
+      if (enrichment?.query) request.query = enrichment.query;
+      if (enrichment?.body) {
+        request.body = { content: { 'application/json': { schema: enrichment.body } } };
+      }
 
       registry.registerPath({
         method: r.method as 'get' | 'post' | 'put' | 'patch' | 'delete',
         path: oapiPath,
         tags: [mount.tag],
-        summary: `${r.method.toUpperCase()} ${oapiPath}`,
+        summary: enrichment?.summary ?? `${r.method.toUpperCase()} ${oapiPath}`,
         security: mount.public ? [] : [{ cookieAuth: [] }],
-        ...(request ? { request } : {}),
+        ...(Object.keys(request).length ? { request } : {}),
         responses: {
-          200: { description: 'Success' },
+          200: okResponse,
           ...(mount.public ? {} : { 401: { description: 'Unauthenticated' } }),
         },
       });
