@@ -32,6 +32,7 @@ import questionnairePublicRoutes from './routes/questionnairePublicRoutes.js';
 import publicEvidenceRoutes from './routes/publicEvidenceRoutes.js';
 import organizationRoutes from './routes/organizationRoutes.js';
 import billingRoutes from './routes/billingRoutes.js';
+import { mountApiDocs } from './openapi/index.js';
 import { handleStripeWebhook } from './controllers/billingController.js';
 import { requireActivePlan } from './middleware/requireActivePlan.js';
 import { optionalAuth } from './middleware/auth.js';
@@ -353,6 +354,10 @@ app.use(
   setTenantContext,
   questionnaireRoutes
 );
+
+// OpenAPI docs (RTV-74) — Swagger UI at /api-docs + raw spec at /api-docs.json.
+// Mounted after all routers so the generated spec reflects every mounted endpoint.
+mountApiDocs(app);
 
 app.get('/', (_req: Request, res: Response) => {
   res.send('Hello from a secure app.ts!');
