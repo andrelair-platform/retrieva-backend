@@ -20,6 +20,7 @@ import {
   mfaVerifySchema,
   mfaEnableSchema,
   mfaDisableSchema,
+  messageFeedbackSchema,
 } from '../validators/schemas.js';
 import { confirmDependencyBody } from '../modules/concentration/concentration.schema.js';
 
@@ -45,6 +46,12 @@ export const ENRICHMENTS: Record<string, Enrichment> = {
   'post /api/v1/auth/mfa/verify': { body: mfaVerifySchema, summary: 'Verify a TOTP / recovery code' },
   'post /api/v1/auth/mfa/enable': { body: mfaEnableSchema, summary: 'Enable MFA' },
   'post /api/v1/auth/mfa/disable': { body: mfaDisableSchema, summary: 'Disable MFA' },
+
+  // ── conversations ────────────────────────────────────────────────────────────
+  'post /api/v1/conversations/{id}/messages/{messageId}/feedback': {
+    body: messageFeedbackSchema,
+    summary: 'Record (or clear) a 👍/👎 rating on an assistant message → Langfuse score',
+  },
 
   // ── concentration ────────────────────────────────────────────────────────────
   'patch /api/v1/concentration/dependencies/{id}': {

@@ -801,7 +801,7 @@ class RAGService {
         const citedSources = extractCitedSourcesFromText(response as any, sources);
         const validation = buildSkippedJudgeValidation(citedSources.length);
 
-        await this._saveMessages(conversationId, question, response);
+        await this._saveMessages(conversationId, question, response, trace?.id);
 
         const result = await this._buildAndCacheResult({
           answer: response,
@@ -884,7 +884,7 @@ class RAGService {
         const fallbackAnswer = guardrailsConfig.output.confidenceHandling.messages.blocked;
         emit('replace', { text: fallbackAnswer });
 
-        await this._saveMessages(conversationId, question, fallbackAnswer);
+        await this._saveMessages(conversationId, question, fallbackAnswer, trace?.id);
 
         const result = await this._buildAndCacheResult({
           answer: fallbackAnswer,
@@ -938,6 +938,7 @@ class RAGService {
           conversationId,
           startTime,
           requestId,
+          traceId: trace?.id,
           retryTimeout: retryConfig.retryTimeoutMs,
         });
         if (retryResult) {
@@ -953,7 +954,7 @@ class RAGService {
         }
       }
 
-      await this._saveMessages(conversationId, question, response);
+      await this._saveMessages(conversationId, question, response, trace?.id);
 
       const result = await this._buildAndCacheResult({
         answer: response,
@@ -1009,6 +1010,7 @@ class RAGService {
     workspaceId,
     startTime,
     requestId,
+    traceId,
     retryTimeout = guardrailsConfig.generation.retry.retryTimeoutMs,
   }: any) {
     const retryStartTime = Date.now();
@@ -1070,7 +1072,7 @@ class RAGService {
           retryDuration: Date.now() - retryStartTime,
         });
 
-        await this._saveMessages(conversationId, question, retryResponse);
+        await this._saveMessages(conversationId, question, retryResponse, traceId);
 
         return this._buildAndCacheResult({
           answer: retryResponse,
@@ -1208,12 +1210,13 @@ class RAGService {
    * ISSUE #26 FIX: Use MongoDB transaction for atomicity
    * Ensures either both messages are saved or neither is
    */
-  async _saveMessages(conversationId: any, question: any, response: any) {
+  async _saveMessages(conversationId: any, question: any, response: any, assistantTraceId?: string | null) {
     try {
       // Persist the user + assistant turns (staggered timestamps so order is
       // deterministic) and bump the conversation counter. Postgres statements are
       // each atomic; a wrapping txn isn't needed for this low-stakes pair.
-      await this.messageRepo.addMessagePair(conversationId, question, response);
+      // RTV-73: thread the Langfuse trace id onto the assistant turn so feedback can score it.
+      await this.messageRepo.addMessagePair(conversationId, question, response, assistantTraceId);
       await this.conversationRepo.incrementMessageCount(conversationId, 2);
 
       this.logger.info('Saved messages to database', { service: 'rag', conversationId });

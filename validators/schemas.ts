@@ -617,6 +617,15 @@ export const idParamsSchema = z.object({ id: mongoIdSchema });
 export const memberIdParamsSchema = z.object({ memberId: mongoIdSchema });
 export const workspaceIdParamsSchema = z.object({ workspaceId: mongoIdSchema });
 
+// RTV-73 — per-message feedback: :id (conversation) + :messageId, body { feedback }.
+export const conversationMessageParamsSchema = z.object({
+  id: mongoIdSchema,
+  messageId: mongoIdSchema,
+});
+export const messageFeedbackSchema = z
+  .object({ feedback: z.enum(['positive', 'negative']).nullable() })
+  .strict();
+
 // Combined :id + :docIndex for assessment file download
 export const assessmentFileParamsSchema = z.object({
   id: mongoIdSchema,

@@ -4,6 +4,7 @@ import {
   getConversations,
   getConversation,
   askQuestion,
+  submitMessageFeedback,
   updateConversation,
   deleteConversation,
   bulkDeleteConversations,
@@ -17,6 +18,8 @@ import {
   askInConversationSchema,
   bulkDeleteConversationsSchema,
   idParamsSchema,
+  conversationMessageParamsSchema,
+  messageFeedbackSchema,
   listConversationsQuerySchema,
 } from '../validators/schemas.js';
 
@@ -78,6 +81,16 @@ router.post(
   validateParams(idParamsSchema),
   validateBody(askInConversationSchema),
   askQuestion
+);
+
+// RTV-73 — submit/clear feedback on an assistant message (feeds the Langfuse user_rating score).
+router.post(
+  '/:id/messages/:messageId/feedback',
+  authenticate,
+  requireWorkspaceAccess,
+  validateParams(conversationMessageParamsSchema),
+  validateBody(messageFeedbackSchema),
+  submitMessageFeedback
 );
 
 export { router as conversationRoutes };

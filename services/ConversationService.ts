@@ -8,6 +8,7 @@ import { messageRepository } from '../repositories/index.js';
 import { workspaceMemberRepository } from '../repositories/index.js';
 import { conversations, messages } from '../db/schema/index.js';
 import { ragService } from './rag.js';
+import { logFeedback } from '../config/tracing.js';
 import logger from '../config/logger.js';
 
 // Conversations authorise by USER (verifyOwnership), not by the active workspace, so this
@@ -18,6 +19,7 @@ class ConversationService {
   messageRepo: any;
   workspaceMemberRepo: any;
   ragService: any;
+  logFeedback: any;
   logger: any;
 
   constructor(deps: Record<string, any> = {}) {
@@ -25,6 +27,7 @@ class ConversationService {
     this.messageRepo = deps.messageRepo || messageRepository;
     this.workspaceMemberRepo = deps.workspaceMemberRepo || workspaceMemberRepository;
     this.ragService = deps.ragService || ragService;
+    this.logFeedback = deps.logFeedback || logFeedback;
     this.logger = deps.logger || logger;
   }
 
@@ -145,6 +148,45 @@ class ConversationService {
       userId,
       authorizedWorkspaceIds,
     });
+  }
+
+  // RTV-73 — record a user rating on an assistant message and push it to Langfuse as a
+  // `user_rating` score (the LLMOps feedback signal). feedback=null clears the rating.
+  async submitMessageFeedback(
+    conversationId: string,
+    messageId: string,
+    userId: string,
+    feedback: 'positive' | 'negative' | null
+  ) {
+    const conversation = await this.conversationRepo.findByIdUnscoped(conversationId);
+    if (!conversation) throw new AppError('Conversation not found', 404);
+    if (!verifyOwnership(conversation.userId, userId)) throw new AppError('Access denied', 403);
+
+    const message = await this.messageRepo.findById(messageId);
+    if (!message || String(message.conversationId) !== String(conversationId)) {
+      throw new AppError('Message not found', 404);
+    }
+    if (message.role !== 'assistant') {
+      throw new AppError('Feedback can only be submitted on assistant messages', 400);
+    }
+
+    const updated = await this.messageRepo.setFeedback(messageId, feedback);
+
+    // Best-effort LLMOps score — never fails the request. positive→1, negative→0; a
+    // cleared rating (null) has nothing to score. Skipped when the message has no trace id
+    // (tracing was off at answer time) or Langfuse is disabled (logFeedback no-ops).
+    if (feedback && updated?.langfuseTraceId) {
+      try {
+        await this.logFeedback(updated.langfuseTraceId, feedback === 'positive' ? 1 : 0);
+      } catch (e: any) {
+        this.logger.warn('Langfuse feedback score failed (non-fatal)', {
+          service: 'conversation',
+          messageId,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+    return updated;
   }
 
   async updateConversation(id: string, userId: string, { title }: any) {
