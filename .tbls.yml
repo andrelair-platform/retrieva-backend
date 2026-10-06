@@ -1,0 +1,12 @@
+# tbls — reverse-engineers the schema (built by applying the Drizzle db/migrations/*.sql on an
+# ephemeral Postgres) into committed Mermaid ER docs; CI fails if docs/data-model drifts
+# (.github/workflows/ci.yml schema-erd-drift). public schema; Drizzle's drizzle.__drizzle_migrations
+# bookkeeping table excluded. Baseline on x86_64 / postgres:17.4 to match CI (tbls embeds database_version).
+docPath: docs/data-model
+er:
+  format: mermaid
+format:
+  sort: true
+  adjust: true
+exclude:
+  - drizzle.__drizzle_migrations

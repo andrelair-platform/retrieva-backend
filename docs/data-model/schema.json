@@ -1,0 +1,4758 @@
+{
+  "name": "retrieva",
+  "tables": [
+    {
+      "name": "public.arrangements",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "arrangement_type",
+          "type": "arrangement_type",
+          "nullable": false,
+          "default": "'external'::arrangement_type"
+        },
+        {
+          "name": "business_function_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "criticality",
+          "type": "tier",
+          "nullable": true
+        },
+        {
+          "name": "data_classes",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "data_residency",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "dependency",
+          "type": "dependency_level",
+          "nullable": true
+        },
+        {
+          "name": "exit_difficulty",
+          "type": "exit_difficulty",
+          "nullable": true
+        },
+        {
+          "name": "ict_service_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "legal_entity_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "lifecycle_status",
+          "type": "arrangement_lifecycle",
+          "nullable": false,
+          "default": "'active'::arrangement_lifecycle"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "provider_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "arrangements_entity_idx",
+          "def": "CREATE INDEX arrangements_entity_idx ON public.arrangements USING btree (legal_entity_id)",
+          "table": "public.arrangements",
+          "columns": [
+            "legal_entity_id"
+          ]
+        },
+        {
+          "name": "arrangements_function_idx",
+          "def": "CREATE INDEX arrangements_function_idx ON public.arrangements USING btree (business_function_id)",
+          "table": "public.arrangements",
+          "columns": [
+            "business_function_id"
+          ]
+        },
+        {
+          "name": "arrangements_lifecycle_idx",
+          "def": "CREATE INDEX arrangements_lifecycle_idx ON public.arrangements USING btree (organization_id, lifecycle_status)",
+          "table": "public.arrangements",
+          "columns": [
+            "organization_id",
+            "lifecycle_status"
+          ]
+        },
+        {
+          "name": "arrangements_org_idx",
+          "def": "CREATE INDEX arrangements_org_idx ON public.arrangements USING btree (organization_id)",
+          "table": "public.arrangements",
+          "columns": [
+            "organization_id"
+          ]
+        },
+        {
+          "name": "arrangements_pkey",
+          "def": "CREATE UNIQUE INDEX arrangements_pkey ON public.arrangements USING btree (id)",
+          "table": "public.arrangements",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "arrangements_provider_idx",
+          "def": "CREATE INDEX arrangements_provider_idx ON public.arrangements USING btree (provider_id)",
+          "table": "public.arrangements",
+          "columns": [
+            "provider_id"
+          ]
+        },
+        {
+          "name": "arrangements_service_idx",
+          "def": "CREATE INDEX arrangements_service_idx ON public.arrangements USING btree (ict_service_id)",
+          "table": "public.arrangements",
+          "columns": [
+            "ict_service_id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "arrangements_business_function_id_business_functions_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (business_function_id) REFERENCES business_functions(id) ON DELETE CASCADE",
+          "table": "public.arrangements",
+          "referenced_table": "public.business_functions",
+          "columns": [
+            "business_function_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "arrangements_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.arrangements",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "arrangements_ict_service_id_ict_services_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (ict_service_id) REFERENCES ict_services(id) ON DELETE SET NULL",
+          "table": "public.arrangements",
+          "referenced_table": "public.ict_services",
+          "columns": [
+            "ict_service_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "arrangements_legal_entity_id_legal_entities_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE CASCADE",
+          "table": "public.arrangements",
+          "referenced_table": "public.legal_entities",
+          "columns": [
+            "legal_entity_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "arrangements_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.arrangements",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "arrangements_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.arrangements",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "arrangements_provider_id_provider_nodes_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (provider_id) REFERENCES provider_nodes(id) ON DELETE CASCADE",
+          "table": "public.arrangements",
+          "referenced_table": "public.provider_nodes",
+          "columns": [
+            "provider_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.assessments",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "clause_signoffs",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "documents",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "framework",
+          "type": "assessment_framework",
+          "nullable": false,
+          "default": "'DORA'::assessment_framework"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "report_path",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "results",
+          "type": "jsonb",
+          "nullable": true
+        },
+        {
+          "name": "risk_decision",
+          "type": "jsonb",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "assessment_status",
+          "nullable": false,
+          "default": "'pending'::assessment_status"
+        },
+        {
+          "name": "status_message",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "vendor_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "workspace_id",
+          "type": "uuid",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "assessments_createdby_status_idx",
+          "def": "CREATE INDEX assessments_createdby_status_idx ON public.assessments USING btree (created_by, status)",
+          "table": "public.assessments",
+          "columns": [
+            "created_by",
+            "status"
+          ]
+        },
+        {
+          "name": "assessments_pkey",
+          "def": "CREATE UNIQUE INDEX assessments_pkey ON public.assessments USING btree (id)",
+          "table": "public.assessments",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "assessments_ws_created_idx",
+          "def": "CREATE INDEX assessments_ws_created_idx ON public.assessments USING btree (workspace_id, created_at DESC NULLS LAST)",
+          "table": "public.assessments",
+          "columns": [
+            "workspace_id",
+            "created_at"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "assessments_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.assessments",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "assessments_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.assessments",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "assessments_workspace_id_workspaces_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE",
+          "table": "public.assessments",
+          "referenced_table": "public.workspaces",
+          "columns": [
+            "workspace_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.audit_log",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "action",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "actor",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "evidence_refs",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "metadata",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "target_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "target_type",
+          "type": "text",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "audit_log_org_created_idx",
+          "def": "CREATE INDEX audit_log_org_created_idx ON public.audit_log USING btree (organization_id, created_at DESC NULLS LAST)",
+          "table": "public.audit_log",
+          "columns": [
+            "organization_id",
+            "created_at"
+          ]
+        },
+        {
+          "name": "audit_log_pkey",
+          "def": "CREATE UNIQUE INDEX audit_log_pkey ON public.audit_log USING btree (id)",
+          "table": "public.audit_log",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "audit_log_target_idx",
+          "def": "CREATE INDEX audit_log_target_idx ON public.audit_log USING btree (target_type, target_id)",
+          "table": "public.audit_log",
+          "columns": [
+            "target_type",
+            "target_id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "audit_log_actor_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (actor) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.audit_log",
+          "referenced_table": "public.users",
+          "columns": [
+            "actor"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "audit_log_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.audit_log",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "audit_log_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.audit_log",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "triggers": [
+        {
+          "name": "audit_log_no_mutation",
+          "def": "CREATE TRIGGER audit_log_no_mutation BEFORE DELETE OR UPDATE ON public.audit_log FOR EACH ROW EXECUTE FUNCTION audit_log_immutable()"
+        }
+      ]
+    },
+    {
+      "name": "public.business_functions",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "critical_or_important",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "legal_entity_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "business_functions_entity_idx",
+          "def": "CREATE INDEX business_functions_entity_idx ON public.business_functions USING btree (legal_entity_id)",
+          "table": "public.business_functions",
+          "columns": [
+            "legal_entity_id"
+          ]
+        },
+        {
+          "name": "business_functions_entity_name_uniq",
+          "def": "CREATE UNIQUE INDEX business_functions_entity_name_uniq ON public.business_functions USING btree (legal_entity_id, name)",
+          "table": "public.business_functions",
+          "columns": [
+            "legal_entity_id",
+            "name"
+          ]
+        },
+        {
+          "name": "business_functions_org_idx",
+          "def": "CREATE INDEX business_functions_org_idx ON public.business_functions USING btree (organization_id)",
+          "table": "public.business_functions",
+          "columns": [
+            "organization_id"
+          ]
+        },
+        {
+          "name": "business_functions_pkey",
+          "def": "CREATE UNIQUE INDEX business_functions_pkey ON public.business_functions USING btree (id)",
+          "table": "public.business_functions",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "business_functions_legal_entity_id_legal_entities_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE CASCADE",
+          "table": "public.business_functions",
+          "referenced_table": "public.legal_entities",
+          "columns": [
+            "legal_entity_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "business_functions_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.business_functions",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "business_functions_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.business_functions",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.conversations",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "idempotency_key",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "last_message_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "message_count",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "nullable": false,
+          "default": "'New Conversation'::text"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "workspace_id",
+          "type": "uuid",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "conversations_idempotency_uniq",
+          "def": "CREATE UNIQUE INDEX conversations_idempotency_uniq ON public.conversations USING btree (user_id, workspace_id, idempotency_key) WHERE (idempotency_key IS NOT NULL)",
+          "table": "public.conversations",
+          "columns": [
+            "user_id",
+            "workspace_id",
+            "idempotency_key"
+          ]
+        },
+        {
+          "name": "conversations_pkey",
+          "def": "CREATE UNIQUE INDEX conversations_pkey ON public.conversations USING btree (id)",
+          "table": "public.conversations",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "conversations_user_updated_idx",
+          "def": "CREATE INDEX conversations_user_updated_idx ON public.conversations USING btree (user_id, updated_at DESC NULLS LAST)",
+          "table": "public.conversations",
+          "columns": [
+            "user_id",
+            "updated_at"
+          ]
+        },
+        {
+          "name": "conversations_ws_user_updated_idx",
+          "def": "CREATE INDEX conversations_ws_user_updated_idx ON public.conversations USING btree (workspace_id, user_id, updated_at DESC NULLS LAST)",
+          "table": "public.conversations",
+          "columns": [
+            "workspace_id",
+            "user_id",
+            "updated_at"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "conversations_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.conversations",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "conversations_user_id_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.conversations",
+          "referenced_table": "public.users",
+          "columns": [
+            "user_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "conversations_workspace_id_workspaces_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE",
+          "table": "public.conversations",
+          "referenced_table": "public.workspaces",
+          "columns": [
+            "workspace_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.critical_function_dependencies",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "critical_function_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "workspace_id",
+          "type": "uuid",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "critical_function_dependencies_critical_function_id_workspace_i",
+          "def": "CREATE UNIQUE INDEX critical_function_dependencies_critical_function_id_workspace_i ON public.critical_function_dependencies USING btree (critical_function_id, workspace_id)",
+          "table": "public.critical_function_dependencies",
+          "columns": [
+            "critical_function_id",
+            "workspace_id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "critical_function_dependencies_critical_function_id_critical_fu",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (critical_function_id) REFERENCES critical_functions(id) ON DELETE CASCADE",
+          "table": "public.critical_function_dependencies",
+          "referenced_table": "public.critical_functions",
+          "columns": [
+            "critical_function_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "critical_function_dependencies_critical_function_id_workspace_i",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (critical_function_id, workspace_id)",
+          "table": "public.critical_function_dependencies",
+          "referenced_table": "",
+          "columns": [
+            "critical_function_id",
+            "workspace_id"
+          ]
+        },
+        {
+          "name": "critical_function_dependencies_workspace_id_workspaces_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE",
+          "table": "public.critical_function_dependencies",
+          "referenced_table": "public.workspaces",
+          "columns": [
+            "workspace_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.critical_functions",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "criticality",
+          "type": "criticality",
+          "nullable": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "critical_functions_org_name_uniq",
+          "def": "CREATE UNIQUE INDEX critical_functions_org_name_uniq ON public.critical_functions USING btree (organization_id, name)",
+          "table": "public.critical_functions",
+          "columns": [
+            "organization_id",
+            "name"
+          ]
+        },
+        {
+          "name": "critical_functions_pkey",
+          "def": "CREATE UNIQUE INDEX critical_functions_pkey ON public.critical_functions USING btree (id)",
+          "table": "public.critical_functions",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "critical_functions_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.critical_functions",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "critical_functions_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.critical_functions",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "critical_functions_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.critical_functions",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.evidence",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "arrangement_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "category",
+          "type": "evidence_category",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "document",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "evidence_date",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "hash",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "provider_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "scope",
+          "type": "evidence_scope",
+          "nullable": false
+        },
+        {
+          "name": "service_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "storage_key",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "validity_until",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "version",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "evidence_arrangement_idx",
+          "def": "CREATE INDEX evidence_arrangement_idx ON public.evidence USING btree (arrangement_id)",
+          "table": "public.evidence",
+          "columns": [
+            "arrangement_id"
+          ]
+        },
+        {
+          "name": "evidence_org_hash_idx",
+          "def": "CREATE INDEX evidence_org_hash_idx ON public.evidence USING btree (organization_id, hash)",
+          "table": "public.evidence",
+          "columns": [
+            "organization_id",
+            "hash"
+          ]
+        },
+        {
+          "name": "evidence_org_idx",
+          "def": "CREATE INDEX evidence_org_idx ON public.evidence USING btree (organization_id)",
+          "table": "public.evidence",
+          "columns": [
+            "organization_id"
+          ]
+        },
+        {
+          "name": "evidence_pkey",
+          "def": "CREATE UNIQUE INDEX evidence_pkey ON public.evidence USING btree (id)",
+          "table": "public.evidence",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evidence_provider_idx",
+          "def": "CREATE INDEX evidence_provider_idx ON public.evidence USING btree (provider_id)",
+          "table": "public.evidence",
+          "columns": [
+            "provider_id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "evidence_arrangement_id_arrangements_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE",
+          "table": "public.evidence",
+          "referenced_table": "public.arrangements",
+          "columns": [
+            "arrangement_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evidence_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.evidence",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evidence_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.evidence",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evidence_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.evidence",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evidence_provider_id_provider_nodes_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (provider_id) REFERENCES provider_nodes(id) ON DELETE CASCADE",
+          "table": "public.evidence",
+          "referenced_table": "public.provider_nodes",
+          "columns": [
+            "provider_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evidence_scope_target_check",
+          "type": "CHECK",
+          "def": "CHECK ((((scope = 'provider'::evidence_scope) AND (provider_id IS NOT NULL) AND (arrangement_id IS NULL)) OR ((scope = 'arrangement'::evidence_scope) AND (arrangement_id IS NOT NULL) AND (provider_id IS NULL))))",
+          "table": "public.evidence",
+          "referenced_table": "",
+          "columns": [
+            "scope",
+            "provider_id",
+            "arrangement_id"
+          ]
+        },
+        {
+          "name": "evidence_service_id_ict_services_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (service_id) REFERENCES ict_services(id) ON DELETE SET NULL",
+          "table": "public.evidence",
+          "referenced_table": "public.ict_services",
+          "columns": [
+            "service_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.evidence_collection_request",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "arrangement_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "fulfilled_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "message",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "requested_categories",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "evidence_request_status",
+          "nullable": false,
+          "default": "'pending'::evidence_request_status"
+        },
+        {
+          "name": "token",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "token_expires_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "vendor_contact_name",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "vendor_email",
+          "type": "text",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "evidence_collection_request_pkey",
+          "def": "CREATE UNIQUE INDEX evidence_collection_request_pkey ON public.evidence_collection_request USING btree (id)",
+          "table": "public.evidence_collection_request",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evidence_requests_arrangement_created_idx",
+          "def": "CREATE INDEX evidence_requests_arrangement_created_idx ON public.evidence_collection_request USING btree (arrangement_id, created_at DESC NULLS LAST)",
+          "table": "public.evidence_collection_request",
+          "columns": [
+            "arrangement_id",
+            "created_at"
+          ]
+        },
+        {
+          "name": "evidence_requests_org_arrangement_idx",
+          "def": "CREATE INDEX evidence_requests_org_arrangement_idx ON public.evidence_collection_request USING btree (organization_id, arrangement_id)",
+          "table": "public.evidence_collection_request",
+          "columns": [
+            "organization_id",
+            "arrangement_id"
+          ]
+        },
+        {
+          "name": "evidence_requests_token_uniq",
+          "def": "CREATE UNIQUE INDEX evidence_requests_token_uniq ON public.evidence_collection_request USING btree (token) WHERE (token IS NOT NULL)",
+          "table": "public.evidence_collection_request",
+          "columns": [
+            "token"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "evidence_collection_request_arrangement_id_arrangements_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE",
+          "table": "public.evidence_collection_request",
+          "referenced_table": "public.arrangements",
+          "columns": [
+            "arrangement_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evidence_collection_request_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.evidence_collection_request",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evidence_collection_request_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.evidence_collection_request",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evidence_collection_request_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.evidence_collection_request",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.findings",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "arrangement_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "citations",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "confidence",
+          "type": "real",
+          "nullable": true
+        },
+        {
+          "name": "control_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "decided_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "decision_reason",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "library_version",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "rationale",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "searched",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "status",
+          "type": "finding_status",
+          "nullable": false,
+          "default": "'draft'::finding_status"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "verdict",
+          "type": "verdict",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "findings_arrangement_control_uniq",
+          "def": "CREATE UNIQUE INDEX findings_arrangement_control_uniq ON public.findings USING btree (organization_id, arrangement_id, control_id)",
+          "table": "public.findings",
+          "columns": [
+            "organization_id",
+            "arrangement_id",
+            "control_id"
+          ]
+        },
+        {
+          "name": "findings_arrangement_idx",
+          "def": "CREATE INDEX findings_arrangement_idx ON public.findings USING btree (arrangement_id)",
+          "table": "public.findings",
+          "columns": [
+            "arrangement_id"
+          ]
+        },
+        {
+          "name": "findings_org_idx",
+          "def": "CREATE INDEX findings_org_idx ON public.findings USING btree (organization_id)",
+          "table": "public.findings",
+          "columns": [
+            "organization_id"
+          ]
+        },
+        {
+          "name": "findings_pkey",
+          "def": "CREATE UNIQUE INDEX findings_pkey ON public.findings USING btree (id)",
+          "table": "public.findings",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "findings_arrangement_id_arrangements_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE",
+          "table": "public.findings",
+          "referenced_table": "public.arrangements",
+          "columns": [
+            "arrangement_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "findings_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.findings",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "findings_decided_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.findings",
+          "referenced_table": "public.users",
+          "columns": [
+            "decided_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "findings_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.findings",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "findings_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.findings",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.ict_services",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "provider_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "service_type",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ict_services_org_idx",
+          "def": "CREATE INDEX ict_services_org_idx ON public.ict_services USING btree (organization_id)",
+          "table": "public.ict_services",
+          "columns": [
+            "organization_id"
+          ]
+        },
+        {
+          "name": "ict_services_pkey",
+          "def": "CREATE UNIQUE INDEX ict_services_pkey ON public.ict_services USING btree (id)",
+          "table": "public.ict_services",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "ict_services_provider_idx",
+          "def": "CREATE INDEX ict_services_provider_idx ON public.ict_services USING btree (provider_id)",
+          "table": "public.ict_services",
+          "columns": [
+            "provider_id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ict_services_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.ict_services",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "ict_services_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.ict_services",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "ict_services_provider_id_provider_nodes_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (provider_id) REFERENCES provider_nodes(id) ON DELETE CASCADE",
+          "table": "public.ict_services",
+          "referenced_table": "public.provider_nodes",
+          "columns": [
+            "provider_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "ict_services_service_type_check",
+          "type": "CHECK",
+          "def": "CHECK (((service_type IS NULL) OR (service_type = ANY (ARRAY['cloud'::text, 'software'::text, 'data'::text, 'network'::text, 'other'::text]))))",
+          "table": "public.ict_services",
+          "referenced_table": "",
+          "columns": [
+            "service_type"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.legal_entities",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "country",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "is_group_entity",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "lei",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "parent_entity_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "legal_entities_org_idx",
+          "def": "CREATE INDEX legal_entities_org_idx ON public.legal_entities USING btree (organization_id)",
+          "table": "public.legal_entities",
+          "columns": [
+            "organization_id"
+          ]
+        },
+        {
+          "name": "legal_entities_org_name_uniq",
+          "def": "CREATE UNIQUE INDEX legal_entities_org_name_uniq ON public.legal_entities USING btree (organization_id, name)",
+          "table": "public.legal_entities",
+          "columns": [
+            "organization_id",
+            "name"
+          ]
+        },
+        {
+          "name": "legal_entities_parent_idx",
+          "def": "CREATE INDEX legal_entities_parent_idx ON public.legal_entities USING btree (parent_entity_id)",
+          "table": "public.legal_entities",
+          "columns": [
+            "parent_entity_id"
+          ]
+        },
+        {
+          "name": "legal_entities_pkey",
+          "def": "CREATE UNIQUE INDEX legal_entities_pkey ON public.legal_entities USING btree (id)",
+          "table": "public.legal_entities",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "legal_entities_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.legal_entities",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "legal_entities_parent_entity_id_legal_entities_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (parent_entity_id) REFERENCES legal_entities(id) ON DELETE SET NULL",
+          "table": "public.legal_entities",
+          "referenced_table": "public.legal_entities",
+          "columns": [
+            "parent_entity_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "legal_entities_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.legal_entities",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.messages",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "content",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "conversation_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "feedback",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "feedback_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "langfuse_trace_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "role",
+          "type": "message_role",
+          "nullable": false
+        },
+        {
+          "name": "sources",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "timestamp",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "messages_conversation_timestamp_idx",
+          "def": "CREATE INDEX messages_conversation_timestamp_idx ON public.messages USING btree (conversation_id, \"timestamp\")",
+          "table": "public.messages",
+          "columns": [
+            "conversation_id",
+            "timestamp"
+          ]
+        },
+        {
+          "name": "messages_pkey",
+          "def": "CREATE UNIQUE INDEX messages_pkey ON public.messages USING btree (id)",
+          "table": "public.messages",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "messages_conversation_id_conversations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE",
+          "table": "public.messages",
+          "referenced_table": "public.conversations",
+          "columns": [
+            "conversation_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "messages_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.messages",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.organization_members",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "invite_token_expires",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "invite_token_hash",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "invited_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "invited_domain_role",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "joined_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "role",
+          "type": "org_member_role",
+          "nullable": false,
+          "default": "'analyst'::org_member_role"
+        },
+        {
+          "name": "status",
+          "type": "member_status",
+          "nullable": false,
+          "default": "'pending'::member_status"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "org_members_org_email_uniq",
+          "def": "CREATE UNIQUE INDEX org_members_org_email_uniq ON public.organization_members USING btree (organization_id, email)",
+          "table": "public.organization_members",
+          "columns": [
+            "organization_id",
+            "email"
+          ]
+        },
+        {
+          "name": "org_members_user_id_idx",
+          "def": "CREATE INDEX org_members_user_id_idx ON public.organization_members USING btree (user_id)",
+          "table": "public.organization_members",
+          "columns": [
+            "user_id"
+          ]
+        },
+        {
+          "name": "organization_members_pkey",
+          "def": "CREATE UNIQUE INDEX organization_members_pkey ON public.organization_members USING btree (id)",
+          "table": "public.organization_members",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "organization_members_invited_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.organization_members",
+          "referenced_table": "public.users",
+          "columns": [
+            "invited_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "organization_members_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.organization_members",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "organization_members_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.organization_members",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "organization_members_user_id_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.organization_members",
+          "referenced_table": "public.users",
+          "columns": [
+            "user_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.organizations",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "country",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "industry",
+          "type": "text",
+          "nullable": false,
+          "default": "'other'::text"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "owner_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "plan",
+          "type": "text",
+          "nullable": false,
+          "default": "'starter'::text"
+        },
+        {
+          "name": "plan_status",
+          "type": "org_plan_status",
+          "nullable": false,
+          "default": "'trialing'::org_plan_status"
+        },
+        {
+          "name": "stripe_customer_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "stripe_subscription_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "trial_ends_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "organizations_pkey",
+          "def": "CREATE UNIQUE INDEX organizations_pkey ON public.organizations USING btree (id)",
+          "table": "public.organizations",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "organizations_industry_check",
+          "type": "CHECK",
+          "def": "CHECK ((industry = ANY (ARRAY['insurance'::text, 'banking'::text, 'investment'::text, 'payments'::text, 'other'::text])))",
+          "table": "public.organizations",
+          "referenced_table": "",
+          "columns": [
+            "industry"
+          ]
+        },
+        {
+          "name": "organizations_owner_id_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (owner_id) REFERENCES users(id)",
+          "table": "public.organizations",
+          "referenced_table": "public.users",
+          "columns": [
+            "owner_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "organizations_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.organizations",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "organizations_plan_check",
+          "type": "CHECK",
+          "def": "CHECK ((plan = ANY (ARRAY['starter'::text, 'professional'::text, 'business'::text, 'enterprise'::text])))",
+          "table": "public.organizations",
+          "referenced_table": "",
+          "columns": [
+            "plan"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.provider_dependencies",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "child_node_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "confidence",
+          "type": "real",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "confirmed",
+          "type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "last_verified_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "parent_node_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "relationship",
+          "type": "text",
+          "nullable": false,
+          "default": "'sub_processes_via'::text"
+        },
+        {
+          "name": "source",
+          "type": "provider_source",
+          "nullable": false,
+          "default": "'manual'::provider_source"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "provider_dependencies_pkey",
+          "def": "CREATE UNIQUE INDEX provider_dependencies_pkey ON public.provider_dependencies USING btree (id)",
+          "table": "public.provider_dependencies",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "provider_deps_child_idx",
+          "def": "CREATE INDEX provider_deps_child_idx ON public.provider_dependencies USING btree (child_node_id)",
+          "table": "public.provider_dependencies",
+          "columns": [
+            "child_node_id"
+          ]
+        },
+        {
+          "name": "provider_deps_edge_uniq",
+          "def": "CREATE UNIQUE INDEX provider_deps_edge_uniq ON public.provider_dependencies USING btree (parent_node_id, child_node_id, relationship)",
+          "table": "public.provider_dependencies",
+          "columns": [
+            "parent_node_id",
+            "child_node_id",
+            "relationship"
+          ]
+        },
+        {
+          "name": "provider_deps_org_idx",
+          "def": "CREATE INDEX provider_deps_org_idx ON public.provider_dependencies USING btree (organization_id)",
+          "table": "public.provider_dependencies",
+          "columns": [
+            "organization_id"
+          ]
+        },
+        {
+          "name": "provider_deps_parent_idx",
+          "def": "CREATE INDEX provider_deps_parent_idx ON public.provider_dependencies USING btree (parent_node_id)",
+          "table": "public.provider_dependencies",
+          "columns": [
+            "parent_node_id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "provider_dependencies_child_node_id_provider_nodes_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (child_node_id) REFERENCES provider_nodes(id) ON DELETE CASCADE",
+          "table": "public.provider_dependencies",
+          "referenced_table": "public.provider_nodes",
+          "columns": [
+            "child_node_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "provider_dependencies_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.provider_dependencies",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "provider_dependencies_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.provider_dependencies",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "provider_dependencies_parent_node_id_provider_nodes_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (parent_node_id) REFERENCES provider_nodes(id) ON DELETE CASCADE",
+          "table": "public.provider_dependencies",
+          "referenced_table": "public.provider_nodes",
+          "columns": [
+            "parent_node_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "provider_dependencies_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.provider_dependencies",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.provider_nodes",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "canonical_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "display_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "kind",
+          "type": "provider_node_kind",
+          "nullable": false
+        },
+        {
+          "name": "lei",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "provider_type",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "tier",
+          "type": "tier",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "workspace_id",
+          "type": "uuid",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "provider_nodes_org_canonical_uniq",
+          "def": "CREATE UNIQUE INDEX provider_nodes_org_canonical_uniq ON public.provider_nodes USING btree (organization_id, canonical_name)",
+          "table": "public.provider_nodes",
+          "columns": [
+            "organization_id",
+            "canonical_name"
+          ]
+        },
+        {
+          "name": "provider_nodes_org_idx",
+          "def": "CREATE INDEX provider_nodes_org_idx ON public.provider_nodes USING btree (organization_id)",
+          "table": "public.provider_nodes",
+          "columns": [
+            "organization_id"
+          ]
+        },
+        {
+          "name": "provider_nodes_pkey",
+          "def": "CREATE UNIQUE INDEX provider_nodes_pkey ON public.provider_nodes USING btree (id)",
+          "table": "public.provider_nodes",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "provider_nodes_workspace_idx",
+          "def": "CREATE INDEX provider_nodes_workspace_idx ON public.provider_nodes USING btree (workspace_id)",
+          "table": "public.provider_nodes",
+          "columns": [
+            "workspace_id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "provider_nodes_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.provider_nodes",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "provider_nodes_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.provider_nodes",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "provider_nodes_provider_type_check",
+          "type": "CHECK",
+          "def": "CHECK (((provider_type IS NULL) OR (provider_type = ANY (ARRAY['cloud'::text, 'ai_ml'::text, 'software'::text, 'data'::text, 'network'::text, 'other'::text]))))",
+          "table": "public.provider_nodes",
+          "referenced_table": "",
+          "columns": [
+            "provider_type"
+          ]
+        },
+        {
+          "name": "provider_nodes_workspace_id_workspaces_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE",
+          "table": "public.provider_nodes",
+          "referenced_table": "public.workspaces",
+          "columns": [
+            "workspace_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.questionnaire_templates",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "is_default",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "questions",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "version",
+          "type": "text",
+          "nullable": false,
+          "default": "'1.0'::text"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "questionnaire_templates_is_default_idx",
+          "def": "CREATE INDEX questionnaire_templates_is_default_idx ON public.questionnaire_templates USING btree (is_default)",
+          "table": "public.questionnaire_templates",
+          "columns": [
+            "is_default"
+          ]
+        },
+        {
+          "name": "questionnaire_templates_pkey",
+          "def": "CREATE UNIQUE INDEX questionnaire_templates_pkey ON public.questionnaire_templates USING btree (id)",
+          "table": "public.questionnaire_templates",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "questionnaire_templates_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.questionnaire_templates",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.risks",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "arrangement_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "control_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "finding_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "library_version",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "opened_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "owner_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "remediation",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "severity",
+          "type": "risk_severity",
+          "nullable": false
+        },
+        {
+          "name": "source_verdict",
+          "type": "verdict",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "risk_status",
+          "nullable": false,
+          "default": "'open'::risk_status"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "risks_arrangement_idx",
+          "def": "CREATE INDEX risks_arrangement_idx ON public.risks USING btree (arrangement_id)",
+          "table": "public.risks",
+          "columns": [
+            "arrangement_id"
+          ]
+        },
+        {
+          "name": "risks_finding_uniq",
+          "def": "CREATE UNIQUE INDEX risks_finding_uniq ON public.risks USING btree (organization_id, finding_id)",
+          "table": "public.risks",
+          "columns": [
+            "organization_id",
+            "finding_id"
+          ]
+        },
+        {
+          "name": "risks_org_idx",
+          "def": "CREATE INDEX risks_org_idx ON public.risks USING btree (organization_id)",
+          "table": "public.risks",
+          "columns": [
+            "organization_id"
+          ]
+        },
+        {
+          "name": "risks_pkey",
+          "def": "CREATE UNIQUE INDEX risks_pkey ON public.risks USING btree (id)",
+          "table": "public.risks",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "risks_status_idx",
+          "def": "CREATE INDEX risks_status_idx ON public.risks USING btree (organization_id, status)",
+          "table": "public.risks",
+          "columns": [
+            "organization_id",
+            "status"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "risks_arrangement_id_arrangements_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE",
+          "table": "public.risks",
+          "referenced_table": "public.arrangements",
+          "columns": [
+            "arrangement_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "risks_finding_id_findings_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (finding_id) REFERENCES findings(id) ON DELETE CASCADE",
+          "table": "public.risks",
+          "referenced_table": "public.findings",
+          "columns": [
+            "finding_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "risks_opened_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (opened_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.risks",
+          "referenced_table": "public.users",
+          "columns": [
+            "opened_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "risks_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.risks",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "risks_owner_id_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.risks",
+          "referenced_table": "public.users",
+          "columns": [
+            "owner_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "risks_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.risks",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.role_assignments",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "role",
+          "type": "domain_role",
+          "nullable": false
+        },
+        {
+          "name": "scope_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "scope_type",
+          "type": "scope_type",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "member_status",
+          "nullable": false,
+          "default": "'active'::member_status"
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "role_assignments_pkey",
+          "def": "CREATE UNIQUE INDEX role_assignments_pkey ON public.role_assignments USING btree (id)",
+          "table": "public.role_assignments",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "role_assignments_scope_idx",
+          "def": "CREATE INDEX role_assignments_scope_idx ON public.role_assignments USING btree (scope_type, scope_id)",
+          "table": "public.role_assignments",
+          "columns": [
+            "scope_type",
+            "scope_id"
+          ]
+        },
+        {
+          "name": "role_assignments_user_id_idx",
+          "def": "CREATE INDEX role_assignments_user_id_idx ON public.role_assignments USING btree (user_id)",
+          "table": "public.role_assignments",
+          "columns": [
+            "user_id"
+          ]
+        },
+        {
+          "name": "role_assignments_user_scope_role_uniq",
+          "def": "CREATE UNIQUE INDEX role_assignments_user_scope_role_uniq ON public.role_assignments USING btree (user_id, scope_type, scope_id, role)",
+          "table": "public.role_assignments",
+          "columns": [
+            "user_id",
+            "scope_type",
+            "scope_id",
+            "role"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "role_assignments_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.role_assignments",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "role_assignments_user_id_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE",
+          "table": "public.role_assignments",
+          "referenced_table": "public.users",
+          "columns": [
+            "user_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.users",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "email_verification_expires",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "email_verification_last_sent_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "email_verification_token",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "is_active",
+          "type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        {
+          "name": "is_email_verified",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "last_login",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "lock_until",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "login_attempts",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "mfa_enabled",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "mfa_recovery_codes",
+          "type": "jsonb",
+          "nullable": true
+        },
+        {
+          "name": "mfa_secret",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "notification_preferences",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{\"email\": {\"sync_failed\": true, \"system_alert\": true, \"weekly_digest\": true, \"workspace_removed\": true, \"permission_changed\": false, \"token_limit_reached\": true, \"workspace_invitation\": true}, \"inApp\": {\"member_left\": false, \"sync_failed\": true, \"system_alert\": true, \"member_joined\": true, \"sync_completed\": true, \"indexing_failed\": true, \"workspace_removed\": true, \"indexing_completed\": false, \"permission_changed\": true, \"token_limit_warning\": true, \"workspace_invitation\": true}}'::jsonb"
+        },
+        {
+          "name": "onboarding_checklist",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{\"dismissed\": false, \"memberInvited\": false, \"vendorCreated\": false, \"monitoringSetup\": false, \"assessmentCreated\": false}'::jsonb"
+        },
+        {
+          "name": "onboarding_completed",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "password",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "password_reset_expires",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "password_reset_token",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "platform_admin",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "refresh_tokens",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "role",
+          "type": "user_role",
+          "nullable": false,
+          "default": "'user'::user_role"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "users_email_unique",
+          "def": "CREATE UNIQUE INDEX users_email_unique ON public.users USING btree (email)",
+          "table": "public.users",
+          "columns": [
+            "email"
+          ]
+        },
+        {
+          "name": "users_organization_id_idx",
+          "def": "CREATE INDEX users_organization_id_idx ON public.users USING btree (organization_id)",
+          "table": "public.users",
+          "columns": [
+            "organization_id"
+          ]
+        },
+        {
+          "name": "users_pkey",
+          "def": "CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)",
+          "table": "public.users",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "users_email_unique",
+          "type": "UNIQUE",
+          "def": "UNIQUE (email)",
+          "table": "public.users",
+          "referenced_table": "",
+          "columns": [
+            "email"
+          ]
+        },
+        {
+          "name": "users_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE SET NULL",
+          "table": "public.users",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "users_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.users",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.vendor_questionnaires",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "arrangement_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "overall_score",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "questions",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "responded_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "results",
+          "type": "jsonb",
+          "nullable": true
+        },
+        {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "questionnaire_status",
+          "nullable": false,
+          "default": "'draft'::questionnaire_status"
+        },
+        {
+          "name": "status_message",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "template_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "token",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "token_expires_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "vendor_contact_name",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "vendor_email",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "vendor_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "workspace_id",
+          "type": "uuid",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "vendor_questionnaires_createdby_status_idx",
+          "def": "CREATE INDEX vendor_questionnaires_createdby_status_idx ON public.vendor_questionnaires USING btree (created_by, status)",
+          "table": "public.vendor_questionnaires",
+          "columns": [
+            "created_by",
+            "status"
+          ]
+        },
+        {
+          "name": "vendor_questionnaires_pkey",
+          "def": "CREATE UNIQUE INDEX vendor_questionnaires_pkey ON public.vendor_questionnaires USING btree (id)",
+          "table": "public.vendor_questionnaires",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "vendor_questionnaires_token_uniq",
+          "def": "CREATE UNIQUE INDEX vendor_questionnaires_token_uniq ON public.vendor_questionnaires USING btree (token) WHERE (token IS NOT NULL)",
+          "table": "public.vendor_questionnaires",
+          "columns": [
+            "token"
+          ]
+        },
+        {
+          "name": "vendor_questionnaires_ws_created_idx",
+          "def": "CREATE INDEX vendor_questionnaires_ws_created_idx ON public.vendor_questionnaires USING btree (workspace_id, created_at DESC NULLS LAST)",
+          "table": "public.vendor_questionnaires",
+          "columns": [
+            "workspace_id",
+            "created_at"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "vendor_questionnaires_arrangement_id_arrangements_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE SET NULL",
+          "table": "public.vendor_questionnaires",
+          "referenced_table": "public.arrangements",
+          "columns": [
+            "arrangement_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "vendor_questionnaires_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.vendor_questionnaires",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "vendor_questionnaires_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.vendor_questionnaires",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "vendor_questionnaires_template_id_questionnaire_templates_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (template_id) REFERENCES questionnaire_templates(id) ON DELETE SET NULL",
+          "table": "public.vendor_questionnaires",
+          "referenced_table": "public.questionnaire_templates",
+          "columns": [
+            "template_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "vendor_questionnaires_workspace_id_workspaces_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE",
+          "table": "public.vendor_questionnaires",
+          "referenced_table": "public.workspaces",
+          "columns": [
+            "workspace_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.workspace_members",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "invited_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "invited_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "permissions",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{\"canQuery\": true, \"canInvite\": false, \"canViewSources\": true}'::jsonb"
+        },
+        {
+          "name": "role",
+          "type": "workspace_member_role",
+          "nullable": false,
+          "default": "'member'::workspace_member_role"
+        },
+        {
+          "name": "status",
+          "type": "member_status",
+          "nullable": false,
+          "default": "'active'::member_status"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "workspace_id",
+          "type": "uuid",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "workspace_members_pkey",
+          "def": "CREATE UNIQUE INDEX workspace_members_pkey ON public.workspace_members USING btree (id)",
+          "table": "public.workspace_members",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "workspace_members_user_status_idx",
+          "def": "CREATE INDEX workspace_members_user_status_idx ON public.workspace_members USING btree (user_id, status)",
+          "table": "public.workspace_members",
+          "columns": [
+            "user_id",
+            "status"
+          ]
+        },
+        {
+          "name": "workspace_members_ws_user_uniq",
+          "def": "CREATE UNIQUE INDEX workspace_members_ws_user_uniq ON public.workspace_members USING btree (workspace_id, user_id)",
+          "table": "public.workspace_members",
+          "columns": [
+            "workspace_id",
+            "user_id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "workspace_members_invited_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.workspace_members",
+          "referenced_table": "public.users",
+          "columns": [
+            "invited_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "workspace_members_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.workspace_members",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "workspace_members_user_id_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE",
+          "table": "public.workspace_members",
+          "referenced_table": "public.users",
+          "columns": [
+            "user_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "workspace_members_workspace_id_workspaces_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE",
+          "table": "public.workspace_members",
+          "referenced_table": "public.workspaces",
+          "columns": [
+            "workspace_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.workspaces",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "alerts_sent_at",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "certifications",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "contract_end",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "contract_start",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "country",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "exit_strategy_doc",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "next_review_date",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "service_type",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "sync_status",
+          "type": "workspace_sync_status",
+          "nullable": false,
+          "default": "'idle'::workspace_sync_status"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "vendor_functions",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "vendor_status",
+          "type": "vendor_status",
+          "nullable": false,
+          "default": "'under-review'::vendor_status"
+        },
+        {
+          "name": "vendor_tier",
+          "type": "tier",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "workspaces_organization_id_idx",
+          "def": "CREATE INDEX workspaces_organization_id_idx ON public.workspaces USING btree (organization_id)",
+          "table": "public.workspaces",
+          "columns": [
+            "organization_id"
+          ]
+        },
+        {
+          "name": "workspaces_pkey",
+          "def": "CREATE UNIQUE INDEX workspaces_pkey ON public.workspaces USING btree (id)",
+          "table": "public.workspaces",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "workspaces_user_id_idx",
+          "def": "CREATE INDEX workspaces_user_id_idx ON public.workspaces USING btree (user_id)",
+          "table": "public.workspaces",
+          "columns": [
+            "user_id"
+          ]
+        },
+        {
+          "name": "workspaces_user_name_idx",
+          "def": "CREATE INDEX workspaces_user_name_idx ON public.workspaces USING btree (user_id, name)",
+          "table": "public.workspaces",
+          "columns": [
+            "user_id",
+            "name"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "workspaces_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE SET NULL",
+          "table": "public.workspaces",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "workspaces_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.workspaces",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "workspaces_service_type_check",
+          "type": "CHECK",
+          "def": "CHECK (((service_type IS NULL) OR (service_type = ANY (ARRAY['cloud'::text, 'software'::text, 'data'::text, 'network'::text, 'other'::text]))))",
+          "table": "public.workspaces",
+          "referenced_table": "",
+          "columns": [
+            "service_type"
+          ]
+        },
+        {
+          "name": "workspaces_user_id_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (user_id) REFERENCES users(id)",
+          "table": "public.workspaces",
+          "referenced_table": "public.users",
+          "columns": [
+            "user_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "table": "public.arrangements",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.arrangements",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.arrangements",
+      "columns": [
+        "provider_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.provider_nodes",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (provider_id) REFERENCES provider_nodes(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.arrangements",
+      "columns": [
+        "legal_entity_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.legal_entities",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.arrangements",
+      "columns": [
+        "business_function_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.business_functions",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (business_function_id) REFERENCES business_functions(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.arrangements",
+      "columns": [
+        "ict_service_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.ict_services",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (ict_service_id) REFERENCES ict_services(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.assessments",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.assessments",
+      "columns": [
+        "workspace_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.workspaces",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.audit_log",
+      "columns": [
+        "actor"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (actor) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.audit_log",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.business_functions",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.business_functions",
+      "columns": [
+        "legal_entity_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.legal_entities",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.conversations",
+      "columns": [
+        "user_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.conversations",
+      "columns": [
+        "workspace_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.workspaces",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.critical_function_dependencies",
+      "columns": [
+        "workspace_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.workspaces",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.critical_function_dependencies",
+      "columns": [
+        "critical_function_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.critical_functions",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (critical_function_id) REFERENCES critical_functions(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.critical_functions",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.critical_functions",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.evidence",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.evidence",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.evidence",
+      "columns": [
+        "provider_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.provider_nodes",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (provider_id) REFERENCES provider_nodes(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.evidence",
+      "columns": [
+        "service_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.ict_services",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (service_id) REFERENCES ict_services(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.evidence",
+      "columns": [
+        "arrangement_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.arrangements",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.evidence_collection_request",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.evidence_collection_request",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.evidence_collection_request",
+      "columns": [
+        "arrangement_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.arrangements",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.findings",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.findings",
+      "columns": [
+        "decided_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.findings",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.findings",
+      "columns": [
+        "arrangement_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.arrangements",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.ict_services",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.ict_services",
+      "columns": [
+        "provider_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.provider_nodes",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (provider_id) REFERENCES provider_nodes(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.legal_entities",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.legal_entities",
+      "columns": [
+        "parent_entity_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.legal_entities",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (parent_entity_id) REFERENCES legal_entities(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.messages",
+      "columns": [
+        "conversation_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.conversations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.organization_members",
+      "columns": [
+        "invited_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.organization_members",
+      "columns": [
+        "user_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.organization_members",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.organizations",
+      "columns": [
+        "owner_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (owner_id) REFERENCES users(id)"
+    },
+    {
+      "table": "public.provider_dependencies",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.provider_dependencies",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.provider_dependencies",
+      "columns": [
+        "child_node_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.provider_nodes",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (child_node_id) REFERENCES provider_nodes(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.provider_dependencies",
+      "columns": [
+        "parent_node_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.provider_nodes",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (parent_node_id) REFERENCES provider_nodes(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.provider_nodes",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.provider_nodes",
+      "columns": [
+        "workspace_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.workspaces",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.risks",
+      "columns": [
+        "opened_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (opened_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.risks",
+      "columns": [
+        "owner_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.risks",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.risks",
+      "columns": [
+        "arrangement_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.arrangements",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.risks",
+      "columns": [
+        "finding_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.findings",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (finding_id) REFERENCES findings(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.role_assignments",
+      "columns": [
+        "user_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.users",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.vendor_questionnaires",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.vendor_questionnaires",
+      "columns": [
+        "workspace_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.workspaces",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.vendor_questionnaires",
+      "columns": [
+        "template_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.questionnaire_templates",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (template_id) REFERENCES questionnaire_templates(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.vendor_questionnaires",
+      "columns": [
+        "arrangement_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.arrangements",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.workspace_members",
+      "columns": [
+        "invited_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.workspace_members",
+      "columns": [
+        "user_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.workspace_members",
+      "columns": [
+        "workspace_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.workspaces",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.workspaces",
+      "columns": [
+        "user_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (user_id) REFERENCES users(id)"
+    },
+    {
+      "table": "public.workspaces",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE SET NULL"
+    }
+  ],
+  "functions": [
+    {
+      "name": "public.audit_log_immutable",
+      "return_type": "trigger",
+      "arguments": "",
+      "type": "FUNCTION"
+    }
+  ],
+  "enums": [
+    {
+      "name": "public.arrangement_lifecycle",
+      "values": [
+        "active",
+        "due_diligence",
+        "exited",
+        "exiting",
+        "prospect",
+        "remediation",
+        "under_review"
+      ]
+    },
+    {
+      "name": "public.arrangement_type",
+      "values": [
+        "external",
+        "intra_group"
+      ]
+    },
+    {
+      "name": "public.assessment_framework",
+      "values": [
+        "CONTRACT_A30",
+        "DORA"
+      ]
+    },
+    {
+      "name": "public.assessment_status",
+      "values": [
+        "analyzing",
+        "complete",
+        "failed",
+        "indexing",
+        "pending"
+      ]
+    },
+    {
+      "name": "public.criticality",
+      "values": [
+        "critical",
+        "important"
+      ]
+    },
+    {
+      "name": "public.dependency_level",
+      "values": [
+        "high",
+        "low",
+        "medium"
+      ]
+    },
+    {
+      "name": "public.domain_role",
+      "values": [
+        "analyst",
+        "auditor",
+        "business_owner",
+        "dpo",
+        "entity_admin",
+        "group_admin",
+        "group_compliance",
+        "group_risk",
+        "ict_risk_officer",
+        "legal",
+        "vendor_contact",
+        "viewer"
+      ]
+    },
+    {
+      "name": "public.evidence_category",
+      "values": [
+        "bcp_dr_plan",
+        "dora_addendum",
+        "exit_strategy",
+        "iso27001_cert",
+        "master_service_agreement",
+        "risk_classification",
+        "soc2_report",
+        "subprocessor_list",
+        "vendor_dora_attestation"
+      ]
+    },
+    {
+      "name": "public.evidence_request_status",
+      "values": [
+        "fulfilled",
+        "pending",
+        "revoked"
+      ]
+    },
+    {
+      "name": "public.evidence_scope",
+      "values": [
+        "arrangement",
+        "provider"
+      ]
+    },
+    {
+      "name": "public.exit_difficulty",
+      "values": [
+        "high",
+        "low",
+        "medium"
+      ]
+    },
+    {
+      "name": "public.finding_status",
+      "values": [
+        "approved",
+        "draft",
+        "rejected"
+      ]
+    },
+    {
+      "name": "public.member_status",
+      "values": [
+        "active",
+        "pending",
+        "revoked"
+      ]
+    },
+    {
+      "name": "public.message_role",
+      "values": [
+        "assistant",
+        "user"
+      ]
+    },
+    {
+      "name": "public.org_member_role",
+      "values": [
+        "analyst",
+        "org_admin",
+        "viewer"
+      ]
+    },
+    {
+      "name": "public.org_plan_status",
+      "values": [
+        "active",
+        "canceled",
+        "past_due",
+        "paused",
+        "trialing"
+      ]
+    },
+    {
+      "name": "public.provider_node_kind",
+      "values": [
+        "external",
+        "workspace"
+      ]
+    },
+    {
+      "name": "public.provider_source",
+      "values": [
+        "extracted",
+        "manual"
+      ]
+    },
+    {
+      "name": "public.questionnaire_status",
+      "values": [
+        "complete",
+        "draft",
+        "expired",
+        "failed",
+        "partial",
+        "sent"
+      ]
+    },
+    {
+      "name": "public.risk_severity",
+      "values": [
+        "critical",
+        "high",
+        "low",
+        "medium"
+      ]
+    },
+    {
+      "name": "public.risk_status",
+      "values": [
+        "accepted",
+        "closed",
+        "mitigated",
+        "mitigating",
+        "open"
+      ]
+    },
+    {
+      "name": "public.scope_type",
+      "values": [
+        "entity",
+        "group",
+        "legal_entity"
+      ]
+    },
+    {
+      "name": "public.tier",
+      "values": [
+        "critical",
+        "important",
+        "standard"
+      ]
+    },
+    {
+      "name": "public.user_role",
+      "values": [
+        "admin",
+        "user"
+      ]
+    },
+    {
+      "name": "public.vendor_status",
+      "values": [
+        "active",
+        "exited",
+        "under-review"
+      ]
+    },
+    {
+      "name": "public.verdict",
+      "values": [
+        "compliant",
+        "insufficient_evidence",
+        "non_compliant",
+        "not_applicable",
+        "partial"
+      ]
+    },
+    {
+      "name": "public.workspace_member_role",
+      "values": [
+        "member",
+        "owner",
+        "viewer"
+      ]
+    },
+    {
+      "name": "public.workspace_sync_status",
+      "values": [
+        "error",
+        "idle",
+        "synced",
+        "syncing"
+      ]
+    }
+  ],
+  "driver": {
+    "name": "postgres",
+    "database_version": "PostgreSQL 17.4 (Debian 17.4-1.pgdg120+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14) 12.2.0, 64-bit",
+    "meta": {
+      "current_schema": "public",
+      "search_paths": [
+        "postgres",
+        "public"
+      ],
+      "dict": {
+        "Functions": "Stored procedures and functions"
+      }
+    }
+  }
+}
