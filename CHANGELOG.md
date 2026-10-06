@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.0](https://github.com/andrelair-platform/retrieva-backend/compare/retrieva-backend-v1.2.0...retrieva-backend-v1.3.0) (2026-10-06)
+
+
+### Features
+
+* **ci:** schema-erd drift-check (drizzle migrations to tbls) ([#92](https://github.com/andrelair-platform/retrieva-backend/issues/92)) ([84bb793](https://github.com/andrelair-platform/retrieva-backend/commit/84bb7933084f1006ce1cd7ccf091acb0acc4d0e6))
+* **conversations:** message feedback loop -&gt; langfuse scores (rtv-73) ([#91](https://github.com/andrelair-platform/retrieva-backend/issues/91)) ([c99fd4c](https://github.com/andrelair-platform/retrieva-backend/commit/c99fd4c34fa2f39b6633e2e7adc50bd9938b2fe4))
+* **openapi:** auto-generate OpenAPI + serve /api-docs (RTV-74) ([#88](https://github.com/andrelair-platform/retrieva-backend/issues/88)) ([800bbdb](https://github.com/andrelair-platform/retrieva-backend/commit/800bbdb17965c77d5452690f2d6038d8a1228196))
+* **openapi:** enrich request bodies + shared response envelope (rtv-74) ([#90](https://github.com/andrelair-platform/retrieva-backend/issues/90)) ([55b94a7](https://github.com/andrelair-platform/retrieva-backend/commit/55b94a7809502ade5e752536b81638e6442a9057))
+
 ## [1.2.0](https://github.com/andrelair-platform/retrieva-backend/compare/retrieva-backend-v1.1.0...retrieva-backend-v1.2.0) (2026-09-29)
 
 
