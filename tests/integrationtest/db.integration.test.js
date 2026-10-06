@@ -27,7 +27,8 @@ describe('Postgres/Drizzle plumbing (RTV-47)', () => {
   it('reports a Postgres server version (proves a real engine, not an emulator)', async () => {
     const db = getDb();
     const res = await db.execute(sql`show server_version`);
-    expect(res.rows[0].server_version).toMatch(/^16\./);
+    // Pinned to the prod major (CNPG 17) — dev/prod parity (12-factor #10).
+    expect(res.rows[0].server_version).toMatch(/^17\./);
   });
 
   it('applies trivial DDL + DML through the Drizzle client', async () => {
