@@ -1,38 +1,25 @@
-// Tracing / LLMOps observability.
+// Tracing / LLMOps observability — Langfuse only.
 //
-// Two backends, both optional and disabled unless configured:
-//   • LangSmith  — LangChain-native callbacks (LangChainTracer), passed to chain .invoke().
-//   • Langfuse   — the platform LLMOps backbone. App-level RAG traces (Trace → retrieval/rerank
-//                  spans → generation) with session_id/user_id, sent to the per-product Langfuse
-//                  project. Uses the Langfuse CORE SDK (not langfuse-langchain, whose peer dep is
-//                  langchain <0.4 — incompatible with this app's LangChain v1). We build the trace
-//                  hierarchy manually, which is richer and version-safe.
+// Langfuse is the single, self-hosted LLMOps backbone (sovereign, in-cluster, no external SaaS
+// egress). It provides:
+//   • App-level RAG traces (Trace → retrieval/rerank spans → generation) built MANUALLY via
+//     startTrace() — richer + version-safe (the langfuse-langchain callback package pins
+//     langchain <0.4, incompatible with this app's LangChain v1).
+//   • A LangChain callback handler (getCallbacks()) for chains/LLMs invoked with { callbacks } —
+//     this REPLACES the former LangSmith callback so those call sites (assessment verdict/clause/
+//     rerank, gap-analysis, contract-intake) keep auto-tracing, now into Langfuse instead of an
+//     external SaaS. Same mechanism LangSmith used (a LangChain callback), different sink.
+//   • Prompt management (getLangfusePrompt) + user feedback scores (logFeedback).
 //
-// Both are no-ops when their env vars are absent, so this module is safe to import everywhere and
-// the RAG code never needs null checks (startTrace returns a null-object handle when disabled).
-import { Client } from 'langsmith';
-import { LangChainTracer } from '@langchain/core/tracers/tracer_langchain';
+// Everything is a no-op when Langfuse env vars are absent, so this module is safe to import
+// everywhere and callers never need null checks.
+import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
+import type { LLMResult } from '@langchain/core/outputs';
+import type { Serialized } from '@langchain/core/load/serializable';
+import type { BaseMessage } from '@langchain/core/messages';
 import logger from './logger.js';
 
-// ── LangSmith (unchanged) ────────────────────────────────────────────────────
-const {
-  LANGSMITH_API_KEY,
-  LANGSMITH_PROJECT = 'retrieva',
-  LANGSMITH_ENABLED = 'false',
-  LANGSMITH_TRACE_LEVEL = 'metadata',
-  LANGSMITH_API_URL,
-} = process.env;
-
-const langsmithEnabled = LANGSMITH_ENABLED === 'true' && !!LANGSMITH_API_KEY;
-const langsmithClient = langsmithEnabled
-  ? new Client({ apiKey: LANGSMITH_API_KEY, ...(LANGSMITH_API_URL ? { apiUrl: LANGSMITH_API_URL } : {}) })
-  : null;
-
-export function isLangSmithEnabled() {
-  return langsmithEnabled;
-}
-
-// ── Langfuse (app-level RAG tracing) ─────────────────────────────────────────
+// ── Langfuse (app-level RAG tracing + prompt mgmt + callbacks) ────────────────
 const LF_PUBLIC = process.env.LANGFUSE_PUBLIC_KEY;
 const LF_SECRET = process.env.LANGFUSE_SECRET_KEY;
 const LF_BASEURL =
@@ -142,14 +129,6 @@ export function startTrace({ name, sessionId, userId, input, tags, metadata }: S
  * `production` label, dev pulls `latest` (set via LANGFUSE_PROMPT_LABEL per overlay).
  * Never throws — returns null if Langfuse is disabled/unreachable or the prompt is
  * absent, so callers fall back to the Git-committed template (no runtime SPOF).
- * The returned object exposes `.compile(vars)` (Mustache) and links to a generation
- * when passed as `prompt` — giving trace-linked prompt-version attribution.
- *
- * @param {string} name
- * @param {object} [opts]
- * @param {string} [opts.label]           'production' | 'latest' | 'canary' | …
- * @param {number} [opts.cacheTtlSeconds] SDK client-side cache (default 60s)
- * @returns {Promise<object|null>}
  */
 export async function getLangfusePrompt(
   name: string,
@@ -160,7 +139,6 @@ export async function getLangfusePrompt(
     return await langfuse.getPrompt(name, undefined, {
       ...(label ? { label } : {}),
       cacheTtlSeconds,
-      // Serve a stale cached prompt if a refresh fetch fails — availability over freshness.
       fallback: undefined,
     });
   } catch (e) {
@@ -174,8 +152,12 @@ export async function getLangfusePrompt(
 }
 
 /**
- * LangChain callbacks for chain .invoke() — LangSmith only (Langfuse traces are built manually via
- * startTrace, since langfuse-langchain does not support LangChain v1).
+ * Langfuse LangChain callback handler — the drop-in replacement for the former LangSmith tracer.
+ * Chains/LLMs invoked with `{ callbacks: getCallbacks({ feature, sessionId }) }` get a Langfuse
+ * trace with one generation per LLM call (input / output / model / token usage), tagged by feature.
+ *
+ * Fully error-isolated: every handler swallows its own errors so a tracing hiccup can NEVER break
+ * an LLM invocation. When Langfuse is disabled, getCallbacks() returns [] and this is never built.
  */
 interface GetCallbacksOptions {
   runName?: string;
@@ -185,46 +167,134 @@ interface GetCallbacksOptions {
   feature?: string;
 }
 
-export function getCallbacks(options: GetCallbacksOptions = {}) {
-  if (!langsmithEnabled) return [];
-  const { runName, userId, workspaceId, sessionId, feature = 'unknown' } = options;
-  const tracer = new LangChainTracer({
-    client: langsmithClient!,
-    projectName: LANGSMITH_PROJECT,
-    ...(runName ? { runName } : {}),
-    tags: [`feature:${feature}`, `env:${process.env.NODE_ENV || 'development'}`],
-    metadata: {
-      ...(userId ? { userId } : {}),
-      ...(workspaceId ? { workspaceId } : {}),
-      ...(sessionId ? { sessionId } : {}),
-      traceLevel: LANGSMITH_TRACE_LEVEL,
-    },
-  });
-  return [tracer];
+class LangfuseCallbackHandler extends BaseCallbackHandler {
+  name = 'langfuse_callback_handler';
+  private opts: GetCallbacksOptions;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Langfuse SDK objects
+  private trace: any = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- runId -> Langfuse generation
+  private gens = new Map<string, any>();
+
+  constructor(opts: GetCallbacksOptions = {}) {
+    super();
+    this.opts = opts;
+  }
+
+  private ensureTrace() {
+    if (this.trace) return this.trace;
+    const { runName, feature = 'unknown', sessionId, userId, workspaceId } = this.opts;
+    this.trace = langfuse.trace({
+      name: runName || feature,
+      sessionId: sessionId || undefined,
+      userId: userId || undefined,
+      tags: [`feature:${feature}`, `env:${LF_ENV}`],
+      metadata: { environment: LF_ENV, feature, ...(workspaceId ? { workspaceId } : {}) },
+    });
+    return this.trace;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- extraParams shape varies by provider
+  private startGen(llm: Serialized, input: unknown, runId: string, extraParams?: any) {
+    try {
+      if (!langfuse) return;
+      const model =
+        extraParams?.invocation_params?.model ||
+        extraParams?.invocation_params?.model_name ||
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (llm as any)?.kwargs?.model ||
+        'unknown';
+      const gen = this.ensureTrace().generation({
+        name: this.opts.feature || 'llm',
+        model,
+        input,
+        metadata: { environment: LF_ENV },
+      });
+      this.gens.set(runId, gen);
+    } catch {
+      /* tracing must never break the chain */
+    }
+  }
+
+  handleLLMStart(llm: Serialized, prompts: string[], runId: string, _p?: string, extraParams?: Record<string, unknown>) {
+    this.startGen(llm, prompts, runId, extraParams);
+  }
+
+  handleChatModelStart(
+    llm: Serialized,
+    messages: BaseMessage[][],
+    runId: string,
+    _p?: string,
+    extraParams?: Record<string, unknown>
+  ) {
+    let input: unknown = messages;
+    try {
+      input = (messages?.[0] || []).map((m) => ({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        role: (m as any)?._getType?.() ?? 'message',
+        content: typeof m?.content === 'string' ? m.content : JSON.stringify(m?.content),
+      }));
+    } catch {
+      /* fall back to raw messages */
+    }
+    this.startGen(llm, input, runId, extraParams);
+  }
+
+  handleLLMEnd(output: LLMResult, runId: string) {
+    try {
+      const gen = this.gens.get(runId);
+      if (!gen) return;
+      const gen0 = output?.generations?.[0]?.[0];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const text = (gen0 as any)?.text ?? (gen0 as any)?.message?.content;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tu: any = output?.llmOutput?.tokenUsage || output?.llmOutput?.estimatedTokenUsage;
+      gen.end({
+        output: text,
+        ...(tu
+          ? { usage: { input: tu.promptTokens, output: tu.completionTokens, total: tu.totalTokens } }
+          : {}),
+      });
+      this.gens.delete(runId);
+      langfuse?.flushAsync?.().catch(() => {});
+    } catch {
+      /* tracing must never break the chain */
+    }
+  }
+
+  handleLLMError(err: Error, runId: string) {
+    try {
+      const gen = this.gens.get(runId);
+      if (gen) {
+        gen.end({ level: 'ERROR', statusMessage: err instanceof Error ? err.message : String(err) });
+        this.gens.delete(runId);
+      }
+    } catch {
+      /* noop */
+    }
+  }
 }
 
 /**
- * Map a user rating (👍/👎 or 0–1) back to its trace. Works for both backends.
+ * LangChain callbacks for chain/LLM .invoke() — now backed by Langfuse (was LangSmith).
+ * Returns [] when Langfuse is disabled, so call sites stay unchanged and never need null checks.
+ */
+export function getCallbacks(options: GetCallbacksOptions = {}) {
+  if (!langfuse) return [];
+  try {
+    return [new LangfuseCallbackHandler(options)];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Map a user rating (👍/👎 or 0–1) back to its Langfuse trace.
  */
 export async function logFeedback(traceId: string, score: number, comment?: string) {
-  if (!traceId) return;
-  if (langfuse) {
-    try {
-      langfuse.score({ traceId, name: 'user_rating', value: score, comment: comment || undefined });
-    } catch (e) {
-      logger.warn('Langfuse score failed', { error: e instanceof Error ? e.message : String(e) });
-    }
-  }
-  if (langsmithEnabled) {
-    try {
-      await langsmithClient!.createFeedback(traceId, 'user_rating', {
-        score,
-        comment: comment || undefined,
-      });
-    } catch (e) {
-      logger.warn('LangSmith feedback failed', {
-        error: e instanceof Error ? e.message : String(e),
-      });
-    }
+  if (!traceId || !langfuse) return;
+  try {
+    langfuse.score({ traceId, name: 'user_rating', value: score, comment: comment || undefined });
+  } catch (e) {
+    logger.warn('Langfuse score failed', { error: e instanceof Error ? e.message : String(e) });
   }
 }
