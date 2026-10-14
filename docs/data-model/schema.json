@@ -244,6 +244,154 @@
       ]
     },
     {
+      "name": "public.assessment_runs",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "arrangement_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "current_node",
+          "type": "text",
+          "nullable": false,
+          "default": "'intake'::text"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "langfuse_trace_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "assessment_run_status",
+          "nullable": false,
+          "default": "'running'::assessment_run_status"
+        },
+        {
+          "name": "status_message",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "assessment_runs_arrangement_idx",
+          "def": "CREATE INDEX assessment_runs_arrangement_idx ON public.assessment_runs USING btree (arrangement_id)",
+          "table": "public.assessment_runs",
+          "columns": [
+            "arrangement_id"
+          ]
+        },
+        {
+          "name": "assessment_runs_org_created_idx",
+          "def": "CREATE INDEX assessment_runs_org_created_idx ON public.assessment_runs USING btree (organization_id, created_at DESC NULLS LAST)",
+          "table": "public.assessment_runs",
+          "columns": [
+            "organization_id",
+            "created_at"
+          ]
+        },
+        {
+          "name": "assessment_runs_pkey",
+          "def": "CREATE UNIQUE INDEX assessment_runs_pkey ON public.assessment_runs USING btree (id)",
+          "table": "public.assessment_runs",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "assessment_runs_status_idx",
+          "def": "CREATE INDEX assessment_runs_status_idx ON public.assessment_runs USING btree (status)",
+          "table": "public.assessment_runs",
+          "columns": [
+            "status"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "assessment_runs_arrangement_id_arrangements_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE",
+          "table": "public.assessment_runs",
+          "referenced_table": "public.arrangements",
+          "columns": [
+            "arrangement_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "assessment_runs_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.assessment_runs",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "assessment_runs_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.assessment_runs",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "assessment_runs_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.assessment_runs",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "public.assessments",
       "type": "BASE TABLE",
       "columns": [
@@ -3768,6 +3916,45 @@
       "def": "FOREIGN KEY (ict_service_id) REFERENCES ict_services(id) ON DELETE SET NULL"
     },
     {
+      "table": "public.assessment_runs",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.assessment_runs",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.assessment_runs",
+      "columns": [
+        "arrangement_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.arrangements",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE"
+    },
+    {
       "table": "public.assessments",
       "columns": [
         "created_by"
@@ -4516,6 +4703,15 @@
       "values": [
         "CONTRACT_A30",
         "DORA"
+      ]
+    },
+    {
+      "name": "public.assessment_run_status",
+      "values": [
+        "blocked",
+        "done",
+        "running",
+        "waiting_human"
       ]
     },
     {

@@ -5,6 +5,7 @@
 | Name                                                                              | Columns | Comment | Type       |
 | --------------------------------------------------------------------------------- | ------- | ------- | ---------- |
 | [public.arrangements](public.arrangements.md)                                     | 16      |         | BASE TABLE |
+| [public.assessment_runs](public.assessment_runs.md)                               | 10      |         | BASE TABLE |
 | [public.assessments](public.assessments.md)                                       | 15      |         | BASE TABLE |
 | [public.audit_log](public.audit_log.md)                                           | 9       |         | BASE TABLE |
 | [public.business_functions](public.business_functions.md)                         | 8       |         | BASE TABLE |
@@ -42,6 +43,7 @@
 | public.arrangement_lifecycle   | active, due_diligence, exited, exiting, prospect, remediation, under_review                                                                                      |
 | public.arrangement_type        | external, intra_group                                                                                                                                            |
 | public.assessment_framework    | CONTRACT_A30, DORA                                                                                                                                               |
+| public.assessment_run_status   | blocked, done, running, waiting_human                                                                                                                            |
 | public.assessment_status       | analyzing, complete, failed, indexing, pending                                                                                                                   |
 | public.criticality             | critical, important                                                                                                                                              |
 | public.dependency_level        | high, low, medium                                                                                                                                                |
@@ -79,6 +81,9 @@ erDiagram
 "public.arrangements" }o--|| "public.legal_entities" : "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE CASCADE"
 "public.arrangements" }o--|| "public.business_functions" : "FOREIGN KEY (business_function_id) REFERENCES business_functions(id) ON DELETE CASCADE"
 "public.arrangements" }o--o| "public.ict_services" : "FOREIGN KEY (ict_service_id) REFERENCES ict_services(id) ON DELETE SET NULL"
+"public.assessment_runs" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.assessment_runs" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+"public.assessment_runs" }o--|| "public.arrangements" : "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE"
 "public.assessments" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.assessments" }o--|| "public.workspaces" : "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
 "public.audit_log" }o--o| "public.users" : "FOREIGN KEY (actor) REFERENCES users(id) ON DELETE SET NULL"
@@ -151,6 +156,18 @@ erDiagram
   arrangement_lifecycle lifecycle_status
   uuid organization_id FK
   uuid provider_id FK
+  timestamp_with_time_zone updated_at
+}
+"public.assessment_runs" {
+  uuid arrangement_id FK
+  timestamp_with_time_zone created_at
+  uuid created_by FK
+  text current_node
+  uuid id
+  text langfuse_trace_id
+  uuid organization_id FK
+  assessment_run_status status
+  text status_message
   timestamp_with_time_zone updated_at
 }
 "public.assessments" {
