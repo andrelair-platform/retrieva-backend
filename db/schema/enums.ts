@@ -167,3 +167,14 @@ export const questionnaireStatusEnum = pgEnum('questionnaire_status', [
   'expired',
   'failed',
 ]);
+
+// Assessment-run orchestration (RTV-78). The deterministic supervisor StateGraph persists one row per
+// run; status is the run state machine: `running` (a node executing) → `waiting_human` (suspended at an
+// interrupt() gate) → `done`; `blocked` is the halt-on-doubt terminal (node error / low confidence —
+// nothing partial becomes authoritative). Resume returns a waiting_human run to running.
+export const assessmentRunStatusEnum = pgEnum('assessment_run_status', [
+  'running',
+  'waiting_human',
+  'blocked',
+  'done',
+]);

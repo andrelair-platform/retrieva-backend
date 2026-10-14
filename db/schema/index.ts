@@ -23,6 +23,8 @@ export * from './auditLog.js';
 export * from './findings.js';
 // Risk register + remediation loop (RTV-43)
 export * from './risks.js';
+// Assessment-run orchestration (RTV-78) — the deterministic supervisor's run-tracking table.
+export * from './assessmentRuns.js';
 export * from './relations.js';
 // Canonical row types inferred from the tables above (RTV-22) — XRow / XInsert.
 export * from './rowTypes.js';
