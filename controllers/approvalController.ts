@@ -13,6 +13,7 @@ import {
 } from '../services/orchestrator/approvalService.js';
 import { resumeAssessmentRun } from '../services/orchestrator/assessmentOrchestrator.js';
 import { sendSuccess } from '../utils/index.js';
+import { emitToOrg } from '../config/realtime.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DECISIONS: GateDecisionVerb[] = ['approve', 'reject', 'edit', 'request_changes'];
@@ -60,7 +61,10 @@ export async function decideApprovalHandler(req: Request, res: Response) {
         justification: typeof justification === 'string' ? justification : undefined,
         expectedRunVersion: typeof expectedRunVersion === 'number' ? expectedRunVersion : undefined,
       },
-      { resume: resumeAssessmentRun }
+      {
+        resume: resumeAssessmentRun,
+        emit: (event, payload) => emitToOrg(organizationId, event, payload),
+      }
     );
     return sendSuccess(res, 200, 'Decision recorded', result);
   } catch (e) {

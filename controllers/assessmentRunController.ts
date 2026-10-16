@@ -10,6 +10,7 @@ import {
   listAssessmentRuns,
 } from '../services/orchestrator/assessmentOrchestrator.js';
 import { sendSuccess } from '../utils/index.js';
+import { emitToOrg } from '../config/realtime.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -23,6 +24,11 @@ export async function createAssessmentRun(req: Request, res: Response) {
     return res.status(400).json({ error: 'arrangementId (uuid) is required' });
   }
   const summary = await startAssessmentRun({ organizationId, arrangementId, userId });
+  emitToOrg(organizationId, 'run.updated', {
+    runId: summary.run?.id,
+    status: summary.run?.status,
+    waiting: summary.waiting,
+  });
   return sendSuccess(res, 201, 'Assessment run started', summary);
 }
 

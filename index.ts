@@ -11,6 +11,7 @@ import http from 'http';
 import app from './app.js';
 import logger from './config/logger.js';
 import { connectPg } from './config/db.js';
+import { initRealtime } from './config/realtime.js';
 import { runMigrations } from './db/migrate.js';
 import { startupInitService } from './services/startupInit.js';
 import { ragService } from './services/rag.js';
@@ -30,6 +31,8 @@ import {
 const port = process.env.PORT || 3000;
 
 const httpServer = http.createServer(app);
+// Org-scoped realtime (socket.io) for the AgentOps workspace — attaches to the HTTP server.
+initRealtime(httpServer);
 
 const startServer = async () => {
   try {
