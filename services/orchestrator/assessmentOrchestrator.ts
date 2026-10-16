@@ -13,6 +13,7 @@ import { arrangementRepository } from '../../repositories/index.js';
 import { assessmentEngine } from '../assessment/assessmentEngine.js';
 import { startTrace } from '../../config/tracing.js';
 import logger from '../../config/logger.js';
+import { recordGateApproval } from './approvalService.js';
 import {
   buildAssessmentGraph,
   type AssessmentGraphDeps,
@@ -91,6 +92,19 @@ async function summarize(runId: string, graph: any, config: any): Promise<RunSum
   const interrupts = (state?.tasks ?? []).flatMap((t: any) => t.interrupts ?? []);
   const waiting = interrupts.length > 0;
   const [run] = await getDb().select().from(assessmentRuns).where(eq(assessmentRuns.id, runId));
+  // A suspended run persists a first-class, pending gate approval (RTV-85) — idempotent per (run, gate),
+  // so re-summarising is safe. The human acts on it via the approval service (SoD + audit + resume).
+  if (waiting && run) {
+    try {
+      await recordGateApproval({ run, interrupt: interrupts[0]?.value ?? null });
+    } catch (e) {
+      logger.warn('recordGateApproval failed (non-fatal)', {
+        service: 'assessment-orchestrator',
+        runId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
   // Terminal → flush + release the trace.
   if (run && (run.status === 'done' || run.status === 'blocked')) {
     const t = traces.get(runId);

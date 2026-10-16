@@ -244,6 +244,183 @@
       ]
     },
     {
+      "name": "public.assessment_run_approvals",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "assignee",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "decided_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "decision",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "gate",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "justification",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "proposed_action",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "run_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "run_version_at_request",
+          "type": "text",
+          "nullable": false,
+          "default": "'0'::text"
+        },
+        {
+          "name": "status",
+          "type": "assessment_run_approval_status",
+          "nullable": false,
+          "default": "'pending'::assessment_run_approval_status"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "arun_approvals_assignee_status_idx",
+          "def": "CREATE INDEX arun_approvals_assignee_status_idx ON public.assessment_run_approvals USING btree (assignee, status)",
+          "table": "public.assessment_run_approvals",
+          "columns": [
+            "assignee",
+            "status"
+          ]
+        },
+        {
+          "name": "arun_approvals_org_status_idx",
+          "def": "CREATE INDEX arun_approvals_org_status_idx ON public.assessment_run_approvals USING btree (organization_id, status)",
+          "table": "public.assessment_run_approvals",
+          "columns": [
+            "organization_id",
+            "status"
+          ]
+        },
+        {
+          "name": "arun_approvals_run_idx",
+          "def": "CREATE INDEX arun_approvals_run_idx ON public.assessment_run_approvals USING btree (run_id)",
+          "table": "public.assessment_run_approvals",
+          "columns": [
+            "run_id"
+          ]
+        },
+        {
+          "name": "assessment_run_approvals_pkey",
+          "def": "CREATE UNIQUE INDEX assessment_run_approvals_pkey ON public.assessment_run_approvals USING btree (id)",
+          "table": "public.assessment_run_approvals",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "assessment_run_approvals_assignee_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (assignee) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.assessment_run_approvals",
+          "referenced_table": "public.users",
+          "columns": [
+            "assignee"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "assessment_run_approvals_decided_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.assessment_run_approvals",
+          "referenced_table": "public.users",
+          "columns": [
+            "decided_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "assessment_run_approvals_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.assessment_run_approvals",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "assessment_run_approvals_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.assessment_run_approvals",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "assessment_run_approvals_run_id_assessment_runs_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (run_id) REFERENCES assessment_runs(id) ON DELETE CASCADE",
+          "table": "public.assessment_run_approvals",
+          "referenced_table": "public.assessment_runs",
+          "columns": [
+            "run_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "public.assessment_runs",
       "type": "BASE TABLE",
       "columns": [
@@ -284,6 +461,12 @@
           "name": "organization_id",
           "type": "uuid",
           "nullable": false
+        },
+        {
+          "name": "row_version",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
         },
         {
           "name": "status",
@@ -3916,6 +4099,58 @@
       "def": "FOREIGN KEY (ict_service_id) REFERENCES ict_services(id) ON DELETE SET NULL"
     },
     {
+      "table": "public.assessment_run_approvals",
+      "columns": [
+        "assignee"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (assignee) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.assessment_run_approvals",
+      "columns": [
+        "decided_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.assessment_run_approvals",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.assessment_run_approvals",
+      "columns": [
+        "run_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.assessment_runs",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (run_id) REFERENCES assessment_runs(id) ON DELETE CASCADE"
+    },
+    {
       "table": "public.assessment_runs",
       "columns": [
         "created_by"
@@ -4706,10 +4941,25 @@
       ]
     },
     {
+      "name": "public.assessment_run_approval_status",
+      "values": [
+        "approved",
+        "edited",
+        "expired",
+        "pending",
+        "rejected",
+        "superseded"
+      ]
+    },
+    {
       "name": "public.assessment_run_status",
       "values": [
         "blocked",
+        "cancelled",
         "done",
+        "failed",
+        "queued",
+        "resuming",
         "running",
         "waiting_human"
       ]

@@ -17,6 +17,7 @@ import workspaceRoutes from '../routes/workspaceRoutes.js';
 import authRoutes from '../routes/authRoutes.js';
 import assessmentRoutes from '../routes/assessmentRoutes.js';
 import assessmentRunRoutes from '../routes/assessmentRunRoutes.js';
+import approvalRoutes from '../routes/approvalRoutes.js';
 import complianceRoutes from '../routes/complianceRoutes.js';
 import concentrationRoutes from '../modules/concentration/concentration.routes.js';
 import registerRoutes from '../modules/register/register.routes.js';
@@ -52,6 +53,7 @@ export const API_MOUNTS: ApiMount[] = [
   { prefix: '/api/v1/workspaces', router: workspaceRoutes, tag: 'workspaces' },
   { prefix: '/api/v1/assessments', router: assessmentRoutes, tag: 'assessments' },
   { prefix: '/api/v1/assessment-runs', router: assessmentRunRoutes, tag: 'assessment-runs' },
+  { prefix: '/api/v1/approvals', router: approvalRoutes, tag: 'approvals' },
   { prefix: '/api/v1/compliance', router: complianceRoutes, tag: 'compliance' },
   { prefix: '/api/v1/concentration', router: concentrationRoutes, tag: 'concentration' },
   { prefix: '/api/v1/register', router: registerRoutes, tag: 'register' },

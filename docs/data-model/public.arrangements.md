@@ -137,6 +137,7 @@ erDiagram
   uuid id
   text langfuse_trace_id
   uuid organization_id FK
+  integer row_version
   assessment_run_status status
   text status_message
   timestamp_with_time_zone updated_at

@@ -2,18 +2,19 @@
 
 ## Columns
 
-| Name              | Type                     | Default                          | Nullable | Children | Parents                                         | Comment |
-| ----------------- | ------------------------ | -------------------------------- | -------- | -------- | ----------------------------------------------- | ------- |
-| arrangement_id    | uuid                     |                                  | false    |          | [public.arrangements](public.arrangements.md)   |         |
-| created_at        | timestamp with time zone | now()                            | false    |          |                                                 |         |
-| created_by        | uuid                     |                                  | true     |          | [public.users](public.users.md)                 |         |
-| current_node      | text                     | 'intake'::text                   | false    |          |                                                 |         |
-| id                | uuid                     | gen_random_uuid()                | false    |          |                                                 |         |
-| langfuse_trace_id | text                     |                                  | true     |          |                                                 |         |
-| organization_id   | uuid                     |                                  | false    |          | [public.organizations](public.organizations.md) |         |
-| status            | assessment_run_status    | 'running'::assessment_run_status | false    |          |                                                 |         |
-| status_message    | text                     | ''::text                         | false    |          |                                                 |         |
-| updated_at        | timestamp with time zone | now()                            | false    |          |                                                 |         |
+| Name              | Type                     | Default                          | Nullable | Children                                                              | Parents                                         | Comment |
+| ----------------- | ------------------------ | -------------------------------- | -------- | --------------------------------------------------------------------- | ----------------------------------------------- | ------- |
+| arrangement_id    | uuid                     |                                  | false    |                                                                       | [public.arrangements](public.arrangements.md)   |         |
+| created_at        | timestamp with time zone | now()                            | false    |                                                                       |                                                 |         |
+| created_by        | uuid                     |                                  | true     |                                                                       | [public.users](public.users.md)                 |         |
+| current_node      | text                     | 'intake'::text                   | false    |                                                                       |                                                 |         |
+| id                | uuid                     | gen_random_uuid()                | false    | [public.assessment_run_approvals](public.assessment_run_approvals.md) |                                                 |         |
+| langfuse_trace_id | text                     |                                  | true     |                                                                       |                                                 |         |
+| organization_id   | uuid                     |                                  | false    |                                                                       | [public.organizations](public.organizations.md) |         |
+| row_version       | integer                  | 0                                | false    |                                                                       |                                                 |         |
+| status            | assessment_run_status    | 'running'::assessment_run_status | false    |                                                                       |                                                 |         |
+| status_message    | text                     | ''::text                         | false    |                                                                       |                                                 |         |
+| updated_at        | timestamp with time zone | now()                            | false    |                                                                       |                                                 |         |
 
 ## Constraints
 
@@ -40,6 +41,7 @@ erDiagram
 
 "public.assessment_runs" }o--|| "public.arrangements" : "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE"
 "public.assessment_runs" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.assessment_run_approvals" }o--|| "public.assessment_runs" : "FOREIGN KEY (run_id) REFERENCES assessment_runs(id) ON DELETE CASCADE"
 "public.assessment_runs" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 
 "public.assessment_runs" {
@@ -50,6 +52,7 @@ erDiagram
   uuid id
   text langfuse_trace_id
   uuid organization_id FK
+  integer row_version
   assessment_run_status status
   text status_message
   timestamp_with_time_zone updated_at
@@ -99,6 +102,21 @@ erDiagram
   jsonb refresh_tokens
   user_role role
   timestamp_with_time_zone updated_at
+}
+"public.assessment_run_approvals" {
+  uuid assignee FK
+  timestamp_with_time_zone created_at
+  timestamp_with_time_zone decided_at
+  uuid decided_by FK
+  text decision
+  text gate
+  uuid id
+  text justification
+  uuid organization_id FK
+  jsonb proposed_action
+  uuid run_id FK
+  text run_version_at_request
+  assessment_run_approval_status status
 }
 "public.organizations" {
   text country
