@@ -17,6 +17,7 @@ import authRoutes from './routes/authRoutes.js';
 import healthRoutes from './routes/healthRoutes.js';
 import assessmentRoutes from './routes/assessmentRoutes.js';
 import assessmentRunRoutes from './routes/assessmentRunRoutes.js';
+import approvalRoutes from './routes/approvalRoutes.js';
 import complianceRoutes from './routes/complianceRoutes.js';
 import concentrationRoutes from './modules/concentration/concentration.routes.js';
 import registerRoutes from './modules/register/register.routes.js';
@@ -288,6 +289,8 @@ app.use('/api/v1/workspaces', optionalAuth, requireActivePlan, workspaceRoutes);
 app.use('/api/v1/assessments', optionalAuth, requireActivePlan, setTenantContext, assessmentRoutes);
 // RTV-78 — deterministic assessment supervisor (agentic orchestration spine).
 app.use('/api/v1/assessment-runs', optionalAuth, requireActivePlan, setTenantContext, assessmentRunRoutes);
+// RTV-85 — Approval Center (human decisions on the supervisor's run gates).
+app.use('/api/v1/approvals', optionalAuth, requireActivePlan, setTenantContext, approvalRoutes);
 app.use('/api/v1/compliance', optionalAuth, requireActivePlan, complianceRoutes);
 // Concentration is the org-scoped surface — setEntityContext (RTV-54) resolves the
 // user's legal-entity scope so the org-scoped repos apply row-level isolation.

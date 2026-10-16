@@ -5,7 +5,7 @@
 // by thread_id = this row's `id`. This table is the human-/audit-facing projection: which arrangement,
 // what state, where in the pipeline, and the Langfuse trace to replay it. Durability + audit (what
 // replaces a workflow engine's history) = PostgresSaver checkpoints + this record + one Langfuse trace.
-import { pgTable, uuid, text, timestamp, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, integer, index } from 'drizzle-orm/pg-core';
 import { assessmentRunStatusEnum } from './enums.js';
 import { organizations } from './organizations.js';
 import { arrangements } from './arrangements.js';
@@ -31,6 +31,9 @@ export const assessmentRuns = pgTable(
     // The Langfuse trace for this run (nested spans per node) — the replayable audit record. Null when
     // tracing is disabled.
     langfuseTraceId: text('langfuse_trace_id'),
+    // Optimistic-concurrency token (RTV-85): bumped on every state transition. A resume/decision must
+    // carry the version it saw; a mismatch = the run changed since → reject (stale-decision protection).
+    rowVersion: integer('row_version').notNull().default(0),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })

@@ -168,13 +168,33 @@ export const questionnaireStatusEnum = pgEnum('questionnaire_status', [
   'failed',
 ]);
 
-// Assessment-run orchestration (RTV-78). The deterministic supervisor StateGraph persists one row per
-// run; status is the run state machine: `running` (a node executing) → `waiting_human` (suspended at an
-// interrupt() gate) → `done`; `blocked` is the halt-on-doubt terminal (node error / low confidence —
-// nothing partial becomes authoritative). Resume returns a waiting_human run to running.
+// Assessment-run orchestration (RTV-78, enriched RTV-85). One row per supervisor run; status is the run
+// state machine: `queued` (accepted, not yet executing) → `running` (a node executing) →
+// `waiting_human` (suspended at an interrupt() gate) → `resuming` (a human decision accepted, continuation
+// scheduled) → `running` → … → `done`. `blocked` = halt-on-doubt (node error / low confidence — nothing
+// partial becomes authoritative); `cancelled` = a human cancelled the run; `failed` = a hard error.
+// Keep `blocked` distinct from `failed`: blocked is a deliberate, recoverable halt for human review.
 export const assessmentRunStatusEnum = pgEnum('assessment_run_status', [
+  'queued',
   'running',
   'waiting_human',
+  'resuming',
   'blocked',
+  'cancelled',
+  'failed',
   'done',
+]);
+
+// Run-gate approvals (RTV-85) — a first-class, persistent record of each supervisor interrupt() gate a
+// human must act on (confirm arrangement, approve findings, final sign-off). SEPARATE from run status:
+// one run can have several approvals, to different people. `superseded` = the run/proposed action changed
+// (stale-decision protection); `expired` = an SLA/timeout lapsed. Finding-level decisions keep flowing
+// through applyFindingDecision (RTV-55 SoD) — this does not duplicate that.
+export const assessmentRunApprovalStatusEnum = pgEnum('assessment_run_approval_status', [
+  'pending',
+  'approved',
+  'rejected',
+  'edited',
+  'expired',
+  'superseded',
 ]);

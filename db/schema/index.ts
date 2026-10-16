@@ -25,6 +25,8 @@ export * from './findings.js';
 export * from './risks.js';
 // Assessment-run orchestration (RTV-78) — the deterministic supervisor's run-tracking table.
 export * from './assessmentRuns.js';
+// Run-gate approvals (RTV-85) — the human-decision record for the supervisor's interrupt() gates.
+export * from './assessmentRunApprovals.js';
 export * from './relations.js';
 // Canonical row types inferred from the tables above (RTV-22) — XRow / XInsert.
 export * from './rowTypes.js';
