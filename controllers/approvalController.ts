@@ -12,6 +12,7 @@ import {
   type GateDecisionVerb,
 } from '../services/orchestrator/approvalService.js';
 import { resumeAssessmentRun } from '../services/orchestrator/assessmentOrchestrator.js';
+import { sendSuccess } from '../utils/index.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DECISIONS: GateDecisionVerb[] = ['approve', 'reject', 'edit', 'request_changes'];
@@ -25,7 +26,7 @@ export async function listApprovalsHandler(req: Request, res: Response) {
     status: typeof req.query.status === 'string' ? req.query.status : 'pending',
     ...(mine && req.user?.userId ? { assignee: req.user.userId } : {}),
   });
-  return res.json({ approvals });
+  return sendSuccess(res, 200, 'Approvals retrieved', { approvals });
 }
 
 /** GET /api/v1/approvals/:id — the proposed action + run for the review screen (evidence-first). */
@@ -36,7 +37,7 @@ export async function getApprovalHandler(req: Request, res: Response) {
   if (!UUID.test(id)) return res.status(400).json({ error: 'invalid approval id' });
   const result = await getApproval(id, organizationId);
   if (!result) return res.status(404).json({ error: 'approval not found' });
-  return res.json(result);
+  return sendSuccess(res, 200, 'Approval retrieved', result);
 }
 
 /** POST /api/v1/approvals/:id/decision { decision, justification?, expectedRunVersion? } */
@@ -61,7 +62,7 @@ export async function decideApprovalHandler(req: Request, res: Response) {
       },
       { resume: resumeAssessmentRun }
     );
-    return res.json(result);
+    return sendSuccess(res, 200, 'Decision recorded', result);
   } catch (e) {
     if (e instanceof ApprovalError) return res.status(e.status).json({ error: e.message, code: e.code });
     return res.status(500).json({ error: e instanceof Error ? e.message : 'decision failed' });

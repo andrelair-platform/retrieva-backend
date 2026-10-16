@@ -9,6 +9,7 @@ import {
   resumeAssessmentRun,
   listAssessmentRuns,
 } from '../services/orchestrator/assessmentOrchestrator.js';
+import { sendSuccess } from '../utils/index.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -22,7 +23,7 @@ export async function createAssessmentRun(req: Request, res: Response) {
     return res.status(400).json({ error: 'arrangementId (uuid) is required' });
   }
   const summary = await startAssessmentRun({ organizationId, arrangementId, userId });
-  return res.status(201).json(summary);
+  return sendSuccess(res, 201, 'Assessment run started', summary);
 }
 
 /** POST /api/v1/assessment-runs/:id/resume  { confirmed, reason? } → advance a suspended human gate. */
@@ -39,7 +40,7 @@ export async function resumeAssessmentRunHandler(req: Request, res: Response) {
       organizationId,
       decision: { confirmed, reason: typeof reason === 'string' ? reason : undefined },
     });
-    return res.json(summary);
+    return sendSuccess(res, 200, 'Assessment run resumed', summary);
   } catch (e) {
     const status = (e as { status?: number })?.status ?? 500;
     return res.status(status).json({ error: e instanceof Error ? e.message : 'resume failed' });
@@ -51,5 +52,5 @@ export async function listAssessmentRunsHandler(req: Request, res: Response) {
   const organizationId = req.user?.organizationId as string | undefined;
   if (!organizationId) return res.status(400).json({ error: 'no organization context' });
   const runs = await listAssessmentRuns(organizationId);
-  return res.json({ runs });
+  return sendSuccess(res, 200, 'Assessment runs retrieved', { runs });
 }
