@@ -16,6 +16,7 @@ import logger from '../../config/logger.js';
 import { recordGateApproval } from './approvalService.js';
 import { CURRENT_LIBRARY_VERSION } from '../../config/controlLibrary/index.js';
 import { assessViaCrew, isCrewA2AEnabled, mapCrewResponseToGap } from './crewClient.js';
+import { buildCrewAssessmentInputs } from './crewInputs.js';
 import type { AssessArrangementRequest } from '../../contracts/a2a/assessArrangement.contract.js';
 import {
   buildAssessmentGraph,
@@ -73,19 +74,28 @@ async function runGapInProcess(args: { organizationId: string; arrangementId: st
 }
 
 /**
- * Build the A2A request for the crew. RTV-81 ships the WIRING: clauses + evidenceRefs are empty for
- * now (clause extraction + Qdrant evidence retrieval = RTV-81b) — with no evidence the crew returns
- * `insufficient_evidence` at low confidence, which halt-on-doubt turns into a human-review block: the
- * safe default. The control-library version is echoed through so findings map 1:1 into the register.
+ * Build the A2A request for the crew. RTV-81b sources real `clauses` + `evidenceRefs` from the
+ * arrangement's ingested document (Qdrant) ∪ its RTV-37 evidence records (see crewInputs). With
+ * nothing ingested both are empty → the crew returns `insufficient_evidence` at low confidence →
+ * halt-on-doubt blocks for human review (the safe default). The control-library version is echoed
+ * through so findings map 1:1 into the register.
  */
-function buildCrewRequest(args: { runId: string; arrangementId: string }): AssessArrangementRequest {
+async function buildCrewRequest(args: {
+  runId: string;
+  organizationId: string;
+  arrangementId: string;
+}): Promise<AssessArrangementRequest> {
+  const { clauses, evidenceRefs } = await buildCrewAssessmentInputs({
+    organizationId: args.organizationId,
+    arrangementId: args.arrangementId,
+  });
   return {
     runId: args.runId,
     node: 'gap',
     arrangementId: args.arrangementId,
     controlLibraryVersion: CURRENT_LIBRARY_VERSION,
-    clauses: [],
-    evidenceRefs: [],
+    clauses,
+    evidenceRefs,
   };
 }
 
@@ -96,7 +106,12 @@ function buildCrewRequest(args: { runId: string; arrangementId: string }): Asses
  */
 async function runGap(args: { runId: string; organizationId: string; arrangementId: string; userId?: string | null }) {
   if (isCrewA2AEnabled()) {
-    const resp = await assessViaCrew(buildCrewRequest({ runId: args.runId, arrangementId: args.arrangementId }));
+    const request = await buildCrewRequest({
+      runId: args.runId,
+      organizationId: args.organizationId,
+      arrangementId: args.arrangementId,
+    });
+    const resp = await assessViaCrew(request);
     return mapCrewResponseToGap(resp);
   }
   return runGapInProcess(args);

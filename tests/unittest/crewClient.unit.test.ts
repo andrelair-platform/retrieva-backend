@@ -22,6 +22,11 @@ import { defaultDeps } from '../../services/orchestrator/assessmentOrchestrator.
 vi.mock('../../config/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), stream: { write: vi.fn() } },
 }));
+// Keep this test about ROUTING, not input sourcing — stub crewInputs so runGap builds an (empty) request
+// without touching Qdrant/DB. buildCrewAssessmentInputs has its own unit test (crewInputs.unit.test.ts).
+vi.mock('../../services/orchestrator/crewInputs.js', () => ({
+  buildCrewAssessmentInputs: vi.fn(async () => ({ clauses: [], evidenceRefs: [] })),
+}));
 
 const UUID_A = '11111111-1111-4111-8111-111111111111';
 const UUID_B = '22222222-2222-4222-8222-222222222222';
