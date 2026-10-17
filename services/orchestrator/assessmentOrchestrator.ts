@@ -9,7 +9,7 @@ import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 import { Command } from '@langchain/langgraph';
 import { getDb, getPool } from '../../config/db.js';
 import { assessmentRuns } from '../../db/schema/index.js';
-import { arrangementRepository } from '../../repositories/index.js';
+import { arrangementRepository, findingRepository } from '../../repositories/index.js';
 import { assessmentEngine } from '../assessment/assessmentEngine.js';
 import { startTrace } from '../../config/tracing.js';
 import logger from '../../config/logger.js';
@@ -17,7 +17,10 @@ import { recordGateApproval } from './approvalService.js';
 import { CURRENT_LIBRARY_VERSION } from '../../config/controlLibrary/index.js';
 import { assessViaCrew, isCrewA2AEnabled, mapCrewResponseToGap } from './crewClient.js';
 import { buildCrewAssessmentInputs } from './crewInputs.js';
-import type { AssessArrangementRequest } from '../../contracts/a2a/assessArrangement.contract.js';
+import type {
+  AssessArrangementRequest,
+  AssessArrangementResponse,
+} from '../../contracts/a2a/assessArrangement.contract.js';
 import {
   buildAssessmentGraph,
   type AssessmentGraphDeps,
@@ -101,9 +104,46 @@ async function buildCrewRequest(args: {
 }
 
 /**
+ * Persist the crew's proposed findings into the register as AI DRAFTS (RTV-81b §5) — keyed by the real
+ * control id the crew echoes (controls now come from the real library). This mirrors the in-process
+ * engine (assessmentEngine upserts drafts), so crew-delegated findings land in the SAME register and
+ * flow through the SAME human finding-approval (RTV-55): `status: 'draft'` is a proposal, not
+ * authoritative. Idempotent per (org, arrangement, control) via upsertForControl.
+ */
+async function persistCrewFindings(
+  args: { organizationId: string; arrangementId: string; userId?: string | null },
+  resp: AssessArrangementResponse
+): Promise<void> {
+  const summaryByControl = new Map(resp.findings.map((f) => [f.controlRef, f.summary]));
+  const citationsByControl = new Map<string, AssessArrangementResponse['citations']>();
+  for (const c of resp.citations) {
+    if (!c.controlRef) continue;
+    const bucket = citationsByControl.get(c.controlRef);
+    if (bucket) bucket.push(c);
+    else citationsByControl.set(c.controlRef, [c]);
+  }
+  for (const v of resp.verdicts) {
+    if (!v.controlRef) continue;
+    await findingRepository.upsertForControl({
+      organizationId: args.organizationId,
+      arrangementId: args.arrangementId,
+      controlId: v.controlRef,
+      libraryVersion: resp.controlLibraryVersion,
+      verdict: v.verdict,
+      rationale: summaryByControl.get(v.controlRef) ?? '',
+      citations: citationsByControl.get(v.controlRef) ?? [],
+      searched: [{ scope: 'crew-a2a', node: 'gap' }],
+      confidence: v.confidence,
+      status: 'draft', // crew proposal — a human decides (RTV-55), SoD-gated
+      createdBy: args.userId ?? null,
+    });
+  }
+}
+
+/**
  * The gap node. Delegates to the CrewAI crew over A2A when CREW_A2A_ENABLED (RTV-81), otherwise the
- * in-process engine (default). Crew output is PROPOSED (not persisted) — the supervisor's human gate
- * remains the only path to anything authoritative.
+ * in-process engine (default). Crew output is a PROPOSAL persisted as DRAFT findings (RTV-81b §5) —
+ * the supervisor's human gate + the per-finding RTV-55 approval remain the only path to authoritative.
  */
 async function runGap(args: { runId: string; organizationId: string; arrangementId: string; userId?: string | null }) {
   if (isCrewA2AEnabled()) {
@@ -113,6 +153,10 @@ async function runGap(args: { runId: string; organizationId: string; arrangement
       arrangementId: args.arrangementId,
     });
     const resp = await assessViaCrew(request);
+    await persistCrewFindings(
+      { organizationId: args.organizationId, arrangementId: args.arrangementId, userId: args.userId },
+      resp
+    );
     return mapCrewResponseToGap(resp);
   }
   return runGapInProcess(args);
