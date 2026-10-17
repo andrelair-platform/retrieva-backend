@@ -32,6 +32,13 @@
 Split out of the Retrieva monorepo (RFC #474): the frontend stays in `retrieva`, the backend
 lives here and releases independently.
 
+Product-level **C4 container view** (this backend + the frontend + datastores + governed AI platform),
+generated from code ([`retrieva/docs/diagrams/retrieva_container.py`](https://github.com/andrelair-platform/retrieva/blob/main/docs/diagrams/retrieva_container.py), mingrammer `diagrams`):
+
+![Retrieva — C4 container view](https://raw.githubusercontent.com/andrelair-platform/retrieva/main/docs/static/img/architecture/retrieva-container.png)
+
+Delivery pipeline for this repo:
+
 ```
  push main ──▶ GitHub Actions (build.yml)
               │ build ─▶ Harbor (dev)  +  ghcr.io/andrelair-platform/retrieva-backend:<sha>
