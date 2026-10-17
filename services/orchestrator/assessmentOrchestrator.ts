@@ -85,7 +85,7 @@ async function buildCrewRequest(args: {
   organizationId: string;
   arrangementId: string;
 }): Promise<AssessArrangementRequest> {
-  const { clauses, evidenceRefs } = await buildCrewAssessmentInputs({
+  const { clauses, evidenceRefs, controls } = await buildCrewAssessmentInputs({
     organizationId: args.organizationId,
     arrangementId: args.arrangementId,
   });
@@ -94,6 +94,7 @@ async function buildCrewRequest(args: {
     node: 'gap',
     arrangementId: args.arrangementId,
     controlLibraryVersion: CURRENT_LIBRARY_VERSION,
+    controls, // the real applicable DORA controls (crew echoes ref → findings map into the register)
     clauses,
     evidenceRefs,
   };

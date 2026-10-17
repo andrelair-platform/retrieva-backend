@@ -18,7 +18,7 @@
 import { z } from 'zod';
 
 /** Contract version — bump on any breaking change to request/response. Mirrors the Agent Card skill version. */
-export const ASSESS_ARRANGEMENT_VERSION = '1.0.0';
+export const ASSESS_ARRANGEMENT_VERSION = '1.1.0'; // 1.1.0: + request.controls[] (real library) + evidenceRef.text
 /** A2A protocol spec this contract targets. */
 export const A2A_PROTOCOL_VERSION = '1.0';
 export const ASSESS_ARRANGEMENT_SKILL_ID = 'assess-arrangement';
@@ -48,6 +48,19 @@ const EvidenceRefSchema = z
     id: z.string().min(1).describe('Evidence chunk id (Qdrant point / document ref)'),
     collection: z.string().optional().describe('Vector collection the chunk lives in'),
     source: z.string().optional().describe('Human-readable source (filename / title)'),
+    text: z.string().optional().describe('The evidence passage text (when available) — grounds citations'),
+  })
+  .strict();
+
+// The applicable controls the crew assesses against (RTV-81b §2) — the real DORA control library
+// (resolveControlsForArrangement), not a prompt-embedded catalog. The crew maps clauses to THESE and
+// echoes `ref` as the finding/verdict controlRef, so results map 1:1 into the register (→ persistence).
+const ControlSchema = z
+  .object({
+    ref: z.string().min(1).describe('Stable control id — the crew echoes it as the verdict/finding controlRef'),
+    doraArticleRef: z.string().optional().describe('DORA article reference, e.g. "Article 30(3)(e)"'),
+    title: z.string().min(1).describe('Short control title'),
+    description: z.string().describe('What the control requires'),
   })
   .strict();
 
@@ -57,6 +70,10 @@ export const AssessArrangementRequestSchema = z
     node: z.string().min(1).default('gap').describe('Calling supervisor node — idempotency key with runId'),
     arrangementId: uuid.describe('The ICT arrangement under assessment'),
     controlLibraryVersion: z.string().min(1).describe('Control-library version to assess against (echoed in findings)'),
+    controls: z
+      .array(ControlSchema)
+      .optional()
+      .describe('Applicable controls to assess against; absent/empty → the crew falls back to its DORA catalog'),
     clauses: z.array(ClauseSchema).describe('Contract clauses to map to DORA controls'),
     evidenceRefs: z.array(EvidenceRefSchema).describe('Evidence the crew may retrieve/cite; it persists nothing'),
     context: z.record(z.string(), z.unknown()).optional().describe('Opaque passthrough (sessionId, locale, …)'),
@@ -101,6 +118,7 @@ export const AssessArrangementResponseSchema = z
 
 export type AssessArrangementRequest = z.infer<typeof AssessArrangementRequestSchema>;
 export type AssessArrangementResponse = z.infer<typeof AssessArrangementResponseSchema>;
+export type AssessArrangementControl = z.infer<typeof ControlSchema>;
 
 // ── Agent Card — the descriptor the crew serves at /.well-known/agent.json (A2A Spec v1.0). ──────
 // Authored here (source of truth); the Python crew serves it via crewai[a2a]/a2a-sdk (RTV-80). The I/O

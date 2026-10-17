@@ -25,7 +25,7 @@ vi.mock('../../config/logger.js', () => ({
 // Keep this test about ROUTING, not input sourcing — stub crewInputs so runGap builds an (empty) request
 // without touching Qdrant/DB. buildCrewAssessmentInputs has its own unit test (crewInputs.unit.test.ts).
 vi.mock('../../services/orchestrator/crewInputs.js', () => ({
-  buildCrewAssessmentInputs: vi.fn(async () => ({ clauses: [], evidenceRefs: [] })),
+  buildCrewAssessmentInputs: vi.fn(async () => ({ clauses: [], evidenceRefs: [], controls: [] })),
 }));
 
 const UUID_A = '11111111-1111-4111-8111-111111111111';
@@ -36,6 +36,7 @@ const validRequest: AssessArrangementRequest = {
   node: 'gap',
   arrangementId: UUID_B,
   controlLibraryVersion: '1.0.0',
+  controls: [],
   clauses: [],
   evidenceRefs: [],
 };

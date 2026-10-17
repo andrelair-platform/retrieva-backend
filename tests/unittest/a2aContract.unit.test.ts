@@ -37,8 +37,11 @@ const validRequest: AssessArrangementRequest = {
   node: 'gap',
   arrangementId: ARR,
   controlLibraryVersion: 'dora-2026.1',
+  controls: [
+    { ref: 'DORA-28.8-EXIT-STRATEGY', doraArticleRef: 'Article 28(8)', title: 'Exit strategy', description: 'Documented exit plan' },
+  ],
   clauses: [{ ref: '§12.3', text: 'The provider shall maintain an exit plan.' }],
-  evidenceRefs: [{ id: 'ev-1', collection: 'compliance_kb', source: 'MSA.pdf' }],
+  evidenceRefs: [{ id: 'ev-1', collection: 'compliance_kb', source: 'MSA.pdf', text: 'exit plan text' }],
 };
 
 const validResponse = {

@@ -2,7 +2,7 @@
   "protocolVersion": "1.0",
   "name": "retrieva-assessment-crew",
   "description": "DORA ICT third-party assessment crew — maps contract clauses to controls, finds gaps, scores coverage. Evidence-grounded; output is proposed, not authoritative (human-gated by the supervisor).",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "capabilities": {
     "streaming": false,
     "pushNotifications": false

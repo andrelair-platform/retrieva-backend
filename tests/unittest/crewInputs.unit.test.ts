@@ -27,7 +27,13 @@ describe('buildCrewAssessmentInputs', () => {
   it('maps document chunks to clauses (ref = stable chunk id) and unions evidence refs (deduped)', async () => {
     const out = await buildCrewAssessmentInputs(
       { organizationId: ORG, arrangementId: ARR },
-      { scrollChunks: async () => chunks, resolveEvidence: async () => records }
+      {
+        scrollChunks: async () => chunks,
+        resolveEvidence: async () => records,
+        resolveControls: async () => [
+          { ref: 'DORA-30.3e-AUDIT-RIGHTS', doraArticleRef: 'Article 30(3)(e)', title: 'Audit rights', description: 'Access, inspection and audit' },
+        ],
+      }
     );
 
     expect(out.clauses).toEqual([
@@ -40,6 +46,11 @@ describe('buildCrewAssessmentInputs', () => {
       { id: 'c1', collection: COLLECTION, source: 'contract.pdf' },
       { id: 'c2', collection: COLLECTION, source: 'contract.pdf' },
       { id: 'e1', source: 'soc2.pdf' },
+    ]);
+
+    // the real applicable controls flow through (the crew echoes ref → findings map into the register)
+    expect(out.controls).toEqual([
+      { ref: 'DORA-30.3e-AUDIT-RIGHTS', doraArticleRef: 'Article 30(3)(e)', title: 'Audit rights', description: 'Access, inspection and audit' },
     ]);
 
     // the inputs always compose into a wire-valid request
@@ -57,7 +68,7 @@ describe('buildCrewAssessmentInputs', () => {
     const many: DocChunk[] = Array.from({ length: 10 }, (_, i) => ({ id: `k${i}`, source: 'd', text: `clause ${i} text` }));
     const out = await buildCrewAssessmentInputs(
       { organizationId: ORG, arrangementId: ARR },
-      { scrollChunks: async () => many, resolveEvidence: async () => [], maxClauses: 3 }
+      { scrollChunks: async () => many, resolveEvidence: async () => [], resolveControls: async () => [], maxClauses: 3 }
     );
     expect(out.clauses).toHaveLength(3);
     expect(out.evidenceRefs).toHaveLength(10); // evidence refs are not capped
@@ -66,7 +77,11 @@ describe('buildCrewAssessmentInputs', () => {
   it('drops empty / whitespace-only chunk text', async () => {
     const out = await buildCrewAssessmentInputs(
       { organizationId: ORG, arrangementId: ARR },
-      { scrollChunks: async () => [{ id: 'c1', source: 'd', text: '   ' }, chunks[0]], resolveEvidence: async () => [] }
+      {
+        scrollChunks: async () => [{ id: 'c1', source: 'd', text: '   ' }, chunks[0]],
+        resolveEvidence: async () => [],
+        resolveControls: async () => [],
+      }
     );
     expect(out.clauses).toEqual([{ ref: 'c1', text: chunks[0].text }]);
   });
@@ -81,16 +96,19 @@ describe('buildCrewAssessmentInputs', () => {
         resolveEvidence: async () => {
           throw new Error('db down');
         },
+        resolveControls: async () => {
+          throw new Error('library down');
+        },
       }
     );
-    expect(out).toEqual({ clauses: [], evidenceRefs: [] });
+    expect(out).toEqual({ clauses: [], evidenceRefs: [], controls: [] });
   });
 
   it('empty everywhere → empty inputs (crew will return insufficient_evidence → halt-on-doubt)', async () => {
     const out = await buildCrewAssessmentInputs(
       { organizationId: ORG, arrangementId: ARR },
-      { scrollChunks: async () => [], resolveEvidence: async () => [] }
+      { scrollChunks: async () => [], resolveEvidence: async () => [], resolveControls: async () => [] }
     );
-    expect(out).toEqual({ clauses: [], evidenceRefs: [] });
+    expect(out).toEqual({ clauses: [], evidenceRefs: [], controls: [] });
   });
 });
