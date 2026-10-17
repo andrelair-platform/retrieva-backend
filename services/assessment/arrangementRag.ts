@@ -107,3 +107,35 @@ export async function searchArrangementSpans(
     return []; // no Qdrant / collection not indexed yet → metadata evidence path handles it
   }
 }
+
+/**
+ * Scroll ALL indexed chunks of an arrangement's document (no query bias) — the contract text the crew
+ * maps to controls (RTV-81b). Unlike {@link searchArrangementSpans} this is query-independent: it
+ * returns the whole document so the clause_mapper sees every clause, each with its stable Qdrant point
+ * id (→ the crew can cite it as an evidence ref). FAIL-SAFE → [] on any error (no collection / Qdrant
+ * down → the supervisor sends empty clauses → the crew returns insufficient_evidence, halt-on-doubt).
+ * @returns {Promise<Array<{id:string, source:string, text:string}>>}
+ */
+export async function scrollArrangementChunks(arrangementId: string, limit = 50) {
+  if (process.env.VITEST) return []; // tests inject chunks directly (see crewInputs.unit.test.ts)
+  if (Date.now() < ragDisabledUntil) return [];
+  try {
+    const client = getClient();
+    const res = await client.scroll(arrangementCollectionName(arrangementId), {
+      limit,
+      with_payload: true,
+      with_vector: false,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Qdrant point payloads are untyped
+    return (res.points as any[])
+      .map((p) => ({
+        id: String(p.id),
+        source: p.payload?.metadata?.fileName || 'document',
+        text: String(p.payload?.pageContent || ''),
+      }))
+      .filter((c) => c.text.length > 20);
+  } catch {
+    ragDisabledUntil = Date.now() + RAG_COOLDOWN_MS;
+    return []; // no Qdrant / collection not indexed yet → empty clauses (safe)
+  }
+}
