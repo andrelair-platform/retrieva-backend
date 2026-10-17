@@ -43,8 +43,9 @@ export interface AssessmentGraphDeps {
   /** Load the arrangement being assessed (tenant-scoped). Returns null if it doesn't exist in the org. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- arrangement row is a heterogeneous domain object
   loadArrangement: (organizationId: string, arrangementId: string) => Promise<any | null>;
-  /** The gap/assessment step — wraps assessmentEngine.assessArrangement (RTV-81 will route this via A2A). */
+  /** The gap/assessment step — in-process engine, or the CrewAI crew over A2A when CREW_A2A_ENABLED (RTV-81). */
   runGap: (args: {
+    runId: string;
     organizationId: string;
     arrangementId: string;
     userId?: string | null;
@@ -125,6 +126,7 @@ export function buildAssessmentGraph(deps: AssessmentGraphDeps, checkpointer: Ba
       await deps.updateRun(s.runId, { status: 'running', currentNode: 'gap' });
       try {
         const result = await deps.runGap({
+          runId: s.runId,
           organizationId: s.organizationId,
           arrangementId: s.arrangementId,
           userId: s.userId,

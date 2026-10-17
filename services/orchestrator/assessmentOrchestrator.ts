@@ -14,6 +14,9 @@ import { assessmentEngine } from '../assessment/assessmentEngine.js';
 import { startTrace } from '../../config/tracing.js';
 import logger from '../../config/logger.js';
 import { recordGateApproval } from './approvalService.js';
+import { CURRENT_LIBRARY_VERSION } from '../../config/controlLibrary/index.js';
+import { assessViaCrew, isCrewA2AEnabled, mapCrewResponseToGap } from './crewClient.js';
+import type { AssessArrangementRequest } from '../../contracts/a2a/assessArrangement.contract.js';
 import {
   buildAssessmentGraph,
   type AssessmentGraphDeps,
@@ -59,13 +62,44 @@ function span(runId: string, name: string, input?: Record<string, unknown>): Spa
   };
 }
 
-async function runGap(args: { organizationId: string; arrangementId: string; userId?: string | null }) {
+/** In-process gap assessment — the authoritative engine; persists findings as a side effect. */
+async function runGapInProcess(args: { organizationId: string; arrangementId: string; userId?: string | null }) {
   const r = await assessmentEngine.assessArrangement({
     organizationId: args.organizationId,
     arrangementId: args.arrangementId,
     userId: args.userId ?? null,
   });
   return { findings: r.findings, confidence: r.coverage?.confidence ?? 1, coverage: r.coverage, breakdown: r.breakdown };
+}
+
+/**
+ * Build the A2A request for the crew. RTV-81 ships the WIRING: clauses + evidenceRefs are empty for
+ * now (clause extraction + Qdrant evidence retrieval = RTV-81b) — with no evidence the crew returns
+ * `insufficient_evidence` at low confidence, which halt-on-doubt turns into a human-review block: the
+ * safe default. The control-library version is echoed through so findings map 1:1 into the register.
+ */
+function buildCrewRequest(args: { runId: string; arrangementId: string }): AssessArrangementRequest {
+  return {
+    runId: args.runId,
+    node: 'gap',
+    arrangementId: args.arrangementId,
+    controlLibraryVersion: CURRENT_LIBRARY_VERSION,
+    clauses: [],
+    evidenceRefs: [],
+  };
+}
+
+/**
+ * The gap node. Delegates to the CrewAI crew over A2A when CREW_A2A_ENABLED (RTV-81), otherwise the
+ * in-process engine (default). Crew output is PROPOSED (not persisted) — the supervisor's human gate
+ * remains the only path to anything authoritative.
+ */
+async function runGap(args: { runId: string; organizationId: string; arrangementId: string; userId?: string | null }) {
+  if (isCrewA2AEnabled()) {
+    const resp = await assessViaCrew(buildCrewRequest({ runId: args.runId, arrangementId: args.arrangementId }));
+    return mapCrewResponseToGap(resp);
+  }
+  return runGapInProcess(args);
 }
 
 /** Production node dependencies (overridable in tests). */
