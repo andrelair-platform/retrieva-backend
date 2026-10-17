@@ -27,6 +27,12 @@ vi.mock('../../config/logger.js', () => ({
 vi.mock('../../services/orchestrator/crewInputs.js', () => ({
   buildCrewAssessmentInputs: vi.fn(async () => ({ clauses: [], evidenceRefs: [], controls: [] })),
 }));
+// The crew path persists proposed findings as drafts (RTV-81b §5) — stub the register (no DB in unit).
+const upsertForControl = vi.fn(async () => ({}));
+vi.mock('../../repositories/index.js', () => ({
+  findingRepository: { upsertForControl: (...a: unknown[]) => upsertForControl(...a) },
+  arrangementRepository: { findByIdInOrg: vi.fn() },
+}));
 
 const UUID_A = '11111111-1111-4111-8111-111111111111';
 const UUID_B = '22222222-2222-4222-8222-222222222222';
@@ -189,13 +195,14 @@ describe('isCrewA2AEnabled', () => {
 describe('runGap routing (defaultDeps)', () => {
   it('flag ON → delegates the gap node to the crew over A2A (never touches the in-process engine)', async () => {
     process.env.CREW_A2A_ENABLED = 'true';
+    upsertForControl.mockClear();
     const resp: AssessArrangementResponse = {
       controlLibraryVersion: '1.0.0',
-      findings: [],
-      verdicts: [],
-      citations: [],
+      findings: [{ controlRef: 'DORA-30.3e-AUDIT-RIGHTS', clauseRefs: ['§8.1'], summary: 'audit rights present' }],
+      verdicts: [{ controlRef: 'DORA-30.3e-AUDIT-RIGHTS', verdict: 'partial', confidence: 0.6 }],
+      citations: [{ evidenceId: 'ev-1', controlRef: 'DORA-30.3e-AUDIT-RIGHTS' }],
       confidence: 0.3,
-      insufficientEvidence: ['ICT-01'],
+      insufficientEvidence: ['DORA-28.2-STRATEGY'],
     };
     const fetchMock = stubFetch(resp);
     __setFetchForTest(fetchMock);
@@ -214,5 +221,15 @@ describe('runGap routing (defaultDeps)', () => {
     const [, init] = fetchMock.mock.calls[0];
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.params.message.parts[0].data).toMatchObject({ runId: UUID_A, node: 'gap', arrangementId: UUID_B });
+
+    // RTV-81b §5: the crew's verdict was persisted as a DRAFT finding keyed by the real control id
+    expect(upsertForControl).toHaveBeenCalledOnce();
+    expect(upsertForControl.mock.calls[0][0]).toMatchObject({
+      organizationId: 'org-1',
+      arrangementId: UUID_B,
+      controlId: 'DORA-30.3e-AUDIT-RIGHTS',
+      verdict: 'partial',
+      status: 'draft',
+    });
   });
 });
