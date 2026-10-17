@@ -18,15 +18,15 @@ import {
 } from '../../services/orchestrator/crewClient.js';
 import type { AssessArrangementRequest, AssessArrangementResponse } from '../../contracts/a2a/assessArrangement.contract.js';
 import { defaultDeps } from '../../services/orchestrator/assessmentOrchestrator.js';
+import { buildCrewAssessmentInputs } from '../../services/orchestrator/crewInputs.js';
 
 vi.mock('../../config/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), stream: { write: vi.fn() } },
 }));
-// Keep this test about ROUTING, not input sourcing — stub crewInputs so runGap builds an (empty) request
-// without touching Qdrant/DB. buildCrewAssessmentInputs has its own unit test (crewInputs.unit.test.ts).
-vi.mock('../../services/orchestrator/crewInputs.js', () => ({
-  buildCrewAssessmentInputs: vi.fn(async () => ({ clauses: [], evidenceRefs: [], controls: [] })),
-}));
+// Stub crewInputs so runGap builds a request without touching Qdrant/DB — each routing test sets the
+// return (clauses/controls) it needs. buildCrewAssessmentInputs has its own unit test.
+vi.mock('../../services/orchestrator/crewInputs.js', () => ({ buildCrewAssessmentInputs: vi.fn() }));
+const mockedInputs = vi.mocked(buildCrewAssessmentInputs);
 // The crew path persists proposed findings as drafts (RTV-81b §5) — stub the register (no DB in unit).
 const upsertForControl = vi.fn(async () => ({}));
 vi.mock('../../repositories/index.js', () => ({
@@ -196,6 +196,11 @@ describe('runGap routing (defaultDeps)', () => {
   it('flag ON → delegates the gap node to the crew over A2A (never touches the in-process engine)', async () => {
     process.env.CREW_A2A_ENABLED = 'true';
     upsertForControl.mockClear();
+    mockedInputs.mockResolvedValue({
+      clauses: [{ ref: '§8.1', text: 'audit rights clause' }],
+      evidenceRefs: [],
+      controls: [{ ref: 'DORA-30.3e-AUDIT-RIGHTS', title: 'Audit rights', description: '' }],
+    });
     const resp: AssessArrangementResponse = {
       controlLibraryVersion: '1.0.0',
       findings: [{ controlRef: 'DORA-30.3e-AUDIT-RIGHTS', clauseRefs: ['§8.1'], summary: 'audit rights present' }],
@@ -231,5 +236,36 @@ describe('runGap routing (defaultDeps)', () => {
       verdict: 'partial',
       status: 'draft',
     });
+  });
+
+  it('0-clause short-circuit → skips the crew A2A call, records all controls insufficient (RTV-81b §2a)', async () => {
+    process.env.CREW_A2A_ENABLED = 'true';
+    upsertForControl.mockClear();
+    mockedInputs.mockResolvedValue({
+      clauses: [], // no ingested contract text
+      evidenceRefs: [],
+      controls: [
+        { ref: 'DORA-28.2-STRATEGY', title: 'Strategy', description: '' },
+        { ref: 'DORA-30.3e-AUDIT-RIGHTS', title: 'Audit rights', description: '' },
+      ],
+    });
+    const fetchMock = stubFetch({});
+    __setFetchForTest(fetchMock);
+
+    const out = (await defaultDeps.runGap({
+      runId: UUID_A,
+      organizationId: 'org-1',
+      arrangementId: UUID_B,
+    })) as { source?: string; confidence: number; insufficientEvidence: string[] };
+
+    expect(fetchMock).not.toHaveBeenCalled(); // NO wasted LLM round-trip
+    expect(out.source).toBe('crew-a2a');
+    expect(out.confidence).toBe(0); // → halt-on-doubt blocks for human review
+    expect(out.insufficientEvidence.sort()).toEqual(['DORA-28.2-STRATEGY', 'DORA-30.3e-AUDIT-RIGHTS']);
+    // every passed control persisted as a draft insufficient_evidence finding
+    expect(upsertForControl).toHaveBeenCalledTimes(2);
+    for (const call of upsertForControl.mock.calls) {
+      expect(call[0]).toMatchObject({ verdict: 'insufficient_evidence', status: 'draft' });
+    }
   });
 });

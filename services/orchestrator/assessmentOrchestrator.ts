@@ -152,7 +152,21 @@ async function runGap(args: { runId: string; organizationId: string; arrangement
       organizationId: args.organizationId,
       arrangementId: args.arrangementId,
     });
-    const resp = await assessViaCrew(request);
+    // 0-clause short-circuit (RTV-81b §2a): with no contract text ingested there is nothing to map,
+    // and calling the crew just burns an LLM round-trip that returns invalid output (it degrades, but
+    // noisily). Skip the A2A call and record every control as insufficient_evidence — the honest,
+    // deterministic result (halt-on-doubt → human reviews → ingest the contract, re-assess).
+    const resp = request.clauses.length
+      ? await assessViaCrew(request)
+      : allControlsInsufficient(request, 'no contract clauses ingested — ingest the contract (RTV-34) and re-assess');
+    if (!request.clauses.length) {
+      logger.info('crew A2A skipped — no ingested clauses; all controls insufficient', {
+        service: 'assessment-orchestrator',
+        runId: args.runId,
+        arrangementId: args.arrangementId,
+        controls: resp.verdicts.length,
+      });
+    }
     await persistCrewFindings(
       { organizationId: args.organizationId, arrangementId: args.arrangementId, userId: args.userId },
       resp
@@ -160,6 +174,24 @@ async function runGap(args: { runId: string; organizationId: string; arrangement
     return mapCrewResponseToGap(resp);
   }
   return runGapInProcess(args);
+}
+
+/**
+ * Synthesize an all-controls `insufficient_evidence` response WITHOUT calling the crew (RTV-81b §2a) —
+ * used when there are no clauses to assess. Contract-shaped so it flows through the same persist + map
+ * path. Confidence 0 → the gap node's halt-on-doubt blocks for human review.
+ */
+function allControlsInsufficient(request: AssessArrangementRequest, reason: string): AssessArrangementResponse {
+  const refs = (request.controls ?? []).map((c) => c.ref).filter(Boolean);
+  const controlRefs = refs.length ? refs : ['DORA-ART28']; // fallback if the library resolved nothing
+  return {
+    controlLibraryVersion: request.controlLibraryVersion,
+    findings: controlRefs.map((ref) => ({ controlRef: ref, clauseRefs: [], summary: reason })),
+    verdicts: controlRefs.map((ref) => ({ controlRef: ref, verdict: 'insufficient_evidence', confidence: 0 })),
+    citations: [],
+    confidence: 0,
+    insufficientEvidence: controlRefs,
+  };
 }
 
 /** Production node dependencies (overridable in tests). */
