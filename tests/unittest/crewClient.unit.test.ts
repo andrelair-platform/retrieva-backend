@@ -1,20 +1,20 @@
 /**
  * Supervisor → crew A2A client (RTV-81) — the deterministic seams.
  *
- * The live SDK wire handshake against the deployed crew is verified in RTV-81b (needs a running crew);
- * here we lock the parts that must be right regardless of transport: the request→message wrapping, the
- * response-DataPart extraction (shape-tolerant across v1.0/v0.3), the findings/verdicts/citations join,
- * contract validation on BOTH ends, and the flag that routes the gap node to the crew. The network call
- * is exercised through an injected stub client (`__setCrewClientForTest`) — no SDK internals, no socket.
+ * Transport is a direct JSON-RPC `message/send` POST (the @a2a-js/sdk client doesn't interop with the
+ * crew's a2a-sdk 0.3.x — RTV-81b QA). Here we lock the parts that must be right regardless: the
+ * request→JSON-RPC wrapping, the response-DataPart extraction, the findings/verdicts/citations join,
+ * contract validation on BOTH ends, and the flag that routes the gap node to the crew. The network
+ * call is exercised through an injected stub fetch (`__setFetchForTest`) — no socket.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
-  toA2AMessage,
+  toA2ARequest,
   extractResponseData,
   mapCrewResponseToGap,
   assessViaCrew,
   isCrewA2AEnabled,
-  __setCrewClientForTest,
+  __setFetchForTest,
 } from '../../services/orchestrator/crewClient.js';
 import type { AssessArrangementRequest, AssessArrangementResponse } from '../../contracts/a2a/assessArrangement.contract.js';
 import { defaultDeps } from '../../services/orchestrator/assessmentOrchestrator.js';
@@ -49,46 +49,60 @@ const validResponse: AssessArrangementResponse = {
   insufficientEvidence: ['ICT-02'],
 };
 
+/** A stub fetch returning a JSON-RPC success whose result is a Message carrying `data` in a DataPart. */
+function stubFetch(data: unknown, { ok = true, status = 200 }: { ok?: boolean; status?: number } = {}) {
+  return vi.fn(async () =>
+    ({ ok, status, json: async () => ({ jsonrpc: '2.0', id: '1', result: { kind: 'message', role: 'agent', parts: [{ kind: 'data', data }] } }) }) as unknown as Response
+  );
+}
+
 afterEach(() => {
-  __setCrewClientForTest(null);
+  __setFetchForTest(null);
   delete process.env.CREW_A2A_ENABLED;
 });
 
-describe('toA2AMessage', () => {
-  it('wraps the request in a single data part with a fresh messageId + user role', () => {
-    const msg = toA2AMessage(validRequest) as {
-      messageId: string;
-      role: number;
-      parts: Array<{ content: { $case: string; value: unknown } }>;
+describe('toA2ARequest', () => {
+  it('wraps the request as a JSON-RPC message/send with a single DataPart', () => {
+    const rpc = toA2ARequest(validRequest) as {
+      jsonrpc: string;
+      id: string;
+      method: string;
+      params: { message: { role: string; kind: string; parts: Array<{ kind: string; data: unknown }> } };
     };
-    expect(msg.messageId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(msg.role).toBe(1); // ROLE_USER
-    expect(msg.parts).toHaveLength(1);
-    expect(msg.parts[0].content.$case).toBe('data');
-    expect(msg.parts[0].content.value).toEqual(validRequest);
+    expect(rpc.jsonrpc).toBe('2.0');
+    expect(rpc.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(rpc.method).toBe('message/send');
+    expect(rpc.params.message.role).toBe('user');
+    expect(rpc.params.message.parts).toHaveLength(1);
+    expect(rpc.params.message.parts[0].kind).toBe('data');
+    expect(rpc.params.message.parts[0].data).toEqual(validRequest);
   });
 });
 
 describe('extractResponseData', () => {
-  it('reads a v1.0 Message data part (content.$case)', () => {
-    const r = extractResponseData({ parts: [{ content: { $case: 'data', value: validResponse } }] });
+  it('unwraps the JSON-RPC result Message data part (kind:data)', () => {
+    const r = extractResponseData({ jsonrpc: '2.0', id: '1', result: { parts: [{ kind: 'data', data: validResponse }] } });
     expect(r).toEqual(validResponse);
   });
-  it('reads a v0.3-normalised data part (kind:data / .data)', () => {
+  it('reads a bare Message (no JSON-RPC envelope)', () => {
     const r = extractResponseData({ parts: [{ kind: 'data', data: validResponse }] });
     expect(r).toEqual(validResponse);
   });
+  it('reads a v1.0 content.$case data part', () => {
+    const r = extractResponseData({ result: { parts: [{ content: { $case: 'data', value: validResponse } }] } });
+    expect(r).toEqual(validResponse);
+  });
   it('reads a Task result (parts from a status message)', () => {
-    const r = extractResponseData({ status: { message: { parts: [{ data: validResponse }] } } });
+    const r = extractResponseData({ result: { status: { message: { parts: [{ kind: 'data', data: validResponse }] } } } });
     expect(r).toEqual(validResponse);
   });
   it('reads a Task result (parts from an artifact)', () => {
-    const r = extractResponseData({ artifacts: [{ parts: [{ content: { $case: 'data', value: validResponse } }] }] });
+    const r = extractResponseData({ result: { artifacts: [{ parts: [{ kind: 'data', data: validResponse }] }] } });
     expect(r).toEqual(validResponse);
   });
   it('throws when the result carries no data part', () => {
-    expect(() => extractResponseData({ parts: [{ content: { $case: 'text', value: 'hi' } }] })).toThrow(/no DataPart/);
-    expect(() => extractResponseData({})).toThrow(/no DataPart/);
+    expect(() => extractResponseData({ result: { parts: [{ kind: 'text', text: 'hi' }] } })).toThrow(/no DataPart/);
+    expect(() => extractResponseData({ result: {} })).toThrow(/no DataPart/);
   });
 });
 
@@ -120,29 +134,41 @@ describe('mapCrewResponseToGap', () => {
 });
 
 describe('assessViaCrew', () => {
-  it('sends the request as a data part and returns the validated contract response', async () => {
-    const sendMessage = vi.fn().mockResolvedValue({ parts: [{ content: { $case: 'data', value: validResponse } }] });
-    __setCrewClientForTest(async () => ({ sendMessage }));
+  it('POSTs a message/send and returns the validated contract response', async () => {
+    const fetchMock = stubFetch(validResponse);
+    __setFetchForTest(fetchMock);
 
     const out = await assessViaCrew(validRequest);
     expect(out).toEqual(validResponse);
 
-    // the outbound message carried the request in a data part
-    const [params] = sendMessage.mock.calls[0];
-    expect(params.message.parts[0].content.value).toEqual(validRequest);
+    // the outbound body is a JSON-RPC message/send carrying the request in a DataPart
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.method).toBe('message/send');
+    expect(body.params.message.parts[0].data).toEqual(validRequest);
   });
 
   it('rejects a client-side request that violates the contract (bad uuid)', async () => {
-    const sendMessage = vi.fn();
-    __setCrewClientForTest(async () => ({ sendMessage }));
+    const fetchMock = stubFetch(validResponse);
+    __setFetchForTest(fetchMock);
     await expect(assessViaCrew({ ...validRequest, arrangementId: 'not-a-uuid' })).rejects.toThrow();
-    expect(sendMessage).not.toHaveBeenCalled(); // never hits the wire
+    expect(fetchMock).not.toHaveBeenCalled(); // never hits the wire
+  });
+
+  it('throws on a JSON-RPC error from the crew', async () => {
+    __setFetchForTest(
+      vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ jsonrpc: '2.0', id: '1', error: { code: -32601, message: 'Method not found' } }) }) as unknown as Response)
+    );
+    await expect(assessViaCrew(validRequest)).rejects.toThrow(/-32601|Method not found/);
+  });
+
+  it('throws on a non-2xx HTTP response', async () => {
+    __setFetchForTest(vi.fn(async () => ({ ok: false, status: 503, json: async () => ({}) }) as unknown as Response));
+    await expect(assessViaCrew(validRequest)).rejects.toThrow(/HTTP 503/);
   });
 
   it('rejects an off-contract crew response (confidence out of range)', async () => {
-    const bad = { ...validResponse, confidence: 2 };
-    const sendMessage = vi.fn().mockResolvedValue({ parts: [{ content: { $case: 'data', value: bad } }] });
-    __setCrewClientForTest(async () => ({ sendMessage }));
+    __setFetchForTest(stubFetch({ ...validResponse, confidence: 2 }));
     await expect(assessViaCrew(validRequest)).rejects.toThrow();
   });
 });
@@ -170,8 +196,8 @@ describe('runGap routing (defaultDeps)', () => {
       confidence: 0.3,
       insufficientEvidence: ['ICT-01'],
     };
-    const sendMessage = vi.fn().mockResolvedValue({ parts: [{ content: { $case: 'data', value: resp } }] });
-    __setCrewClientForTest(async () => ({ sendMessage }));
+    const fetchMock = stubFetch(resp);
+    __setFetchForTest(fetchMock);
 
     const out = (await defaultDeps.runGap({
       runId: UUID_A,
@@ -181,10 +207,11 @@ describe('runGap routing (defaultDeps)', () => {
 
     expect(out.source).toBe('crew-a2a'); // crew path, not the engine
     expect(out.confidence).toBe(0.3); // low confidence flows through → supervisor halt-on-doubt
-    expect(sendMessage).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledOnce();
 
     // the request the supervisor built carried the runId + default gap node (idempotency key)
-    const [params] = sendMessage.mock.calls[0];
-    expect(params.message.parts[0].content.value).toMatchObject({ runId: UUID_A, node: 'gap', arrangementId: UUID_B });
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.params.message.parts[0].data).toMatchObject({ runId: UUID_A, node: 'gap', arrangementId: UUID_B });
   });
 });
