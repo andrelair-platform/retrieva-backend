@@ -22,11 +22,20 @@ arrangements (and the proportionality gate itself), **medium** otherwise.
 | **Provider** (third-party) | no LEI (high if it serves a critical arrangement) | `missing_field` |
 | **Provider** (third-party) | critical/important but **no nth-party (sub-chain) dependencies mapped** | `unmapped_subchain` |
 | **Provider** (sub-chain edge) | a known nth-party dependency **not yet confirmed** by a human | `unconfirmed_subchain` |
+| **Arrangement** | governing contract/evidence **expired** (high on a CIF, else medium) or **expiring within 30 days** (medium) | `contract_expiry` |
 
-**Not in this slice — contract expiry.** The arrangement model has no per-arrangement contract
-start/end dates, so date-based *"expired contract"* detection is **deferred** (it would be a schema
-change nobody populates yet). Contract-renewal / certification-expiry is already handled at the
-workspace level by the **monitoring alerts** service (`alertMonitorService`). See *Deferred* below.
+**Contract expiry (the `contract_expiry` rule).** A current contract is a DORA Art. 28/30 register
+obligation, so a lapsed one is a gap the register should surface before a regulator does. The arrangement
+has no contract-date column of its own; instead the snapshot derives each arrangement's governing
+validity from its **contract-type evidence** (`evidence.validityUntil` on the `master_service_agreement`
+/ `dora_addendum` categories) — the **furthest-out** date wins (the latest renewal/addendum governs).
+Expired → a `contract_expiry` finding (high on a CIF, medium otherwise); expiring within 30 days →
+medium; no recorded date → not flagged here (that's an evidence-collection concern, not an expiry fact).
+The rule is pure — the reference `now` is injected, so it's deterministic in tests.
+
+> This complements, and is finer-grained than, the workspace-level contract-renewal email nudge in
+> `alertMonitorService` (that's a 60-day workspace heads-up; this is a per-arrangement register gap in
+> the continuous audit).
 
 ## Flow (async)
 
@@ -112,6 +121,7 @@ A non-dry audit writes one `completeness.audit.run` entry to the audit log (coun
 
 ## Deferred
 
-- **Contract-expiry** — needs per-arrangement contract dates (schema change); covered today by the
-  workspace-level monitoring alerts. Backfill when contract dates are added to the arrangement model.
+- **Contract-expiry** — ✅ **DONE** (the `contract_expiry` rule, above): it reads validity from the
+  arrangement's contract-type evidence (`evidence.validityUntil`) rather than a new arrangement column.
+  A future refinement could add a first-class per-arrangement contract start/end once that's modelled.
 - **Per-org schedule** — the schedule audits one configured org (same limitation as the discovery sweep).

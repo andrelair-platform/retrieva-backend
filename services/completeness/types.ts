@@ -6,8 +6,15 @@
 export type GapEntityType = 'arrangement' | 'legal_entity' | 'business_function' | 'provider';
 
 /** The kind of gap. missing_field = a mandatory RT.02.01 field is empty; inconsistent_flag = a
- *  cross-entity contradiction; *_subchain = an nth-party (DORA Art. 29 sub-chain) gap. */
-export type GapType = 'missing_field' | 'inconsistent_flag' | 'unconfirmed_subchain' | 'unmapped_subchain';
+ *  cross-entity contradiction; *_subchain = an nth-party (DORA Art. 29 sub-chain) gap; contract_expiry =
+ *  the governing contract/evidence is expired or lapsing soon (DORA Art. 28/30 — a current contract is a
+ *  register obligation). gap_type is growable text in the DB, so a new kind needs no migration. */
+export type GapType =
+  | 'missing_field'
+  | 'inconsistent_flag'
+  | 'unconfirmed_subchain'
+  | 'unmapped_subchain'
+  | 'contract_expiry';
 
 /** high on critical/important arrangements (and the proportionality gate itself), else medium. */
 export type GapSeverity = 'high' | 'medium' | 'low';
@@ -36,6 +43,9 @@ export interface ArrangementInput {
   businessFunctionId: string;
   businessFunctionName: string;
   businessFunctionCriticalFlag: boolean;
+  // ISO date the governing contract/evidence stays valid until (the furthest-out validityUntil across
+  // this arrangement's contract-type evidence), or null if none is recorded. Drives the expiry rule.
+  contractValidUntil: string | null;
 }
 
 export interface LegalEntityInput {

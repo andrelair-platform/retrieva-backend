@@ -31,8 +31,11 @@ const arr = (over: Partial<ArrangementInput> = {}): ArrangementInput => ({
   businessFunctionId: 'bf1',
   businessFunctionName: 'Claims',
   businessFunctionCriticalFlag: true,
+  contractValidUntil: null,
   ...over,
 });
+
+const NOW = new Date('2026-06-15T00:00:00Z');
 
 describe('auditArrangement', () => {
   it('a fully-populated critical arrangement has no gaps', () => {
@@ -66,6 +69,40 @@ describe('auditArrangement', () => {
     const f = auditArrangement(arr({ businessFunctionCriticalFlag: false }));
     const bf = f.find((x) => x.entityType === 'business_function');
     expect(bf).toMatchObject({ gapType: 'inconsistent_flag', field: 'criticalOrImportant', severity: 'high', entityId: 'bf1' });
+  });
+
+  describe('contract expiry', () => {
+    const expiryGap = (a: Partial<ArrangementInput>) =>
+      auditArrangement(arr(a), NOW).find((x) => x.gapType === 'contract_expiry');
+
+    it('flags an EXPIRED contract — high on a critical arrangement', () => {
+      const g = expiryGap({ criticality: 'critical', contractValidUntil: '2026-01-01T00:00:00Z' });
+      expect(g).toMatchObject({ gapType: 'contract_expiry', field: 'contractValidUntil', severity: 'high' });
+      expect(g!.detail).toMatch(/expired on 2026-01-01/);
+    });
+
+    it('expired contract is medium on a non-critical arrangement', () => {
+      const g = expiryGap({ criticality: 'standard', contractValidUntil: '2026-01-01T00:00:00Z' });
+      expect(g).toMatchObject({ severity: 'medium' });
+    });
+
+    it('flags a contract EXPIRING within 30 days — medium', () => {
+      const g = expiryGap({ contractValidUntil: '2026-06-30T00:00:00Z' }); // 15 days out
+      expect(g).toMatchObject({ gapType: 'contract_expiry', severity: 'medium' });
+      expect(g!.detail).toMatch(/expires on 2026-06-30 \(within 30 days\)/);
+    });
+
+    it('does NOT flag a contract valid well into the future', () => {
+      expect(expiryGap({ contractValidUntil: '2027-01-01T00:00:00Z' })).toBeUndefined();
+    });
+
+    it('does NOT flag when no contract validity date is recorded', () => {
+      expect(expiryGap({ contractValidUntil: null })).toBeUndefined();
+    });
+
+    it('ignores an unparseable validity date (never throws)', () => {
+      expect(expiryGap({ contractValidUntil: 'not-a-date' })).toBeUndefined();
+    });
   });
 });
 
