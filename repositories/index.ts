@@ -74,3 +74,6 @@ export { RiskRepository, riskRepository } from './drizzle/RiskRepository.js';
 
 // Discovery connectors (RTV-91c) — async sweep runs + the proposal inbox.
 export { DiscoveryRepository, discoveryRepository } from './drizzle/DiscoveryRepository.js';
+
+// Register-completeness agent (RTV-93) — audit runs + the findings inbox.
+export { CompletenessRepository, completenessRepository } from './drizzle/CompletenessRepository.js';

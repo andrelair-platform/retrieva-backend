@@ -30,6 +30,9 @@ export * from './assessmentRunApprovals.js';
 // Discovery connectors (RTV-91c) — async sweep run-tracking + the proposal inbox.
 export * from './discoveryRuns.js';
 export * from './discoveryProposals.js';
+// Register-completeness agent (RTV-93) — audit run-tracking + the findings inbox.
+export * from './registerCompletenessRuns.js';
+export * from './registerCompletenessFindings.js';
 export * from './relations.js';
 // Canonical row types inferred from the tables above (RTV-22) — XRow / XInsert.
 export * from './rowTypes.js';

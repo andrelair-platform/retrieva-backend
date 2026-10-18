@@ -30,6 +30,7 @@ import {
 } from './modules/arrangements/arrangements.routes.js';
 import intakeRoutes from './modules/intake/intake.routes.js';
 import discoveryRoutes from './modules/discovery/discovery.routes.js';
+import completenessRoutes from './modules/completeness/completeness.routes.js';
 import questionnaireRoutes from './routes/questionnaireRoutes.js';
 import questionnairePublicRoutes from './routes/questionnairePublicRoutes.js';
 import publicEvidenceRoutes from './routes/publicEvidenceRoutes.js';
@@ -308,6 +309,16 @@ app.use('/api/v1/register', optionalAuth, requireActivePlan, setEntityContext, r
 // Discovery connectors (RTV-91) — org-scoped. Sweep a source system (Okta) → PROPOSE arrangements
 // for human confirmation (nothing auto-written); setEntityContext applies RTV-54 isolation to dedupe.
 app.use('/api/v1/discovery', optionalAuth, requireActivePlan, setEntityContext, discoveryRoutes);
+// Register-completeness agent (RTV-93) — org-scoped. Audits the Register for structural gaps (missing
+// mandatory fields, unconfirmed/unmapped sub-chains) → PROPOSES findings into an inbox (nothing
+// auto-written); setEntityContext applies RTV-54 isolation to the scan.
+app.use(
+  '/api/v1/register-completeness',
+  optionalAuth,
+  requireActivePlan,
+  setEntityContext,
+  completenessRoutes
+);
 // Decision inbox (RTV-67) — org-scoped cross-arrangement queue of draft findings + open risks;
 // setEntityContext applies RTV-54 isolation so it spans exactly the arrangements the caller may see.
 app.use(

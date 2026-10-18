@@ -26,6 +26,8 @@
 | [public.provider_dependencies](public.provider_dependencies.md)                   | 12      |         | BASE TABLE |
 | [public.provider_nodes](public.provider_nodes.md)                                 | 11      |         | BASE TABLE |
 | [public.questionnaire_templates](public.questionnaire_templates.md)               | 7       |         | BASE TABLE |
+| [public.register_completeness_findings](public.register_completeness_findings.md) | 13      |         | BASE TABLE |
+| [public.register_completeness_runs](public.register_completeness_runs.md)         | 14      |         | BASE TABLE |
 | [public.risks](public.risks.md)                                                   | 16      |         | BASE TABLE |
 | [public.role_assignments](public.role_assignments.md)                             | 7       |         | BASE TABLE |
 | [public.users](public.users.md)                                                   | 26      |         | BASE TABLE |
@@ -49,6 +51,9 @@
 | public.assessment_run_approval_status | approved, edited, expired, pending, rejected, superseded                                                                                                         |
 | public.assessment_run_status          | blocked, cancelled, done, failed, queued, resuming, running, waiting_human                                                                                       |
 | public.assessment_status              | analyzing, complete, failed, indexing, pending                                                                                                                   |
+| public.completeness_finding_status    | acknowledged, open, resolved                                                                                                                                     |
+| public.completeness_run_status        | failed, queued, running, succeeded                                                                                                                               |
+| public.completeness_severity          | high, low, medium                                                                                                                                                |
 | public.criticality                    | critical, important                                                                                                                                              |
 | public.dependency_level               | high, low, medium                                                                                                                                                |
 | public.discovery_proposal_status      | confirmed, dismissed, pending                                                                                                                                    |
@@ -138,6 +143,10 @@ erDiagram
 "public.provider_dependencies" }o--|| "public.provider_nodes" : "FOREIGN KEY (parent_node_id) REFERENCES provider_nodes(id) ON DELETE CASCADE"
 "public.provider_nodes" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.provider_nodes" }o--o| "public.workspaces" : "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
+"public.register_completeness_findings" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+"public.register_completeness_findings" }o--|| "public.register_completeness_runs" : "FOREIGN KEY (run_id) REFERENCES register_completeness_runs(id) ON DELETE CASCADE"
+"public.register_completeness_runs" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.register_completeness_runs" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.risks" }o--o| "public.users" : "FOREIGN KEY (opened_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.risks" }o--o| "public.users" : "FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL"
 "public.risks" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
@@ -448,6 +457,37 @@ erDiagram
   jsonb questions
   timestamp_with_time_zone updated_at
   text version
+}
+"public.register_completeness_findings" {
+  timestamp_with_time_zone created_at
+  text detail
+  uuid entity_id
+  text entity_name
+  text entity_type
+  text field
+  text gap_type
+  uuid id
+  uuid organization_id FK
+  uuid run_id FK
+  completeness_severity severity
+  completeness_finding_status status
+  timestamp_with_time_zone updated_at
+}
+"public.register_completeness_runs" {
+  jsonb by_severity
+  timestamp_with_time_zone created_at
+  uuid created_by FK
+  text error
+  timestamp_with_time_zone finished_at
+  integer gaps
+  uuid id
+  integer new_gaps
+  uuid organization_id FK
+  integer resolved_gaps
+  integer scanned
+  timestamp_with_time_zone started_at
+  completeness_run_status status
+  timestamp_with_time_zone updated_at
 }
 "public.risks" {
   uuid arrangement_id FK
