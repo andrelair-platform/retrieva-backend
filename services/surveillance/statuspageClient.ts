@@ -26,7 +26,10 @@ export interface ListStatuspageDeps {
 }
 
 const DEFAULT_TIMEOUT_MS = 15000;
-const DEFAULT_LIMIT = 50;
+// Cap the incidents taken per provider (most-recent-first). A surveillance radar cares about the
+// recent/live tail, not a vendor's full incident history — 50 was overkill (it fanned out ~1 LLM
+// classify per incident). Env-tunable; default 15. Pairs with the service's material-only LLM gate.
+const DEFAULT_LIMIT = parseInt(process.env.SURVEILLANCE_INCIDENT_LIMIT || '', 10) || 15;
 
 interface SpIncidentUpdate {
   body?: string;

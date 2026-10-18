@@ -82,6 +82,15 @@ curl -X POST https://<api>/api/v1/surveillance/events/<id>/resolve     -H "Autho
 The LLM refines the base severity + drops pure noise (scheduled maintenance); deterministic fields
 (`externalId`, `url`, `observedAt`, feed `impact`) are parsed, never LLM-guessed.
 
+**Cost control (the LLM runs only where it adds value).** A sweep does NOT fan out one LLM call per
+historical incident. Two guards:
+- **Incident cap** per provider — `SURVEILLANCE_INCIDENT_LIMIT` (default **15**), most-recent-first, within
+  the lookback window.
+- **Material-candidate gate** (`shouldLlmClassify`) — the LLM classifies ONLY incidents that are still
+  **unresolved** (live) **or** **high-impact** (`major`/`critical`). The resolved/low-impact tail is
+  classified **deterministically** from the feed `impact` (no LLM): severity = base, `relevant = impact
+  != none`. So steady-state re-polls (everything deduped or resolved) cost ~zero LLM calls.
+
 ## Design (source-agnostic rails — mirrors discovery/completeness)
 
 | File | Role |
