@@ -2,7 +2,7 @@
 // (discovery_runs) + the proposal inbox (discovery_proposals). It spans two tables, so it uses the db
 // handle directly rather than extending BaseDrizzleRepository. Reads are org-scoped and apply the
 // RTV-54 entity isolation filter; writes are keyed by the row id we created.
-import { and, eq, desc } from 'drizzle-orm';
+import { and, eq, ne, desc } from 'drizzle-orm';
 import { getDb } from '../../config/db.js';
 import { discoveryRuns, discoveryProposals } from '../../db/schema/index.js';
 import { entityScopeCondition } from '../../services/security/entityScope.js';
@@ -128,6 +128,22 @@ export class DiscoveryRepository {
       .from(discoveryProposals)
       .where(and(...conds))
       .orderBy(desc(discoveryProposals.createdAt));
+  }
+
+  /** `externalId`s already in the inbox for (org, source) that aren't dismissed — the dedup set that
+   *  keeps a repeated / scheduled sweep idempotent (not org-entity-scoped: dedup spans the whole org). */
+  async listActiveExternalIds(organizationId: string, source: DiscoverySource): Promise<string[]> {
+    const rows = await this.db
+      .select({ externalId: discoveryProposals.externalId })
+      .from(discoveryProposals)
+      .where(
+        and(
+          eq(discoveryProposals.organizationId, organizationId),
+          eq(discoveryProposals.source, source),
+          ne(discoveryProposals.status, 'dismissed')
+        )
+      );
+    return rows.map((r) => r.externalId);
   }
 
   async getProposal(organizationId: string, id: string) {

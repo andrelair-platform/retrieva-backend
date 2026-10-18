@@ -26,6 +26,7 @@ import {
   scheduleMonitoringJob,
   scheduleWeeklyDigestJob,
   schedulePeriodicReassessmentJob,
+  scheduleDiscoverySweep,
 } from './config/queue.js';
 
 const port = process.env.PORT || 3000;
@@ -64,6 +65,14 @@ const startServer = async () => {
     // Schedule the periodic re-assessment scan (RTV-31 tail — DORA cadence trigger, every 24h)
     await schedulePeriodicReassessmentJob().catch((err) =>
       logger.error('Failed to schedule periodic re-assessment job (non-critical)', {
+        service: 'rag-backend',
+        error: err.message,
+      })
+    );
+
+    // Schedule the repeatable discovery sweep (RTV-91d — opt-in via DISCOVERY_SCHEDULE_ENABLED)
+    await scheduleDiscoverySweep().catch((err) =>
+      logger.error('Failed to schedule discovery sweep (non-critical)', {
         service: 'rag-backend',
         error: err.message,
       })

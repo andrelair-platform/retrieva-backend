@@ -16,6 +16,9 @@ const connection = redisConnection as unknown as ConnectionOptions;
 const MONITORING_INTERVAL_HOURS = parseInt(process.env.MONITORING_INTERVAL_HOURS || '', 10) || 24;
 const REASSESSMENT_SCAN_INTERVAL_HOURS =
   parseInt(process.env.REASSESSMENT_SCAN_INTERVAL_HOURS || '', 10) || 24;
+// RTV-91d — opt-in repeatable discovery sweep. Off unless DISCOVERY_SCHEDULE_ENABLED=true.
+const DISCOVERY_SCHEDULE_ENABLED = process.env.DISCOVERY_SCHEDULE_ENABLED === 'true';
+const DISCOVERY_SCHEDULE_HOURS = parseInt(process.env.DISCOVERY_SCHEDULE_HOURS || '', 10) || 24;
 
 /**
  * Queue for assessment file indexing and gap analysis jobs
@@ -216,6 +219,43 @@ export async function schedulePeriodicReassessmentJob() {
     service: 'queue',
     intervalHours: REASSESSMENT_SCAN_INTERVAL_HOURS,
   });
+}
+
+/**
+ * Schedule the repeatable discovery sweep (RTV-91d). OPT-IN: only registers a repeatable job when
+ * DISCOVERY_SCHEDULE_ENABLED=true; otherwise it REMOVES any existing repeatable (so toggling it off
+ * is effective on the next boot). Every DISCOVERY_SCHEDULE_HOURS (default 24h) the fan-out job
+ * (`discovery-scheduled-sweep`) enqueues a sweep per configured source for DISCOVERY_SCHEDULE_ORG_ID
+ * (see workers/discoveryWorker.ts → runScheduledSweep).
+ */
+export async function scheduleDiscoverySweep() {
+  const jobName = 'discovery-scheduled-sweep';
+
+  const existingJobs = await withTimeout(discoveryQueue.getRepeatableJobs(), QUEUE_OP_TIMEOUT);
+  for (const job of existingJobs) {
+    if (job.name === jobName) {
+      await withTimeout(discoveryQueue.removeRepeatableByKey(job.key), QUEUE_OP_TIMEOUT);
+    }
+  }
+
+  if (!DISCOVERY_SCHEDULE_ENABLED) {
+    logger.info('Discovery sweep schedule disabled (DISCOVERY_SCHEDULE_ENABLED != true)', { service: 'queue' });
+    return;
+  }
+
+  await withTimeout(
+    discoveryQueue.add(
+      jobName,
+      { scheduled: true },
+      {
+        repeat: { every: DISCOVERY_SCHEDULE_HOURS * 60 * 60 * 1000 },
+        jobId: 'discovery-scheduled-sweep',
+      }
+    ),
+    QUEUE_OP_TIMEOUT
+  );
+
+  logger.info('Discovery sweep scheduled', { service: 'queue', intervalHours: DISCOVERY_SCHEDULE_HOURS });
 }
 
 // ISSUE #34 FIX: Store event listener references for cleanup

@@ -119,6 +119,25 @@ Every collaborator (client, mapper, repo, audit, worker handler) is injectable, 
 unit-tests with no network, model, or DB (`tests/unittest/{okta,authentik}Client.unit.test.ts`,
 `appToProposal.unit.test.ts`, `discoveryService.unit.test.ts`, `discoveryWorker.unit.test.ts`).
 
+## Scheduling (repeatable · RTV-91d)
+
+Besides the API trigger, the sweep can run on a **repeatable schedule**. Opt in with env (off by default):
+
+```
+DISCOVERY_SCHEDULE_ENABLED=true      # register the repeatable job (else it's removed on boot)
+DISCOVERY_SCHEDULE_HOURS=24          # interval (default 24h)
+DISCOVERY_SCHEDULE_ORG_ID=<org-uuid> # the org to sweep (connector creds are one platform-level credential today)
+```
+
+On the interval, a `discovery-scheduled-sweep` job **fans out** a (system) real-run per *configured*
+source for that org (`workers/discoveryWorker.ts → runScheduledSweep`, registered by
+`config/queue.ts → scheduleDiscoverySweep` at API-process boot). Two guards make repeats safe:
+
+- **System scope** — a scheduled run has no user, so the worker sweeps the **whole org** (a
+  `readAcross` entity scope) instead of an empty, default-deny one — so the registered-provider dedup works.
+- **Idempotent** — apps already in the inbox (pending/confirmed, by `externalId`) are **skipped**
+  (`reason: already-proposed`), so a daily sweep doesn't re-propose the same app every cycle.
+
 ## Adding another source
 
 1. `config/<source>.ts` — `get<Source>Config()` / `is<Source>Configured()`.
@@ -128,5 +147,5 @@ unit-tests with no network, model, or DB (`tests/unittest/{okta,authentik}Client
 
 ## Not in this slice
 
-Scheduled/continuous sweeps (the sweep is API-triggered, not yet on a repeatable schedule) and
-non-IdP sources (AP/ERP → RTV-92). The async job + persisted inbox landed in RTV-91c.
+Non-IdP sources (AP/ERP → RTV-92) and per-org connector credentials / per-org schedules (the connector
+creds are a single platform-level credential today; the schedule sweeps one configured org).
