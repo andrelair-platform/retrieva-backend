@@ -7,7 +7,7 @@ import { getDb } from '../../config/db.js';
 import { discoveryRuns, discoveryProposals } from '../../db/schema/index.js';
 import { entityScopeCondition } from '../../services/security/entityScope.js';
 
-type DiscoverySource = 'okta' | 'authentik' | 'erpnext' | 'generic';
+type DiscoverySource = 'okta' | 'authentik' | 'erpnext' | 'generic' | 'rest' | 'scim' | 'odata';
 
 export class DiscoveryRepository {
   private _db?: ReturnType<typeof getDb>;

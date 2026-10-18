@@ -72,7 +72,7 @@ export type MonitoringJobData = ScheduledJobData | ReviewReminderJobData;
 export interface DiscoveryRunJobData {
   runId: string;
   organizationId: string;
-  source: 'okta' | 'authentik' | 'erpnext' | 'generic';
+  source: 'okta' | 'authentik' | 'erpnext' | 'generic' | 'rest' | 'scim' | 'odata';
   userId?: string | null;
   dryRun?: boolean;
   apps?: import('../services/discovery/types.js').DiscoveredApp[];
