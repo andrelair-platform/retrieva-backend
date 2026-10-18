@@ -24,6 +24,21 @@ export function impactToBaseSeverity(impact: string): SurveillanceSeverity {
 
 const SEVERITIES: SurveillanceSeverity[] = ['critical', 'high', 'medium', 'low'];
 
+// Statuses that mean the incident is over (no longer a live signal).
+const RESOLVED_STATUSES = new Set(['resolved', 'postmortem', 'completed']);
+
+/**
+ * Should we spend an LLM call on this signal? Only for MATERIAL CANDIDATES — an incident that is still
+ * live (unresolved) OR high-impact (major/critical, even if recently resolved). The long tail (resolved
+ * minor/none incidents) is classified deterministically from the feed `impact`, with no LLM call — that
+ * is what keeps a sweep from fanning out one (slow, often-wasted) LLM round-trip per historical incident.
+ */
+export function shouldLlmClassify(signal: SurveillanceSignal): boolean {
+  const unresolved = !RESOLVED_STATUSES.has((signal.statusLabel || '').toLowerCase());
+  const highImpact = ['critical', 'major'].includes((signal.impact || '').toLowerCase());
+  return unresolved || highImpact;
+}
+
 const SYSTEM_PROMPT =
   'You triage third-party ICT provider incidents for a DORA operational-resilience register. ' +
   'Given one incident, return STRICT JSON {"severity":"critical|high|medium|low","relevant":true|false,"rationale":"<=160 chars"}. ' +
@@ -64,9 +79,21 @@ async function llmClassify(signal: SurveillanceSignal, sessionId?: string): Prom
   return { severity, relevant: parsed.relevant !== false, rationale: String(parsed.rationale ?? '').slice(0, 160) };
 }
 
-/** Classify one signal. Fail-safe: any LLM/parse error → the deterministic base severity, relevant=true. */
+/**
+ * Classify one signal. The LLM is used ONLY for material candidates (see `shouldLlmClassify`); the
+ * resolved/low-impact tail is classified deterministically from the feed `impact` with NO LLM call
+ * (severity = base; relevant = impact is not "none" — a `none`-impact notice is noise). The LLM path is
+ * fail-safe: any error → the deterministic base severity (relevant=true, since it was a live candidate).
+ */
 export async function classifySignal(signal: SurveillanceSignal, deps: ClassifyDeps = {}): Promise<Classification> {
-  const base: Classification = { severity: impactToBaseSeverity(signal.impact), relevant: true, rationale: '' };
+  const baseSeverity = impactToBaseSeverity(signal.impact);
+  if (!shouldLlmClassify(signal)) {
+    return {
+      severity: baseSeverity,
+      relevant: (signal.impact || '').toLowerCase() !== 'none',
+      rationale: 'deterministic (resolved/low-impact — no LLM)',
+    };
+  }
   const fn = deps.classifyFn ?? ((s: SurveillanceSignal) => llmClassify(s, deps.sessionId));
   try {
     return await fn(signal);
@@ -76,6 +103,6 @@ export async function classifySignal(signal: SurveillanceSignal, deps: ClassifyD
       externalId: signal.externalId,
       error: err instanceof Error ? err.message : String(err),
     });
-    return base;
+    return { severity: baseSeverity, relevant: true, rationale: '' };
   }
 }
