@@ -3234,6 +3234,314 @@
       ]
     },
     {
+      "name": "public.register_completeness_findings",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "detail",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "entity_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "entity_name",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "entity_type",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "field",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "gap_type",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "run_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "severity",
+          "type": "completeness_severity",
+          "nullable": false,
+          "default": "'medium'::completeness_severity"
+        },
+        {
+          "name": "status",
+          "type": "completeness_finding_status",
+          "nullable": false,
+          "default": "'open'::completeness_finding_status"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "completeness_findings_key_idx",
+          "def": "CREATE INDEX completeness_findings_key_idx ON public.register_completeness_findings USING btree (organization_id, entity_type, entity_id, gap_type, field)",
+          "table": "public.register_completeness_findings",
+          "columns": [
+            "organization_id",
+            "entity_type",
+            "entity_id",
+            "gap_type",
+            "field"
+          ]
+        },
+        {
+          "name": "completeness_findings_org_status_idx",
+          "def": "CREATE INDEX completeness_findings_org_status_idx ON public.register_completeness_findings USING btree (organization_id, status)",
+          "table": "public.register_completeness_findings",
+          "columns": [
+            "organization_id",
+            "status"
+          ]
+        },
+        {
+          "name": "completeness_findings_run_idx",
+          "def": "CREATE INDEX completeness_findings_run_idx ON public.register_completeness_findings USING btree (run_id)",
+          "table": "public.register_completeness_findings",
+          "columns": [
+            "run_id"
+          ]
+        },
+        {
+          "name": "register_completeness_findings_pkey",
+          "def": "CREATE UNIQUE INDEX register_completeness_findings_pkey ON public.register_completeness_findings USING btree (id)",
+          "table": "public.register_completeness_findings",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "register_completeness_findings_organization_id_organizations_id",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.register_completeness_findings",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "register_completeness_findings_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.register_completeness_findings",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "register_completeness_findings_run_id_register_completeness_run",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (run_id) REFERENCES register_completeness_runs(id) ON DELETE CASCADE",
+          "table": "public.register_completeness_findings",
+          "referenced_table": "public.register_completeness_runs",
+          "columns": [
+            "run_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.register_completeness_runs",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "by_severity",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "error",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "gaps",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "new_gaps",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "resolved_gaps",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "scanned",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "completeness_run_status",
+          "nullable": false,
+          "default": "'queued'::completeness_run_status"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "completeness_runs_org_created_idx",
+          "def": "CREATE INDEX completeness_runs_org_created_idx ON public.register_completeness_runs USING btree (organization_id, created_at)",
+          "table": "public.register_completeness_runs",
+          "columns": [
+            "organization_id",
+            "created_at"
+          ]
+        },
+        {
+          "name": "completeness_runs_org_status_idx",
+          "def": "CREATE INDEX completeness_runs_org_status_idx ON public.register_completeness_runs USING btree (organization_id, status)",
+          "table": "public.register_completeness_runs",
+          "columns": [
+            "organization_id",
+            "status"
+          ]
+        },
+        {
+          "name": "register_completeness_runs_pkey",
+          "def": "CREATE UNIQUE INDEX register_completeness_runs_pkey ON public.register_completeness_runs USING btree (id)",
+          "table": "public.register_completeness_runs",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "register_completeness_runs_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.register_completeness_runs",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "register_completeness_runs_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.register_completeness_runs",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "register_completeness_runs_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.register_completeness_runs",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "public.risks",
       "type": "BASE TABLE",
       "columns": [
@@ -5043,6 +5351,58 @@
       "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
     },
     {
+      "table": "public.register_completeness_findings",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.register_completeness_findings",
+      "columns": [
+        "run_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.register_completeness_runs",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (run_id) REFERENCES register_completeness_runs(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.register_completeness_runs",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.register_completeness_runs",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
       "table": "public.risks",
       "columns": [
         "opened_by"
@@ -5318,6 +5678,31 @@
         "failed",
         "indexing",
         "pending"
+      ]
+    },
+    {
+      "name": "public.completeness_finding_status",
+      "values": [
+        "acknowledged",
+        "open",
+        "resolved"
+      ]
+    },
+    {
+      "name": "public.completeness_run_status",
+      "values": [
+        "failed",
+        "queued",
+        "running",
+        "succeeded"
+      ]
+    },
+    {
+      "name": "public.completeness_severity",
+      "values": [
+        "high",
+        "low",
+        "medium"
       ]
     },
     {
