@@ -4,8 +4,19 @@ The **autonomous discovery agents** (AI-native roadmap, Pillar 1). Each connecto
 system (read-only) and **proposes** DORA third-party arrangements for the ICT apps in use — so shadow
 IT surfaces itself into the Register of Information instead of being typed in by hand.
 
-**Sources today:** **Okta** (enterprise IdP) and **Authentik** (this platform's own IdP). Adding a
-source is just a new client; the rails below are source-agnostic.
+**Sources today:** **Okta** (enterprise IdP), **Authentik** (this platform's own IdP) and **ERPNext**
+(AP/ERP — RTV-92). The IdP sources discover apps by *identity*; the ERP source discovers third parties
+by *spend* (the suppliers we pay), so it catches shadow IT an IdP can't see. Adding a source is just a
+new client; the rails below are source-agnostic.
+
+> **Scaling to real customers (not hand-built per vendor).** Okta/Authentik/ERPNext are the concrete
+> connectors *this* deployment (ktayl) uses — reference implementations of the `DiscoverySource` /
+> `DiscoveredApp` plug-in contract, not the product ceiling. A customer on Entra ID + SAP uses the same
+> rails via: first-class connectors for the common systems · standard-protocol connectors (SCIM/OData/
+> generic REST) · and a **generic AI-ingestion source** (upload a CSV / API dump → the LLM normalises
+> arbitrary columns into `DiscoveredApp`) as the universal fallback. That generic path is the AI-native
+> differentiator and is backlogged (RTV-106/107); the specific connectors are the high-value head of a
+> long tail the AI covers.
 
 **Governance rule they obey:** *autonomous discovery & drafting, never autonomous sign-off.* A
 connector **never writes an arrangement**. It produces proposals in an **inbox**; a human confirms
@@ -35,6 +46,12 @@ OKTA_API_TOKEN=<read-only SSWS token>
 # Authentik (this platform's IdP)
 AUTHENTIK_BASE_URL=https://auth.your-domain
 AUTHENTIK_API_TOKEN=<read-only API token>
+
+# ERPNext (AP/ERP — discovers third parties from Purchase-Invoice spend)
+ERPNEXT_BASE_URL=https://erp.your-domain
+ERPNEXT_API_KEY=<frappe api key>
+ERPNEXT_API_SECRET=<frappe api secret>   # → Authorization: token <key>:<secret>
+ERPNEXT_INVOICE_LOOKBACK_DAYS=365        # optional (default 365)
 ```
 
 Tokens are runtime secrets — never committed.
@@ -83,7 +100,7 @@ curl -X POST https://<api>/api/v1/discovery/proposals/<id>/dismiss -H "Authoriza
 
 | Method + path | What |
 |---|---|
-| `POST /api/v1/discovery/{okta,authentik}/run` | enqueue a sweep → `202 { runId }` |
+| `POST /api/v1/discovery/{okta,authentik,erpnext}/run` | enqueue a sweep → `202 { runId }` |
 | `GET /api/v1/discovery/runs` | recent sweeps for the org |
 | `GET /api/v1/discovery/runs/:id` | a run's status + its proposals |
 | `GET /api/v1/discovery/proposals?status=&runId=` | the proposal inbox |
@@ -103,9 +120,10 @@ curl -X POST https://<api>/api/v1/discovery/proposals/<id>/dismiss -H "Authoriza
 | File | Role |
 |---|---|
 | `services/discovery/types.ts` | `DiscoveredApp` + `DiscoverySource` — the normalised shape every client emits |
-| `config/okta.ts`, `config/authentik.ts` | per-source config (graceful "not configured") |
+| `config/okta.ts`, `config/authentik.ts`, `config/erpnext.ts` | per-source config (graceful "not configured") |
 | `services/discovery/oktaClient.ts` | Okta `/api/v1/apps` lister (SSWS auth, `Link` pagination) |
 | `services/discovery/authentikClient.ts` | Authentik `/api/v3/core/applications/` lister (Bearer, page-number pagination) |
+| `services/discovery/erpnextClient.ts` | ERPNext `Purchase Invoice` AP lister (Frappe `token` auth, `limit_start` pagination) → aggregates by supplier (spend/count/last-date) |
 | `services/discovery/appToProposal.ts` | LLM app→proposal mapper (reuses intake's pure `normalizeProposal`; LLM injectable) |
 | `services/discovery/discoveryService.ts` | orchestrator — `runDiscovery({source})` + a `CLIENTS` registry; dedupe, dry-run, audit; collaborators injectable |
 | `config/queue.ts` · `types/jobs.ts` | the `discoveryJobs` BullMQ queue + `DiscoveryJobData` (RTV-91c async) |

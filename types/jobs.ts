@@ -70,7 +70,7 @@ export type MonitoringJobData = ScheduledJobData | ReviewReminderJobData;
 export interface DiscoveryRunJobData {
   runId: string;
   organizationId: string;
-  source: 'okta' | 'authentik';
+  source: 'okta' | 'authentik' | 'erpnext';
   userId?: string | null;
   dryRun?: boolean;
 }

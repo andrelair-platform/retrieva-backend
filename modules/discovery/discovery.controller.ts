@@ -20,6 +20,7 @@ const requireOrg = (req: Request, res: Response) => {
 const ENV_HINT: Record<DiscoverySource, string> = {
   okta: 'OKTA_ORG_URL and OKTA_API_TOKEN',
   authentik: 'AUTHENTIK_BASE_URL and AUTHENTIK_API_TOKEN',
+  erpnext: 'ERPNEXT_BASE_URL, ERPNEXT_API_KEY and ERPNEXT_API_SECRET',
 };
 
 /** One enqueue handler per source — same rails, different adapter. Returns 202 + the runId to poll. */
@@ -47,6 +48,7 @@ function makeRun(source: DiscoverySource) {
 
 export const oktaRun = makeRun('okta');
 export const authentikRun = makeRun('authentik');
+export const erpnextRun = makeRun('erpnext');
 
 // GET /api/v1/discovery/runs — recent sweeps for the org.
 export const listRuns = catchAsync(async (req: Request, res: Response) => {
