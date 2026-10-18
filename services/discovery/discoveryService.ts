@@ -1,23 +1,38 @@
 /**
- * Okta discovery service (RTV-91) — the orchestrator.
+ * Discovery orchestrator (RTV-91) — source-agnostic.
  *
- * Sweeps the org's Okta tenant, maps each ACTIVE app to a PROPOSED arrangement, dedupes against the
- * arrangements already registered (and within the batch), and returns the proposals for a human to
- * confirm via `/api/v1/arrangements/intake/confirm`. It NEVER writes an arrangement — "autonomous
- * discovery & drafting, never autonomous sign-off". `dryRun` additionally suppresses the audit-log
+ * Sweeps a source system (Okta, Authentik, …), maps each app to a PROPOSED arrangement, dedupes
+ * against the arrangements already registered (and within the batch), and returns the proposals for a
+ * human to confirm via `/api/v1/arrangements/intake/confirm`. It NEVER writes an arrangement —
+ * "autonomous discovery & drafting, never autonomous sign-off". `dryRun` suppresses the audit-log
  * record, so a dry run is fully side-effect-free.
  *
- * Every collaborator is injectable (listApps / mapApp / listExistingProviders / recordAudit) so the
- * whole flow unit-tests with no network, no model, and no DB.
+ * Adding a source = one entry in CLIENTS. Every collaborator is injectable (listApps / mapApp /
+ * listExistingProviders / recordAudit) so the whole flow unit-tests with no network, model, or DB.
  */
 import logger from '../../config/logger.js';
 import { getOktaConfig } from '../../config/okta.js';
-import { listOktaApps, type OktaApp } from './oktaClient.js';
+import { getAuthentikConfig } from '../../config/authentik.js';
+import { listOktaApps } from './oktaClient.js';
+import { listAuthentikApps } from './authentikClient.js';
 import { mapAppToProposal, type DiscoveredProposal } from './appToProposal.js';
+import type { DiscoveredApp, DiscoverySource } from './types.js';
 import { providerGraphRepository } from '../../repositories/index.js';
 import { recordAudit } from '../auditLogService.js';
 
 const norm = (s: unknown) => String(s || '').trim().toLowerCase();
+
+/** The source registry — each source knows if it's configured and how to list its apps. */
+const CLIENTS: Record<
+  DiscoverySource,
+  { isConfigured: () => boolean; listApps: () => Promise<DiscoveredApp[]> }
+> = {
+  okta: { isConfigured: () => getOktaConfig() !== null, listApps: () => listOktaApps() },
+  authentik: {
+    isConfigured: () => getAuthentikConfig() !== null,
+    listApps: () => listAuthentikApps(),
+  },
+};
 
 export interface SkippedApp {
   externalId: string;
@@ -25,41 +40,45 @@ export interface SkippedApp {
   reason: 'already-registered' | 'duplicate-in-batch';
 }
 
-export interface OktaDiscoveryResult {
+export interface DiscoveryResult {
+  source: DiscoverySource;
   configured: boolean;
   dryRun: boolean;
-  discovered: number; // apps returned by Okta
+  discovered: number; // apps returned by the source
   proposed: number; // new proposals produced
   proposals: DiscoveredProposal[];
   skipped: SkippedApp[];
 }
 
-export interface RunOktaDiscoveryArgs {
+export interface RunDiscoveryArgs {
+  source: DiscoverySource;
   organizationId: string;
   userId?: string | null;
   dryRun?: boolean;
   deps?: {
-    listApps?: () => Promise<OktaApp[]>;
-    mapApp?: (app: OktaApp, sessionId: string) => Promise<DiscoveredProposal>;
+    listApps?: () => Promise<DiscoveredApp[]>;
+    mapApp?: (app: DiscoveredApp, sessionId: string) => Promise<DiscoveredProposal>;
     listExistingProviders?: (organizationId: string) => Promise<{ displayName?: string }[]>;
     recordAuditFn?: typeof recordAudit;
   };
 }
 
-export async function runOktaDiscovery({
+export async function runDiscovery({
+  source,
   organizationId,
   userId = null,
   dryRun = false,
   deps = {},
-}: RunOktaDiscoveryArgs): Promise<OktaDiscoveryResult> {
-  const configured = Boolean(deps.listApps) || getOktaConfig() !== null;
+}: RunDiscoveryArgs): Promise<DiscoveryResult> {
+  const client = CLIENTS[source];
+  const configured = Boolean(deps.listApps) || client.isConfigured();
   if (!configured) {
-    return { configured: false, dryRun, discovered: 0, proposed: 0, proposals: [], skipped: [] };
+    return { source, configured: false, dryRun, discovered: 0, proposed: 0, proposals: [], skipped: [] };
   }
 
-  const listApps = deps.listApps ?? (() => listOktaApps());
+  const listApps = deps.listApps ?? client.listApps;
   const mapApp =
-    deps.mapApp ?? ((app: OktaApp, sessionId: string) => mapAppToProposal(app, { sessionId }));
+    deps.mapApp ?? ((app: DiscoveredApp, sessionId: string) => mapAppToProposal(app, { sessionId }));
   const listExistingProviders =
     deps.listExistingProviders ??
     ((orgId: string) => providerGraphRepository.listNodesByOrg(orgId));
@@ -73,7 +92,7 @@ export async function runOktaDiscovery({
 
   const proposals: DiscoveredProposal[] = [];
   const skipped: SkippedApp[] = [];
-  const seenInBatch = new Set<string>(); // dedupe set 2: within this run (by Okta app id)
+  const seenInBatch = new Set<string>(); // dedupe set 2: within this run (by source app id)
 
   for (const app of apps) {
     const externalName = app.label || app.name;
@@ -104,19 +123,15 @@ export async function runOktaDiscovery({
     await audit({
       organizationId,
       actor: userId,
-      action: 'discovery.okta.run',
+      action: `discovery.${source}.run`,
       targetType: 'discovery',
-      metadata: {
-        source: 'okta',
-        discovered: apps.length,
-        proposed: proposals.length,
-        skipped: skipped.length,
-      },
+      metadata: { source, discovered: apps.length, proposed: proposals.length, skipped: skipped.length },
     });
   }
 
-  logger.info('okta.discovery.completed', {
-    service: 'okta-discovery',
+  logger.info('discovery.completed', {
+    service: 'discovery',
+    source,
     organizationId,
     dryRun,
     discovered: apps.length,
@@ -125,6 +140,7 @@ export async function runOktaDiscovery({
   });
 
   return {
+    source,
     configured: true,
     dryRun,
     discovered: apps.length,
