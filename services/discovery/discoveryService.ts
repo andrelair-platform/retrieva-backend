@@ -13,8 +13,10 @@
 import logger from '../../config/logger.js';
 import { getOktaConfig } from '../../config/okta.js';
 import { getAuthentikConfig } from '../../config/authentik.js';
+import { getErpnextConfig } from '../../config/erpnext.js';
 import { listOktaApps } from './oktaClient.js';
 import { listAuthentikApps } from './authentikClient.js';
+import { listErpnextApps } from './erpnextClient.js';
 import { mapAppToProposal, type DiscoveredProposal } from './appToProposal.js';
 import type { DiscoveredApp, DiscoverySource } from './types.js';
 import { providerGraphRepository } from '../../repositories/index.js';
@@ -31,6 +33,10 @@ const CLIENTS: Record<
   authentik: {
     isConfigured: () => getAuthentikConfig() !== null,
     listApps: () => listAuthentikApps(),
+  },
+  erpnext: {
+    isConfigured: () => getErpnextConfig() !== null,
+    listApps: () => listErpnextApps(),
   },
 };
 

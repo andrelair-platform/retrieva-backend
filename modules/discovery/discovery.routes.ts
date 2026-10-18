@@ -6,6 +6,7 @@ import { discoveryRunBody } from './discovery.schema.js';
 import {
   oktaRun,
   authentikRun,
+  erpnextRun,
   listRuns,
   getRun,
   listProposals,
@@ -21,6 +22,7 @@ const router = Router();
 // Trigger a sweep (async → 202 { runId }).
 router.post('/okta/run', authenticate, validateBody(discoveryRunBody), oktaRun);
 router.post('/authentik/run', authenticate, validateBody(discoveryRunBody), authentikRun);
+router.post('/erpnext/run', authenticate, validateBody(discoveryRunBody), erpnextRun);
 
 // Poll runs + the proposal inbox.
 router.get('/runs', authenticate, listRuns);

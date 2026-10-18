@@ -5741,6 +5741,7 @@
       "name": "public.discovery_source",
       "values": [
         "authentik",
+        "erpnext",
         "okta"
       ]
     },
