@@ -3,7 +3,7 @@
 // `loadSnapshot` reader that assembles the (entity-scoped) Register snapshot the rules run against.
 // Spans several tables → uses the db handle directly (like DiscoveryRepository). Reads apply the
 // RTV-54 entity isolation + RTV-35/36 legal-entity scope.
-import { and, eq, ne, inArray, desc, type SQL } from 'drizzle-orm';
+import { and, eq, ne, inArray, isNotNull, desc, type SQL } from 'drizzle-orm';
 import { getDb } from '../../config/db.js';
 import {
   arrangements,
@@ -11,6 +11,7 @@ import {
   businessFunctions,
   providerNodes,
   providerDependencies,
+  evidence,
   registerCompletenessRuns,
   registerCompletenessFindings,
 } from '../../db/schema/index.js';
@@ -224,7 +225,7 @@ export class CompletenessRepository {
    *  legal entities, external providers (with graph position) and sub-chain edges. Runs inside the
    *  caller's entity scope (set by the worker via runWithEntityScope). */
   async loadSnapshot(organizationId: string): Promise<RegisterSnapshot> {
-    const [arrRows, leRows, bfRows, provRows, depRows] = await Promise.all([
+    const [arrRows, leRows, bfRows, provRows, depRows, contractEvidence] = await Promise.all([
       this.db
         .select()
         .from(arrangements)
@@ -271,11 +272,34 @@ export class CompletenessRepository {
             entityScopeCondition(providerDependencies.organizationId, { action: 'arrangement:read' })
           )
         ),
+      // Arrangement-scoped contract evidence with a validity date → drives the contract-expiry rule.
+      this.db
+        .select({ arrangementId: evidence.arrangementId, validityUntil: evidence.validityUntil })
+        .from(evidence)
+        .where(
+          and(
+            eq(evidence.organizationId, organizationId),
+            eq(evidence.scope, 'arrangement'),
+            inArray(evidence.category, ['master_service_agreement', 'dora_addendum']),
+            isNotNull(evidence.validityUntil),
+            entityScopeCondition(evidence.organizationId, { action: 'arrangement:read' })
+          )
+        ),
     ]);
 
     const leById = new Map(leRows.map((r) => [r.id, r]));
     const bfById = new Map(bfRows.map((r) => [r.id, r]));
     const provById = new Map(provRows.map((r) => [r.id, r]));
+
+    // The governing contract validity per arrangement = the FURTHEST-OUT validityUntil across its
+    // contract-type evidence (the latest renewal/addendum wins). ISO string for the pure rule.
+    const contractValidUntilByArr = new Map<string, string>();
+    for (const e of contractEvidence) {
+      if (!e.arrangementId || !e.validityUntil) continue;
+      const iso = new Date(e.validityUntil).toISOString();
+      const prev = contractValidUntilByArr.get(e.arrangementId);
+      if (!prev || iso > prev) contractValidUntilByArr.set(e.arrangementId, iso);
+    }
 
     const criticalProviderIds = new Set(
       arrRows.filter((a) => CRITICAL.has(a.criticality ?? '')).map((a) => a.providerId)
@@ -300,6 +324,7 @@ export class CompletenessRepository {
           businessFunctionId: a.businessFunctionId,
           businessFunctionName: bf?.name ?? a.businessFunctionId.slice(0, 8),
           businessFunctionCriticalFlag: bf?.criticalOrImportant ?? false,
+          contractValidUntil: contractValidUntilByArr.get(a.id) ?? null,
         };
       }),
       legalEntities: leRows.map((le) => ({ id: le.id, name: le.name, lei: le.lei ?? null, country: le.country ?? '' })),
