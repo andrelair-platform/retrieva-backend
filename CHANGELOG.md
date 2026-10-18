@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.3.0](https://github.com/andrelair-platform/retrieva-backend/compare/retrieva-backend-v1.2.0...retrieva-backend-v1.3.0) (2026-10-18)
+
+
+### Features
+
+* **a2a:** assess-arrangement contract — agent card + schema + l3 test (rtv-79) ([#97](https://github.com/andrelair-platform/retrieva-backend/issues/97)) ([4e8ef5a](https://github.com/andrelair-platform/retrieva-backend/commit/4e8ef5ae6e0dfb42a13b35b1d633b9100bf693a1))
+* **approvals:** run-gate approval center backend (rtv-85) ([#99](https://github.com/andrelair-platform/retrieva-backend/issues/99)) ([fe09670](https://github.com/andrelair-platform/retrieva-backend/commit/fe09670adb0f86869af091aaf65d6b6e1218d895))
+* **ci:** schema-erd drift-check (drizzle migrations to tbls) ([#92](https://github.com/andrelair-platform/retrieva-backend/issues/92)) ([84bb793](https://github.com/andrelair-platform/retrieva-backend/commit/84bb7933084f1006ce1cd7ccf091acb0acc4d0e6))
+* **conversations:** message feedback loop -&gt; langfuse scores (rtv-73) ([#91](https://github.com/andrelair-platform/retrieva-backend/issues/91)) ([c99fd4c](https://github.com/andrelair-platform/retrieva-backend/commit/c99fd4c34fa2f39b6633e2e7adc50bd9938b2fe4))
+* **discovery:** add authentik adapter alongside okta (rtv-91) ([#122](https://github.com/andrelair-platform/retrieva-backend/issues/122)) ([aa34c04](https://github.com/andrelair-platform/retrieva-backend/commit/aa34c04fec578bb0446502bc0cfe229a7dff42f0))
+* **discovery:** Okta discovery connector — propose arrangements from Okta apps (RTV-91) ([#121](https://github.com/andrelair-platform/retrieva-backend/issues/121)) ([4428f46](https://github.com/andrelair-platform/retrieva-backend/commit/4428f46be052ffcf2483917e4e055ca999eefb27))
+* **discovery:** run the sweep async via bullmq with a persisted inbox (rtv-91c) ([#123](https://github.com/andrelair-platform/retrieva-backend/issues/123)) ([4872786](https://github.com/andrelair-platform/retrieva-backend/commit/4872786c743a3ba02241943222ab2e27b05c867c))
+* **discovery:** schedule the sweep as a repeatable bullmq job (rtv-91d) ([#124](https://github.com/andrelair-platform/retrieva-backend/issues/124)) ([06b88f8](https://github.com/andrelair-platform/retrieva-backend/commit/06b88f817b6aec018e6eaf1c45573b9d2f04f6a5))
+* **openapi:** auto-generate OpenAPI + serve /api-docs (RTV-74) ([#88](https://github.com/andrelair-platform/retrieva-backend/issues/88)) ([800bbdb](https://github.com/andrelair-platform/retrieva-backend/commit/800bbdb17965c77d5452690f2d6038d8a1228196))
+* **openapi:** enrich request bodies + shared response envelope (rtv-74) ([#90](https://github.com/andrelair-platform/retrieva-backend/issues/90)) ([55b94a7](https://github.com/andrelair-platform/retrieva-backend/commit/55b94a7809502ade5e752536b81638e6442a9057))
+* **orchestrator:** 0-clause short-circuit — skip the crew when nothing to assess (rtv-81b §2a) ([#109](https://github.com/andrelair-platform/retrieva-backend/issues/109)) ([6e9717a](https://github.com/andrelair-platform/retrieva-backend/commit/6e9717a073c49984db96f90dc066da1b449034e9))
+* **orchestrator:** delegate gap node to crew over a2a behind a flag ([#103](https://github.com/andrelair-platform/retrieva-backend/issues/103)) ([4869fb0](https://github.com/andrelair-platform/retrieva-backend/commit/4869fb0cb83089278db6515bd37c46e9c75da642))
+* **orchestrator:** deterministic assessment supervisor StateGraph (RTV-78) ([#95](https://github.com/andrelair-platform/retrieva-backend/issues/95)) ([d6f96dc](https://github.com/andrelair-platform/retrieva-backend/commit/d6f96dc2c99dee3056946efa0b2f5befefdcb55f))
+* **orchestrator:** pass the real control library to the crew via a2a (rtv-81b §2) ([#107](https://github.com/andrelair-platform/retrieva-backend/issues/107)) ([03b6818](https://github.com/andrelair-platform/retrieva-backend/commit/03b68183180638d536640d0147ca93aa7e62e400))
+* **orchestrator:** persist crew findings as drafts into the register (rtv-81b §5) ([#108](https://github.com/andrelair-platform/retrieva-backend/issues/108)) ([dec388b](https://github.com/andrelair-platform/retrieva-backend/commit/dec388ba4a4902ab4b90d0e7c4e88943c6c4d3c6))
+* **orchestrator:** source crew clauses + evidence from qdrant (rtv-81b) ([#105](https://github.com/andrelair-platform/retrieva-backend/issues/105)) ([5e2df0a](https://github.com/andrelair-platform/retrieva-backend/commit/5e2df0a3652e4483bfab21c8263f207919a2299c))
+* **realtime:** org-scoped socket.io server + run.updated live push ([#102](https://github.com/andrelair-platform/retrieva-backend/issues/102)) ([5539847](https://github.com/andrelair-platform/retrieva-backend/commit/55398473f5cab13b84eb1f8c6a6f0124de6919c1))
+
+
+### Bug Fixes
+
+* **api:** envelope assessment-runs + approvals success responses ([#100](https://github.com/andrelair-platform/retrieva-backend/issues/100)) ([86b2d69](https://github.com/andrelair-platform/retrieva-backend/commit/86b2d6971101100233f2d04764c973ec14ef58d2))
+* **orchestrator:** call the crew via direct json-rpc message/send (rtv-81b qa) ([#106](https://github.com/andrelair-platform/retrieva-backend/issues/106)) ([fe73460](https://github.com/andrelair-platform/retrieva-backend/commit/fe7346031212e96e6b2a9092cc9decab1aeb193d))
+
 ## [1.2.0](https://github.com/andrelair-platform/retrieva-backend/compare/retrieva-backend-v1.1.0...retrieva-backend-v1.2.0) (2026-09-29)
 
 
