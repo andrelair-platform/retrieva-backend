@@ -1,9 +1,10 @@
 /**
- * RTV-91 — Okta API client: SSWS auth, ACTIVE filter, Link cursor pagination, error surfacing.
- * `fetch` is injected so there is no network.
+ * RTV-91 — Okta API client: SSWS auth, ACTIVE filter, Link cursor pagination, error surfacing,
+ * and normalisation to the source-agnostic DiscoveredApp. `fetch` is injected so there is no network.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { listOktaApps, parseNextLink, type OktaApp } from '../../services/discovery/oktaClient.js';
+import { listOktaApps, parseNextLink } from '../../services/discovery/oktaClient.js';
+import type { DiscoveredApp } from '../../services/discovery/types.js';
 
 vi.mock('../../config/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -35,14 +36,14 @@ describe('parseNextLink', () => {
 });
 
 describe('listOktaApps', () => {
-  it('sends the SSWS token + ACTIVE filter and normalises apps', async () => {
+  it('sends the SSWS token + ACTIVE filter and normalises to DiscoveredApp', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       page([{ id: '1', label: 'Slack', name: 'slack', status: 'ACTIVE', signOnMode: 'SAML_2_0' }])
     );
-    const apps: OktaApp[] = await listOktaApps({ config, fetchImpl });
+    const apps: DiscoveredApp[] = await listOktaApps({ config, fetchImpl });
 
     expect(apps).toEqual([
-      { id: '1', label: 'Slack', name: 'slack', status: 'ACTIVE', signOnMode: 'SAML_2_0' },
+      { id: '1', label: 'Slack', name: 'slack', source: 'okta', meta: { status: 'ACTIVE', signOnMode: 'SAML_2_0' } },
     ]);
     const [url, init] = fetchImpl.mock.calls[0];
     expect(url).toContain('/api/v1/apps');

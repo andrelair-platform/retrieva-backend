@@ -1,21 +1,13 @@
 /**
  * Okta API client (RTV-91) — read-only app listing.
  *
- * Lists the apps in an Okta tenant via the `/api/v1/apps` endpoint (SSWS token auth), following the
- * `Link: rel="next"` cursor pagination. `fetch` is injectable so unit tests run with no network.
- * Pure transport — no LLM, no DB; it just returns normalised app records for the discovery service.
+ * Lists the apps in an Okta tenant via `/api/v1/apps` (SSWS token auth), following the
+ * `Link: rel="next"` cursor pagination, and normalises each to a source-agnostic `DiscoveredApp`.
+ * `fetch` is injectable so unit tests run with no network. Pure transport — no LLM, no DB.
  */
 import { getOktaConfig, type OktaConfig } from '../../config/okta.js';
 import logger from '../../config/logger.js';
-
-/** A discovered app, normalised to the few fields the mapper needs. */
-export interface OktaApp {
-  id: string;
-  label: string;
-  name: string;
-  status: string;
-  signOnMode: string;
-}
+import type { DiscoveredApp } from './types.js';
 
 type FetchLike = (url: string, init?: Record<string, unknown>) => Promise<{
   ok: boolean;
@@ -25,7 +17,7 @@ type FetchLike = (url: string, init?: Record<string, unknown>) => Promise<{
   text(): Promise<string>;
 }>;
 
-export interface ListOktaAppsDeps {
+export interface ListAppsDeps {
   config?: OktaConfig | null;
   fetchImpl?: FetchLike;
   timeoutMs?: number;
@@ -45,13 +37,16 @@ export function parseNextLink(linkHeader: string | null): string | null {
   return null;
 }
 
-function toApp(raw: Record<string, unknown>): OktaApp {
+function toApp(raw: Record<string, unknown>): DiscoveredApp {
   return {
     id: String(raw.id ?? ''),
     label: String(raw.label ?? raw.name ?? ''),
     name: String(raw.name ?? ''),
-    status: String(raw.status ?? ''),
-    signOnMode: String(raw.signOnMode ?? ''),
+    source: 'okta',
+    meta: {
+      status: String(raw.status ?? ''),
+      signOnMode: String(raw.signOnMode ?? ''),
+    },
   };
 }
 
@@ -59,14 +54,14 @@ function toApp(raw: Record<string, unknown>): OktaApp {
  * List ACTIVE apps from the Okta tenant. Returns [] when not configured (caller handles that).
  * @throws on a non-OK Okta response (auth/permission/rate-limit) so the run surfaces the failure.
  */
-export async function listOktaApps(deps: ListOktaAppsDeps = {}): Promise<OktaApp[]> {
+export async function listOktaApps(deps: ListAppsDeps = {}): Promise<DiscoveredApp[]> {
   const config = deps.config ?? getOktaConfig();
   if (!config) return [];
-  const fetchImpl = (deps.fetchImpl ?? (globalThis.fetch as unknown as FetchLike));
+  const fetchImpl = deps.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxPages = deps.maxPages ?? DEFAULT_MAX_PAGES;
 
-  const apps: OktaApp[] = [];
+  const apps: DiscoveredApp[] = [];
   let url: string | null =
     `${config.orgUrl}/api/v1/apps?limit=200&filter=${encodeURIComponent('status eq "ACTIVE"')}`;
 
@@ -77,10 +72,7 @@ export async function listOktaApps(deps: ListOktaAppsDeps = {}): Promise<OktaApp
     try {
       res = await fetchImpl(url, {
         method: 'GET',
-        headers: {
-          Authorization: `SSWS ${config.token}`,
-          Accept: 'application/json',
-        },
+        headers: { Authorization: `SSWS ${config.token}`, Accept: 'application/json' },
         signal: controller.signal,
       });
     } finally {
@@ -95,6 +87,6 @@ export async function listOktaApps(deps: ListOktaAppsDeps = {}): Promise<OktaApp
     url = parseNextLink(res.headers.get('link'));
   }
 
-  logger.info('okta.discovery.listed', { service: 'okta-discovery', apps: apps.length });
+  logger.info('okta.discovery.listed', { service: 'discovery', source: 'okta', apps: apps.length });
   return apps;
 }
