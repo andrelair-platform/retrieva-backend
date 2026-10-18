@@ -3,7 +3,7 @@ import path from 'path';
 import { questionnaireService } from '../services/QuestionnaireService.js';
 import { catchAsync, sendSuccess, sendError } from '../utils/index.js';
 import { canVendor } from '../services/security/vendorPrincipal.js';
-import { evidenceRepository } from '../repositories/index.js';
+import { evidenceRepository, ddqContradictionRepository } from '../repositories/index.js';
 import { parseFile } from '../services/fileIngestionService.js';
 import { indexArrangementText } from '../services/assessment/arrangementRag.js';
 import { sha256 } from '../utils/security/crypto.js';
@@ -13,7 +13,8 @@ import { recordAudit } from '../services/auditLogService.js';
  * POST /api/v1/questionnaires
  */
 export const createQuestionnaire = catchAsync(async (req: Request, res: Response) => {
-  const { vendorName, vendorEmail, vendorContactName, workspaceId, arrangementId } = req.body;
+  const { vendorName, vendorEmail, vendorContactName, workspaceId, arrangementId, adaptive } =
+    req.body;
 
   const questionnaire = await questionnaireService.createQuestionnaire({
     vendorName,
@@ -22,6 +23,7 @@ export const createQuestionnaire = catchAsync(async (req: Request, res: Response
     workspaceId,
     arrangementId,
     userId: req.user!.userId,
+    adaptive: adaptive === true || adaptive === 'true', // RTV-104 opt-in criticality adaptation
   });
 
   sendSuccess(res, 201, 'Questionnaire created', {
@@ -73,6 +75,41 @@ export const getQuestionnaire = catchAsync(async (req: Request, res: Response) =
   );
 
   sendSuccess(res, 200, 'Questionnaire retrieved', { questionnaire });
+});
+
+/**
+ * POST /api/v1/questionnaires/:id/follow-ups  (RTV-104 — the interactive round)
+ *
+ * After the vendor has answered + been scored (and cross-checked by RTV-105), generate targeted
+ * follow-up questions for the weak / contradicted answers, append them, and re-open the questionnaire
+ * for a second round. Contradicted questionIds come from the org-scoped RTV-105 inbox.
+ */
+export const generateFollowUps = catchAsync(async (req: Request, res: Response) => {
+  const authorizedWorkspaceIds = req.authorizedWorkspaces?.map((w: any) => w._id.toString()) || [];
+  const organizationId = req.user?.organizationId as string;
+
+  // Which of this questionnaire's answers did the contradiction detector flag (still-open items)?
+  let contradictedQuestionIds: string[] = [];
+  if (organizationId) {
+    const open = await ddqContradictionRepository.listByOrg(organizationId, {
+      questionnaireId: String(req.params.id),
+    });
+    contradictedQuestionIds = open
+      .filter((c: any) => c.status === 'open' || c.status === 'acknowledged')
+      .map((c: any) => c.questionId);
+  }
+
+  const result = await questionnaireService.generateFollowUps(String(req.params.id), {
+    authorizedWorkspaceIds,
+    contradictedQuestionIds,
+    userId: req.user!.userId,
+  });
+
+  sendSuccess(res, 200, 'Follow-up questions generated', {
+    added: result.added,
+    selected: result.selected,
+    followUps: result.followUps,
+  });
 });
 
 /**

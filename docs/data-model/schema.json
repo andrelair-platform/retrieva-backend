@@ -1491,6 +1491,227 @@
       ]
     },
     {
+      "name": "public.ddq_contradictions",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "answer_text",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "arrangement_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "citations",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "decided_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "dora_article",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "question_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "question_text",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "questionnaire_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "severity",
+          "type": "ddq_contradiction_severity",
+          "nullable": false,
+          "default": "'medium'::ddq_contradiction_severity"
+        },
+        {
+          "name": "status",
+          "type": "ddq_contradiction_status",
+          "nullable": false,
+          "default": "'open'::ddq_contradiction_status"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "vendor_name",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ddq_contradictions_dedup_idx",
+          "def": "CREATE UNIQUE INDEX ddq_contradictions_dedup_idx ON public.ddq_contradictions USING btree (organization_id, questionnaire_id, question_id)",
+          "table": "public.ddq_contradictions",
+          "columns": [
+            "organization_id",
+            "questionnaire_id",
+            "question_id"
+          ]
+        },
+        {
+          "name": "ddq_contradictions_org_status_idx",
+          "def": "CREATE INDEX ddq_contradictions_org_status_idx ON public.ddq_contradictions USING btree (organization_id, status)",
+          "table": "public.ddq_contradictions",
+          "columns": [
+            "organization_id",
+            "status"
+          ]
+        },
+        {
+          "name": "ddq_contradictions_pkey",
+          "def": "CREATE UNIQUE INDEX ddq_contradictions_pkey ON public.ddq_contradictions USING btree (id)",
+          "table": "public.ddq_contradictions",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "ddq_contradictions_questionnaire_idx",
+          "def": "CREATE INDEX ddq_contradictions_questionnaire_idx ON public.ddq_contradictions USING btree (questionnaire_id)",
+          "table": "public.ddq_contradictions",
+          "columns": [
+            "questionnaire_id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ddq_contradictions_arrangement_id_arrangements_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE SET NULL",
+          "table": "public.ddq_contradictions",
+          "referenced_table": "public.arrangements",
+          "columns": [
+            "arrangement_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "ddq_contradictions_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.ddq_contradictions",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "ddq_contradictions_decided_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.ddq_contradictions",
+          "referenced_table": "public.users",
+          "columns": [
+            "decided_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "ddq_contradictions_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.ddq_contradictions",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "ddq_contradictions_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.ddq_contradictions",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "ddq_contradictions_questionnaire_id_vendor_questionnaires_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (questionnaire_id) REFERENCES vendor_questionnaires(id) ON DELETE CASCADE",
+          "table": "public.ddq_contradictions",
+          "referenced_table": "public.vendor_questionnaires",
+          "columns": [
+            "questionnaire_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "public.discovery_proposals",
       "type": "BASE TABLE",
       "columns": [
@@ -5565,6 +5786,71 @@
       "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
     },
     {
+      "table": "public.ddq_contradictions",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.ddq_contradictions",
+      "columns": [
+        "decided_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.ddq_contradictions",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.ddq_contradictions",
+      "columns": [
+        "questionnaire_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.vendor_questionnaires",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (questionnaire_id) REFERENCES vendor_questionnaires(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.ddq_contradictions",
+      "columns": [
+        "arrangement_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.arrangements",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE SET NULL"
+    },
+    {
       "table": "public.discovery_proposals",
       "columns": [
         "organization_id"
@@ -6400,6 +6686,23 @@
       "values": [
         "critical",
         "important"
+      ]
+    },
+    {
+      "name": "public.ddq_contradiction_severity",
+      "values": [
+        "high",
+        "low",
+        "medium"
+      ]
+    },
+    {
+      "name": "public.ddq_contradiction_status",
+      "values": [
+        "acknowledged",
+        "dismissed",
+        "open",
+        "resolved"
       ]
     },
     {

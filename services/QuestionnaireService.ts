@@ -4,8 +4,11 @@ import { randomUUID } from 'crypto';
 import { AppError } from '../utils/index.js';
 import { questionnaireTemplateRepository } from '../repositories/index.js';
 import { vendorQuestionnaireRepository } from '../repositories/index.js';
+import { workspaceRepository } from '../repositories/index.js';
 import { questionnaireQueue } from '../config/queue.js';
 import { emailService } from './emailService.js';
+import { buildDynamicQuestionnaire } from './ddq/dynamicDdq.js';
+import { generateFollowUps } from './ddq/followUpGenerator.js';
 import logger from '../config/logger.js';
 import type { ScoreQuestionnaireJobData } from '../types/jobs.js';
 
@@ -14,6 +17,9 @@ const TOKEN_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 class QuestionnaireService {
   templateRepo: any;
   questionnaireRepo: any;
+  workspaceRepo: any;
+  buildDynamic: any;
+  buildFollowUps: any;
   questionnaireQueue: any;
   emailService: any;
   logger: any;
@@ -21,6 +27,9 @@ class QuestionnaireService {
   constructor(deps: Record<string, any> = {}) {
     this.templateRepo = deps.templateRepo || questionnaireTemplateRepository;
     this.questionnaireRepo = deps.questionnaireRepo || vendorQuestionnaireRepository;
+    this.workspaceRepo = deps.workspaceRepo || workspaceRepository;
+    this.buildDynamic = deps.buildDynamic || buildDynamicQuestionnaire;
+    this.buildFollowUps = deps.buildFollowUps || generateFollowUps;
     this.questionnaireQueue = deps.questionnaireQueue || questionnaireQueue;
     this.emailService = deps.emailService || emailService;
     this.logger = deps.logger || logger;
@@ -33,6 +42,7 @@ class QuestionnaireService {
     workspaceId,
     arrangementId,
     userId,
+    adaptive,
   }: any) {
     if (!vendorName || !vendorEmail) {
       throw new AppError('Vendor name and email are required', 400);
@@ -46,13 +56,43 @@ class QuestionnaireService {
       throw new AppError('No default questionnaire template found. Please contact support.', 500);
     }
 
-    const questions = template.questions.map((q: any) => ({
+    const baseQuestions = template.questions.map((q: any) => ({
       id: q.id,
       text: q.text,
       doraArticle: q.doraArticle,
       category: q.category,
       hint: q.hint,
     }));
+
+    // RTV-104 — DYNAMIC GENERATION: tailor the DDQ to this vendor's criticality tier + service type
+    // (DORA Art. 28(1) proportionality) instead of the static template — deep probes added for a critical
+    // vendor, trimmed to a proportionate core for a standard one. Opt-in (`adaptive`); default keeps the
+    // exact legacy behaviour (the full static template). The vendor's tier/serviceType come from its
+    // workspace (vendor profile); the builder is fail-safe (a failed LLM call still yields the
+    // deterministic add-on floor over the tier-proportional backbone).
+    let questions = baseQuestions;
+    let statusMessage = 'Created — awaiting send';
+    if (adaptive) {
+      const ws = await this.workspaceRepo.findById(String(workspaceId)).catch(() => null);
+      const built = await this.buildDynamic({
+        baseQuestions,
+        tier: ws?.vendorTier ?? null,
+        serviceType: ws?.serviceType ?? null,
+      });
+      questions = built.questions;
+      statusMessage = `Generated (${built.tier}/${built.serviceType}: ${built.baseIncluded}/${built.baseTotal} core + ${built.added} tailored) — awaiting send`;
+      this.logger.info('VendorQuestionnaire dynamic generation', {
+        service: 'questionnaire-service',
+        workspaceId,
+        tier: built.tier,
+        serviceType: built.serviceType,
+        baseIncluded: built.baseIncluded,
+        baseTotal: built.baseTotal,
+        trimmed: built.trimmed,
+        added: built.added,
+        usedFallback: built.usedFallback,
+      });
+    }
 
     // Unscoped create with an EXPLICIT workspaceId (the scoped create would overwrite it from
     // the request tenant + require a tenant context this service doesn't rely on).
@@ -64,7 +104,7 @@ class QuestionnaireService {
       vendorEmail: vendorEmail.trim().toLowerCase(),
       vendorContactName: vendorContactName?.trim() || '',
       status: 'draft',
-      statusMessage: 'Created — awaiting send',
+      statusMessage,
       questions,
       createdBy: userId,
     });
@@ -76,6 +116,64 @@ class QuestionnaireService {
     });
 
     return questionnaire;
+  }
+
+  /**
+   * RTV-104 — the INTERACTIVE follow-up round. After a vendor's answers are scored (and cross-checked
+   * for contradictions, RTV-105), generate targeted follow-up questions for the weak/vague/contradicted
+   * answers, APPEND them, and RE-OPEN the questionnaire (status → partial) so the vendor can answer a
+   * second round through the same portal. The caller supplies `contradictedQuestionIds` (resolved from
+   * the RTV-105 inbox, which is org-scoped). Workspace-gated; the questionnaire must already be answered.
+   */
+  async generateFollowUps(
+    id: string,
+    { authorizedWorkspaceIds, contradictedQuestionIds, userId }: any
+  ) {
+    const questionnaire = await this.questionnaireRepo.findByIdUnscoped(id);
+    if (!questionnaire) throw new AppError('Questionnaire not found', 404);
+    if (!authorizedWorkspaceIds.includes(String(questionnaire.workspaceId))) {
+      throw new AppError('Access denied', 403);
+    }
+    if (!['complete', 'partial'].includes(questionnaire.status)) {
+      throw new AppError('Follow-ups can only be generated after the vendor has answered', 400);
+    }
+
+    // The follow-up round number = (highest existing round) + 1, so a second interactive pass increments.
+    const existingRound = (questionnaire.questions as any[])
+      .filter((q) => q.source === 'followup' && typeof q.round === 'number')
+      .reduce((m, q) => Math.max(m, q.round), 0);
+
+    const { followUps, selected } = await this.buildFollowUps({
+      questions: questionnaire.questions,
+      contradictedQuestionIds: new Set<string>(contradictedQuestionIds || []),
+      round: existingRound + 1,
+    });
+
+    if (!followUps.length) {
+      this.logger.info('VendorQuestionnaire follow-ups — none warranted', {
+        service: 'questionnaire-service',
+        questionnaireId: id,
+      });
+      return { added: 0, followUps: [], selected };
+    }
+
+    const mergedQuestions = [...questionnaire.questions, ...followUps];
+    const updated = await this.questionnaireRepo.updateByIdUnscoped(questionnaire.id, {
+      questions: mergedQuestions,
+      // re-open: back to a non-terminal state so the vendor can answer the new questions via the portal.
+      status: 'partial',
+      statusMessage: `${followUps.length} follow-up question(s) added — awaiting vendor (round ${existingRound + 1})`,
+    });
+
+    this.logger.info('VendorQuestionnaire follow-ups generated', {
+      service: 'questionnaire-service',
+      questionnaireId: id,
+      added: followUps.length,
+      round: existingRound + 1,
+      userId,
+    });
+
+    return { added: followUps.length, followUps, selected, questionnaire: updated };
   }
 
   async listQuestionnaires({ authorizedWorkspaceIds, workspaceId, status, page, limit }: any) {

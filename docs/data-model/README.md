@@ -14,6 +14,7 @@
 | [public.conversations](public.conversations.md)                                   | 9       |         | BASE TABLE |
 | [public.critical_function_dependencies](public.critical_function_dependencies.md) | 2       |         | BASE TABLE |
 | [public.critical_functions](public.critical_functions.md)                         | 8       |         | BASE TABLE |
+| [public.ddq_contradictions](public.ddq_contradictions.md)                         | 18      |         | BASE TABLE |
 | [public.discovery_proposals](public.discovery_proposals.md)                       | 11      |         | BASE TABLE |
 | [public.discovery_runs](public.discovery_runs.md)                                 | 16      |         | BASE TABLE |
 | [public.evidence](public.evidence.md)                                             | 17      |         | BASE TABLE |
@@ -59,6 +60,8 @@
 | public.completeness_run_status        | failed, queued, running, succeeded                                                                                                                               |
 | public.completeness_severity          | high, low, medium                                                                                                                                                |
 | public.criticality                    | critical, important                                                                                                                                              |
+| public.ddq_contradiction_severity     | high, low, medium                                                                                                                                                |
+| public.ddq_contradiction_status       | acknowledged, dismissed, open, resolved                                                                                                                          |
 | public.dependency_level               | high, low, medium                                                                                                                                                |
 | public.discovery_proposal_status      | confirmed, dismissed, pending                                                                                                                                    |
 | public.discovery_run_status           | failed, queued, running, succeeded                                                                                                                               |
@@ -124,6 +127,11 @@ erDiagram
 "public.critical_function_dependencies" }o--|| "public.critical_functions" : "FOREIGN KEY (critical_function_id) REFERENCES critical_functions(id) ON DELETE CASCADE"
 "public.critical_functions" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.critical_functions" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+"public.ddq_contradictions" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.ddq_contradictions" }o--o| "public.users" : "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.ddq_contradictions" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+"public.ddq_contradictions" }o--|| "public.vendor_questionnaires" : "FOREIGN KEY (questionnaire_id) REFERENCES vendor_questionnaires(id) ON DELETE CASCADE"
+"public.ddq_contradictions" }o--o| "public.arrangements" : "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE SET NULL"
 "public.discovery_proposals" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.discovery_proposals" }o--|| "public.discovery_runs" : "FOREIGN KEY (run_id) REFERENCES discovery_runs(id) ON DELETE CASCADE"
 "public.discovery_runs" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
@@ -308,6 +316,26 @@ erDiagram
   text name
   uuid organization_id FK
   timestamp_with_time_zone updated_at
+}
+"public.ddq_contradictions" {
+  text answer_text
+  uuid arrangement_id FK
+  jsonb citations
+  timestamp_with_time_zone created_at
+  uuid created_by FK
+  timestamp_with_time_zone decided_at
+  uuid decided_by FK
+  text dora_article
+  uuid id
+  uuid organization_id FK
+  text question_id
+  text question_text
+  uuid questionnaire_id FK
+  text reason
+  ddq_contradiction_severity severity
+  ddq_contradiction_status status
+  timestamp_with_time_zone updated_at
+  text vendor_name
 }
 "public.discovery_proposals" {
   uuid arrangement_id

@@ -33,6 +33,7 @@ import discoveryRoutes from './modules/discovery/discovery.routes.js';
 import completenessRoutes from './modules/completeness/completeness.routes.js';
 import surveillanceRoutes from './modules/surveillance/surveillance.routes.js';
 import amendmentsRoutes from './modules/amendments/amendments.routes.js';
+import ddqContradictionsRoutes from './modules/ddq-contradictions/ddq-contradictions.routes.js';
 import questionnaireRoutes from './routes/questionnaireRoutes.js';
 import questionnairePublicRoutes from './routes/questionnairePublicRoutes.js';
 import publicEvidenceRoutes from './routes/publicEvidenceRoutes.js';
@@ -335,6 +336,16 @@ app.use(
 // CONTRACT_A30 assessment's gaps into an inbox (proposed, never auto-applied); setEntityContext applies
 // RTV-54 isolation so the assessment-gap load + inbox span exactly what the caller may see.
 app.use('/api/v1/amendments', optionalAuth, requireActivePlan, setEntityContext, amendmentsRoutes);
+// Answer-vs-evidence contradiction detection (RTV-103/105) — org-scoped. Cross-checks a vendor's DDQ
+// answers against their uploaded evidence and flags contradictions into an inbox (informs, never
+// auto-fails); setEntityContext applies RTV-54 isolation to the questionnaire load + inbox.
+app.use(
+  '/api/v1/ddq-contradictions',
+  optionalAuth,
+  requireActivePlan,
+  setEntityContext,
+  ddqContradictionsRoutes
+);
 // Decision inbox (RTV-67) — org-scoped cross-arrangement queue of draft findings + open risks;
 // setEntityContext applies RTV-54 isolation so it spans exactly the arrangements the caller may see.
 app.use(
