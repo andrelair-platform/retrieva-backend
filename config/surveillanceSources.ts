@@ -67,3 +67,66 @@ export function statuspageForProvider(canonicalName: string): string | null {
 export function isSurveillanceConfigured(): boolean {
   return process.env.SURVEILLANCE_ENABLED === 'true' && getStatuspageSources().length > 0;
 }
+
+// ── CVE source (RTV-94 follow-on) — OSV.dev package → advisory map ───────────────────────────────────
+// OSV is package-centric, so a CTPP is tracked by the OSS packages / SDKs it (or we, depending on it)
+// rely on — a critical CVE in e.g. the Stripe lib or the AWS SDK is a real supply-chain signal. Curated
+// allow-list keyed by canonicalName substring (same pattern as Statuspage). `SURVEILLANCE_CVE_EXTRA`
+// (`provider:ecosystem/name;ecosystem/name,provider:…`) extends it at runtime. The egress toFQDNs
+// allow-list must include `api.osv.dev` (deployment side) when this is enabled.
+export interface CvePackageRef {
+  ecosystem: string; // OSV ecosystem: PyPI | npm | Go | Maven | crates.io | …
+  name: string;
+}
+interface CveSource {
+  key: string; // canonicalName substring
+  packages: CvePackageRef[];
+}
+
+const BUILTIN_CVE: CveSource[] = [
+  { key: 'stripe', packages: [{ ecosystem: 'PyPI', name: 'stripe' }, { ecosystem: 'npm', name: 'stripe' }] },
+  { key: 'twilio', packages: [{ ecosystem: 'PyPI', name: 'twilio' }, { ecosystem: 'npm', name: 'twilio' }] },
+  { key: 'sendgrid', packages: [{ ecosystem: 'npm', name: '@sendgrid/mail' }, { ecosystem: 'PyPI', name: 'sendgrid' }] },
+  { key: 'aws', packages: [{ ecosystem: 'PyPI', name: 'boto3' }, { ecosystem: 'npm', name: 'aws-sdk' }] },
+  { key: 'openai', packages: [{ ecosystem: 'PyPI', name: 'openai' }, { ecosystem: 'npm', name: 'openai' }] },
+  { key: 'elastic', packages: [{ ecosystem: 'PyPI', name: 'elasticsearch' }] },
+  { key: 'github', packages: [{ ecosystem: 'npm', name: '@octokit/core' }] },
+];
+
+function parseCveExtra(raw: string | undefined): CveSource[] {
+  return (raw || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [key, pkgList] = entry.split(':').map((s) => s.trim());
+      if (!key || !pkgList) return null;
+      const packages = pkgList
+        .split(';')
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .map((p) => {
+          const [ecosystem, name] = p.split('/').map((s) => s.trim());
+          return ecosystem && name ? { ecosystem, name } : null;
+        })
+        .filter((p): p is CvePackageRef => p !== null);
+      return packages.length ? { key: key.toLowerCase(), packages } : null;
+    })
+    .filter((s): s is CveSource => s !== null);
+}
+
+function getCveSources(): CveSource[] {
+  const byKey = new Map(BUILTIN_CVE.map((s) => [s.key, s]));
+  for (const s of parseCveExtra(process.env.SURVEILLANCE_CVE_EXTRA)) byKey.set(s.key, s);
+  return [...byKey.values()];
+}
+
+/** The OSV packages to watch for a provider node's canonicalName (matched by substring), or [] if none. */
+export function cvePackagesForProvider(canonicalName: string): CvePackageRef[] {
+  const name = (canonicalName || '').toLowerCase();
+  const out: CvePackageRef[] = [];
+  for (const s of getCveSources()) {
+    if (name.includes(s.key)) out.push(...s.packages);
+  }
+  return out;
+}

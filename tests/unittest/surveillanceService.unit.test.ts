@@ -38,6 +38,37 @@ describe('runSurveillance', () => {
     expect(res.bySeverity.high).toBe(2);
   });
 
+  it('merges BOTH feeds per provider — statuspage incidents + cve advisories (RTV-94 CVE source)', async () => {
+    const res = await runSurveillance({
+      organizationId: ORG,
+      deps: {
+        listProviders: async () => [provider],
+        listSignals: async () => [signal({ externalId: 'sp1', source: 'statuspage', impact: 'major' })],
+        listCveSignals: async () => [signal({ externalId: 'CVE-2026-1', source: 'cve', type: 'cve', impact: 'critical' })],
+        classify: async (s) => ({ severity: s.source === 'cve' ? 'critical' : 'high', relevant: true, rationale: '' }),
+      },
+    });
+    expect(res.fetched).toBe(2);
+    const bySource = Object.fromEntries(res.events.map((e) => [e.source, e.externalId]));
+    expect(bySource.statuspage).toBe('sp1');
+    expect(bySource.cve).toBe('CVE-2026-1');
+    expect(res.bySeverity.critical).toBe(1);
+    expect(res.bySeverity.high).toBe(1);
+  });
+
+  it('one feed failing does not sink the other (isolated per feed)', async () => {
+    const res = await runSurveillance({
+      organizationId: ORG,
+      deps: {
+        listProviders: async () => [provider],
+        listSignals: async () => { throw new Error('status page down'); },
+        listCveSignals: async () => [signal({ externalId: 'CVE-2026-9', source: 'cve', type: 'cve', impact: 'critical' })],
+        classify: async () => ({ severity: 'critical', relevant: true, rationale: '' }),
+      },
+    });
+    expect(res.events.map((e) => e.externalId)).toEqual(['CVE-2026-9']);
+  });
+
   it('skips signals already in the inbox (dedup) and does not re-classify them', async () => {
     const classify = vi.fn().mockResolvedValue({ severity: 'high', relevant: true, rationale: '' });
     const res = await runSurveillance({
