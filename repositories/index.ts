@@ -80,3 +80,9 @@ export { CompletenessRepository, completenessRepository } from './drizzle/Comple
 
 // CTPP surveillance (RTV-94/95/96) — collection runs + the surveillance-event inbox + blast-radius.
 export { SurveillanceRepository, surveillanceRepository } from './drizzle/SurveillanceRepository.js';
+
+// Contract-amendment redliner (RTV-97/98) — the drafted Art-30 amendment inbox + assessment-gap loader.
+export {
+  ContractAmendmentRepository,
+  contractAmendmentRepository,
+} from './drizzle/ContractAmendmentRepository.js';

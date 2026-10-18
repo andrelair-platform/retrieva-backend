@@ -2,23 +2,23 @@
 
 ## Columns
 
-| Name            | Type                     | Default                      | Nullable | Children | Parents                                   | Comment |
-| --------------- | ------------------------ | ---------------------------- | -------- | -------- | ----------------------------------------- | ------- |
-| clause_signoffs | jsonb                    | '[]'::jsonb                  | false    |          |                                           |         |
-| created_at      | timestamp with time zone | now()                        | false    |          |                                           |         |
-| created_by      | uuid                     |                              | true     |          | [public.users](public.users.md)           |         |
-| documents       | jsonb                    | '[]'::jsonb                  | false    |          |                                           |         |
-| framework       | assessment_framework     | 'DORA'::assessment_framework | false    |          |                                           |         |
-| id              | uuid                     | gen_random_uuid()            | false    |          |                                           |         |
-| name            | text                     |                              | false    |          |                                           |         |
-| report_path     | text                     |                              | true     |          |                                           |         |
-| results         | jsonb                    |                              | true     |          |                                           |         |
-| risk_decision   | jsonb                    |                              | true     |          |                                           |         |
-| status          | assessment_status        | 'pending'::assessment_status | false    |          |                                           |         |
-| status_message  | text                     | ''::text                     | false    |          |                                           |         |
-| updated_at      | timestamp with time zone | now()                        | false    |          |                                           |         |
-| vendor_name     | text                     |                              | false    |          |                                           |         |
-| workspace_id    | uuid                     |                              | false    |          | [public.workspaces](public.workspaces.md) |         |
+| Name            | Type                     | Default                      | Nullable | Children                                                    | Parents                                   | Comment |
+| --------------- | ------------------------ | ---------------------------- | -------- | ----------------------------------------------------------- | ----------------------------------------- | ------- |
+| clause_signoffs | jsonb                    | '[]'::jsonb                  | false    |                                                             |                                           |         |
+| created_at      | timestamp with time zone | now()                        | false    |                                                             |                                           |         |
+| created_by      | uuid                     |                              | true     |                                                             | [public.users](public.users.md)           |         |
+| documents       | jsonb                    | '[]'::jsonb                  | false    |                                                             |                                           |         |
+| framework       | assessment_framework     | 'DORA'::assessment_framework | false    |                                                             |                                           |         |
+| id              | uuid                     | gen_random_uuid()            | false    | [public.contract_amendments](public.contract_amendments.md) |                                           |         |
+| name            | text                     |                              | false    |                                                             |                                           |         |
+| report_path     | text                     |                              | true     |                                                             |                                           |         |
+| results         | jsonb                    |                              | true     |                                                             |                                           |         |
+| risk_decision   | jsonb                    |                              | true     |                                                             |                                           |         |
+| status          | assessment_status        | 'pending'::assessment_status | false    |                                                             |                                           |         |
+| status_message  | text                     | ''::text                     | false    |                                                             |                                           |         |
+| updated_at      | timestamp with time zone | now()                        | false    |                                                             |                                           |         |
+| vendor_name     | text                     |                              | false    |                                                             |                                           |         |
+| workspace_id    | uuid                     |                              | false    |                                                             | [public.workspaces](public.workspaces.md) |         |
 
 ## Constraints
 
@@ -42,6 +42,7 @@
 erDiagram
 
 "public.assessments" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.contract_amendments" }o--|| "public.assessments" : "FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE"
 "public.assessments" }o--|| "public.workspaces" : "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
 
 "public.assessments" {
@@ -88,6 +89,25 @@ erDiagram
   jsonb refresh_tokens
   user_role role
   timestamp_with_time_zone updated_at
+}
+"public.contract_amendments" {
+  text article
+  uuid assessment_id FK
+  text category
+  timestamp_with_time_zone created_at
+  uuid created_by FK
+  timestamp_with_time_zone decided_at
+  uuid decided_by FK
+  text draft_text
+  text edited_text
+  text gap_level
+  uuid id
+  uuid organization_id FK
+  text rationale
+  amendment_status status
+  text template_ref
+  timestamp_with_time_zone updated_at
+  text vendor_name
 }
 "public.workspaces" {
   jsonb alerts_sent_at

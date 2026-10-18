@@ -10,6 +10,7 @@
 | [public.assessments](public.assessments.md)                                       | 15      |         | BASE TABLE |
 | [public.audit_log](public.audit_log.md)                                           | 9       |         | BASE TABLE |
 | [public.business_functions](public.business_functions.md)                         | 8       |         | BASE TABLE |
+| [public.contract_amendments](public.contract_amendments.md)                       | 17      |         | BASE TABLE |
 | [public.conversations](public.conversations.md)                                   | 9       |         | BASE TABLE |
 | [public.critical_function_dependencies](public.critical_function_dependencies.md) | 2       |         | BASE TABLE |
 | [public.critical_functions](public.critical_functions.md)                         | 8       |         | BASE TABLE |
@@ -47,6 +48,7 @@
 
 | Name                                  | Values                                                                                                                                                           |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| public.amendment_status               | accepted, pending, rejected                                                                                                                                      |
 | public.arrangement_lifecycle          | active, due_diligence, exited, exiting, prospect, remediation, under_review                                                                                      |
 | public.arrangement_type               | external, intra_group                                                                                                                                            |
 | public.assessment_framework           | CONTRACT_A30, DORA                                                                                                                                               |
@@ -112,6 +114,10 @@ erDiagram
 "public.audit_log" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.business_functions" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.business_functions" }o--|| "public.legal_entities" : "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE CASCADE"
+"public.contract_amendments" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.contract_amendments" }o--o| "public.users" : "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.contract_amendments" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+"public.contract_amendments" }o--|| "public.assessments" : "FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE"
 "public.conversations" }o--o| "public.users" : "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL"
 "public.conversations" }o--o| "public.workspaces" : "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
 "public.critical_function_dependencies" }o--|| "public.workspaces" : "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
@@ -258,6 +264,25 @@ erDiagram
   text name
   uuid organization_id FK
   timestamp_with_time_zone updated_at
+}
+"public.contract_amendments" {
+  text article
+  uuid assessment_id FK
+  text category
+  timestamp_with_time_zone created_at
+  uuid created_by FK
+  timestamp_with_time_zone decided_at
+  uuid decided_by FK
+  text draft_text
+  text edited_text
+  text gap_level
+  uuid id
+  uuid organization_id FK
+  text rationale
+  amendment_status status
+  text template_ref
+  timestamp_with_time_zone updated_at
+  text vendor_name
 }
 "public.conversations" {
   timestamp_with_time_zone created_at
