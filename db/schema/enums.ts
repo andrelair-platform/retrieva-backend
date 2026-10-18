@@ -200,7 +200,9 @@ export const assessmentRunApprovalStatusEnum = pgEnum('assessment_run_approval_s
 ]);
 
 // Discovery connectors (RTV-91c) — the async sweep's run lifecycle + the inbox proposal lifecycle.
-export const discoverySourceEnum = pgEnum('discovery_source', ['okta', 'authentik', 'erpnext']);
+// `generic` (RTV-106) is the AI-ingestion catch-all: an upload/paste is LLM-normalised into the same
+// DiscoveredApp shape, so it flows through the identical pipeline as the vendor-specific sources.
+export const discoverySourceEnum = pgEnum('discovery_source', ['okta', 'authentik', 'erpnext', 'generic']);
 
 export const discoveryRunStatusEnum = pgEnum('discovery_run_status', [
   'queued',

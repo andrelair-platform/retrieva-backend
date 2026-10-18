@@ -169,6 +169,13 @@
       "when": 1792339440437,
       "tag": "0023_common_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792340908603,
+      "tag": "0024_lonely_shadow_king",
+      "breakpoints": true
     }
   ]
 }

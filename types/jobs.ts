@@ -66,13 +66,16 @@ export interface ReviewReminderJobData {
 export type MonitoringJobData = ScheduledJobData | ReviewReminderJobData;
 
 /** `run-discovery` (RTV-91c) — an async discovery sweep for one org+source; `runId` is the
- *  discovery_runs row the caller polls. */
+ *  discovery_runs row the caller polls. For `generic` (RTV-106) the source has no live API, so the
+ *  pre-normalised apps (from the parsed+LLM-mapped upload) travel in `apps` and the worker runs them
+ *  through the identical pipeline. */
 export interface DiscoveryRunJobData {
   runId: string;
   organizationId: string;
-  source: 'okta' | 'authentik' | 'erpnext';
+  source: 'okta' | 'authentik' | 'erpnext' | 'generic';
   userId?: string | null;
   dryRun?: boolean;
+  apps?: import('../services/discovery/types.js').DiscoveredApp[];
 }
 
 /** `discovery-scheduled-sweep` (RTV-91d) — the repeatable fan-out: enqueues a run per configured

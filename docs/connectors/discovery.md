@@ -4,19 +4,49 @@ The **autonomous discovery agents** (AI-native roadmap, Pillar 1). Each connecto
 system (read-only) and **proposes** DORA third-party arrangements for the ICT apps in use — so shadow
 IT surfaces itself into the Register of Information instead of being typed in by hand.
 
-**Sources today:** **Okta** (enterprise IdP), **Authentik** (this platform's own IdP) and **ERPNext**
-(AP/ERP — RTV-92). The IdP sources discover apps by *identity*; the ERP source discovers third parties
-by *spend* (the suppliers we pay), so it catches shadow IT an IdP can't see. Adding a source is just a
-new client; the rails below are source-agnostic.
+**Sources today:** **Okta** (enterprise IdP), **Authentik** (this platform's own IdP), **ERPNext**
+(AP/ERP — RTV-92) and a **generic AI-ingestion source** (RTV-106 — upload/paste anything). The IdP
+sources discover apps by *identity*; the ERP source discovers third parties by *spend* (the suppliers we
+pay), so it catches shadow IT an IdP can't see; the generic source covers the long tail of systems with
+no built-in connector. Adding a source is just a new client; the rails below are source-agnostic.
 
 > **Scaling to real customers (not hand-built per vendor).** Okta/Authentik/ERPNext are the concrete
 > connectors *this* deployment (ktayl) uses — reference implementations of the `DiscoverySource` /
 > `DiscoveredApp` plug-in contract, not the product ceiling. A customer on Entra ID + SAP uses the same
 > rails via: first-class connectors for the common systems · standard-protocol connectors (SCIM/OData/
-> generic REST) · and a **generic AI-ingestion source** (upload a CSV / API dump → the LLM normalises
-> arbitrary columns into `DiscoveredApp`) as the universal fallback. That generic path is the AI-native
-> differentiator and is backlogged (RTV-106/107); the specific connectors are the high-value head of a
-> long tail the AI covers.
+> generic REST — RTV-107, backlogged) · and the **generic AI-ingestion source (RTV-106, below)** as the
+> universal fallback. The specific connectors are the high-value head of a long tail the AI covers.
+
+## Tier-3: generic AI-ingestion (RTV-106)
+
+The **AI-native catch-all** for systems we have no built-in connector for. A customer **uploads a
+CSV/XLSX export** (or **pastes a JSON array**) of their vendors / AP ledger / SSO app list; the LLM
+**infers which columns** are the provider / service / spend / criticality — no hardcoded headers — and
+the normalised apps flow through the **identical** pipeline (worker → mapper → dedup → inbox → confirm).
+This is what makes discovery AI-native rather than a parser-per-format.
+
+**How the mapping stays cheap + PII-light:** the LLM is called **once** on a small **sample** of rows to
+infer the column mapping; that mapping is then applied **deterministically** (pure code) to every row —
+the whole ledger is never sent to the model. Fail-safe: if the model is unavailable or unsure, a
+header-name **heuristic** produces the mapping. The mapping call is Langfuse-traced via the gateway.
+
+```bash
+# 1. PREVIEW — infer the mapping + see a few normalised rows BEFORE committing (no run, no persistence):
+curl -X POST https://<api>/api/v1/discovery/generic/preview -H "Authorization: Bearer <jwt>" \
+  -F "file=@vendors.csv"
+#   or paste JSON:
+curl -X POST https://<api>/api/v1/discovery/generic/preview -H "Authorization: Bearer <jwt>" \
+  -H 'Content-Type: application/json' -d '{"rows":[{"Supplier":"Acme","Annual Spend":"120000"}]}'
+#   → 200 { rowCount, headers, mapping:{provider,service,spend,criticality,id}, confidence, usedFallback, sample }
+
+# 2. RUN — normalise + enqueue the apps through the async pipeline → poll like any source:
+curl -X POST https://<api>/api/v1/discovery/generic/run -H "Authorization: Bearer <jwt>" -F "file=@vendors.csv"
+#   → 202 { runId, normalised, mapping, poll: "/api/v1/discovery/runs/<id>" }
+```
+
+**Guardrails:** upload ≤ 25 MB, rows capped (first `MAX_ROWS` = 500); the inferred mapping + confidence +
+`usedFallback` are returned so a human can correct a mis-map (re-run with a pasted `mapping`-corrected set
+or fix the headers). Provenance: each proposal records `source: generic` + the original row (`meta.sourceRow`).
 
 **Governance rule they obey:** *autonomous discovery & drafting, never autonomous sign-off.* A
 connector **never writes an arrangement**. It produces proposals in an **inbox**; a human confirms

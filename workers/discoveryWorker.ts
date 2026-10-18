@@ -45,7 +45,7 @@ export async function processDiscoveryJob(job: Job<DiscoveryRunJobData>, deps: P
   const resolveScope = deps.resolveEntityScopeFn ?? resolveEntityScope;
   const withScope = deps.runWithEntityScopeFn ?? runWithEntityScope;
 
-  const { runId, organizationId, source, userId = null, dryRun = false } = job.data;
+  const { runId, organizationId, source, userId = null, dryRun = false, apps } = job.data;
   logger.info('discovery.job.started', { service: 'discovery-worker', runId, source, dryRun, jobId: job.id });
   await repo.markRunning(runId);
 
@@ -57,8 +57,12 @@ export async function processDiscoveryJob(job: Job<DiscoveryRunJobData>, deps: P
     // Skip apps already in the inbox → a repeated / scheduled sweep doesn't duplicate.
     const knownExternalIds = new Set(await repo.listActiveExternalIds(organizationId, source));
 
+    // RTV-106 — the `generic` source has no live API: run the pre-normalised apps carried in the job
+    // (from the parsed+LLM-mapped upload) through the identical pipeline via a listApps override.
+    const listApps = apps ? () => Promise.resolve(apps) : undefined;
+
     const result = await withScope(scope, () =>
-      run({ source, organizationId, userId, dryRun, deps: { knownExternalIds } })
+      run({ source, organizationId, userId, dryRun, deps: { knownExternalIds, ...(listApps ? { listApps } : {}) } })
     );
 
     await repo.completeRun(runId, {

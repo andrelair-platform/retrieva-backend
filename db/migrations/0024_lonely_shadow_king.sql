@@ -1,0 +1,1 @@
+ALTER TYPE "public"."discovery_source" ADD VALUE 'generic';

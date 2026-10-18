@@ -6984,6 +6984,7 @@
       "values": [
         "authentik",
         "erpnext",
+        "generic",
         "okta"
       ]
     },

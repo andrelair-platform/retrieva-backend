@@ -121,6 +121,35 @@ export function estateUploadMiddleware(req: Request, res: Response, next: NextFu
   });
 }
 
+// Generic AI-ingestion discovery (RTV-106) — one CSV/XLSX/XLS export, field `file`. Same allow-list as
+// the estate import (spreadsheet formats + their messy real-world mime types). OPTIONAL: the generic
+// endpoints also accept a pasted JSON array in the body, so no file is required.
+const uploadGenericFile = multer({
+  storage,
+  limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024, files: 1 },
+  fileFilter(_req: any, file: any, cb: any) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!ESTATE_EXTENSIONS.has(ext) || !ESTATE_MIME_TYPES.has(file.mimetype)) {
+      return cb(new AppError(`Unsupported file: ${ext} (${file.mimetype}). Allowed: csv, xlsx, xls`, 400));
+    }
+    cb(null, true);
+  },
+}).single('file');
+
+/** Runs multer for an OPTIONAL single `file` (csv/xlsx/xls) — generic discovery ingestion (RTV-106). */
+export function genericUploadMiddleware(req: Request, res: Response, next: NextFunction) {
+  uploadGenericFile(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return next(new AppError(`File too large. Max size is ${MAX_FILE_SIZE_MB}MB`, 400));
+      }
+      return next(new AppError(`Upload error: ${err.message}`, 400));
+    }
+    if (err) return next(err);
+    next();
+  });
+}
+
 /**
  * Express middleware that runs multer and converts MulterError to AppError.
  * Place this in the route chain before validateBody and the controller.

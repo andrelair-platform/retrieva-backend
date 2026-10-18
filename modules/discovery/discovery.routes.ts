@@ -1,12 +1,15 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/auth.js';
 import { validateBody, validateParams } from '../../middleware/validate.js';
+import { genericUploadMiddleware } from '../../middleware/fileUpload.js';
 import { idParam } from '../../validators/params.js';
 import { discoveryRunBody } from './discovery.schema.js';
 import {
   oktaRun,
   authentikRun,
   erpnextRun,
+  genericPreview,
+  genericRun,
   listRuns,
   getRun,
   listProposals,
@@ -23,6 +26,12 @@ const router = Router();
 router.post('/okta/run', authenticate, validateBody(discoveryRunBody), oktaRun);
 router.post('/authentik/run', authenticate, validateBody(discoveryRunBody), authentikRun);
 router.post('/erpnext/run', authenticate, validateBody(discoveryRunBody), erpnextRun);
+
+// Generic AI-ingestion (RTV-106) — upload a CSV/XLSX `file` and/or paste a JSON array `rows`. The LLM
+// infers the column mapping; `/preview` returns it for review, `/run` enqueues the normalised apps
+// through the same async pipeline. The upload middleware also passes JSON-only requests (no file) through.
+router.post('/generic/preview', authenticate, genericUploadMiddleware, genericPreview);
+router.post('/generic/run', authenticate, genericUploadMiddleware, genericRun);
 
 // Poll runs + the proposal inbox.
 router.get('/runs', authenticate, listRuns);

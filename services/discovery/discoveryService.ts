@@ -38,6 +38,15 @@ const CLIENTS: Record<
     isConfigured: () => getErpnextConfig() !== null,
     listApps: () => listErpnextApps(),
   },
+  // Generic AI-ingestion (RTV-106) is upload-driven, not env-configured: it NEVER lists a live source.
+  // The apps come from the parsed+LLM-normalised upload, injected via `deps.listApps` (the worker passes
+  // the job's normalised apps). isConfigured=false so the plain source route can't trigger it blindly.
+  generic: {
+    isConfigured: () => false,
+    listApps: () => {
+      throw new Error('generic discovery requires an uploaded/pasted dataset (deps.listApps)');
+    },
+  },
 };
 
 /** Whether a source's connector is configured (env present) — the controller 503s early if not. */
