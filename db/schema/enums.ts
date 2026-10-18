@@ -268,3 +268,13 @@ export const ddqContradictionStatusEnum = pgEnum('ddq_contradiction_status', [
   'resolved',
   'dismissed',
 ]);
+
+// Dynamic exit strategy & transition planning (RTV-99/100/101/102) — for CIF (critical/important)
+// arrangements, Retrieva drafts exit artefacts: alternative-provider matches, an exit blueprint, and a
+// reintegration estimate. Each is a DRAFT for the risk owner (status) — proposed, never auto-decided.
+export const exitArtefactTypeEnum = pgEnum('exit_artefact_type', [
+  'provider_match', // RTV-100 — credible alternative providers
+  'exit_blueprint', // RTV-101 — portability timeline / handover / parallel-run plan
+  'reintegration_model', // RTV-102 — bring-in-house / switch effort estimate
+]);
+export const exitArtefactStatusEnum = pgEnum('exit_artefact_status', ['draft', 'approved', 'rejected']);

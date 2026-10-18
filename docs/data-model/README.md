@@ -19,6 +19,7 @@
 | [public.discovery_runs](public.discovery_runs.md)                                 | 16      |         | BASE TABLE |
 | [public.evidence](public.evidence.md)                                             | 17      |         | BASE TABLE |
 | [public.evidence_collection_request](public.evidence_collection_request.md)       | 15      |         | BASE TABLE |
+| [public.exit_artefacts](public.exit_artefacts.md)                                 | 16      |         | BASE TABLE |
 | [public.findings](public.findings.md)                                             | 17      |         | BASE TABLE |
 | [public.ict_services](public.ict_services.md)                                     | 8       |         | BASE TABLE |
 | [public.legal_entities](public.legal_entities.md)                                 | 9       |         | BASE TABLE |
@@ -70,6 +71,8 @@
 | public.evidence_category              | bcp_dr_plan, dora_addendum, exit_strategy, iso27001_cert, master_service_agreement, risk_classification, soc2_report, subprocessor_list, vendor_dora_attestation |
 | public.evidence_request_status        | fulfilled, pending, revoked                                                                                                                                      |
 | public.evidence_scope                 | arrangement, provider                                                                                                                                            |
+| public.exit_artefact_status           | approved, draft, rejected                                                                                                                                        |
+| public.exit_artefact_type             | exit_blueprint, provider_match, reintegration_model                                                                                                              |
 | public.exit_difficulty                | high, low, medium                                                                                                                                                |
 | public.finding_status                 | approved, draft, rejected                                                                                                                                        |
 | public.member_status                  | active, pending, revoked                                                                                                                                         |
@@ -144,6 +147,10 @@ erDiagram
 "public.evidence_collection_request" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.evidence_collection_request" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.evidence_collection_request" }o--|| "public.arrangements" : "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE"
+"public.exit_artefacts" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.exit_artefacts" }o--o| "public.users" : "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.exit_artefacts" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+"public.exit_artefacts" }o--|| "public.arrangements" : "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE"
 "public.findings" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.findings" }o--o| "public.users" : "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.findings" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
@@ -403,6 +410,24 @@ erDiagram
   timestamp_with_time_zone updated_at
   text vendor_contact_name
   text vendor_email
+}
+"public.exit_artefacts" {
+  uuid arrangement_id FK
+  timestamp_with_time_zone created_at
+  uuid created_by FK
+  text criticality
+  timestamp_with_time_zone decided_at
+  uuid decided_by FK
+  text decision_note
+  uuid id
+  uuid organization_id FK
+  jsonb payload
+  text provider_name
+  exit_artefact_status status
+  text summary
+  exit_artefact_type type
+  timestamp_with_time_zone updated_at
+  text used_fallback
 }
 "public.findings" {
   uuid arrangement_id FK
