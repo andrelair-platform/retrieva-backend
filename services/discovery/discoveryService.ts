@@ -34,6 +34,11 @@ const CLIENTS: Record<
   },
 };
 
+/** Whether a source's connector is configured (env present) — the controller 503s early if not. */
+export function isSourceConfigured(source: DiscoverySource): boolean {
+  return CLIENTS[source].isConfigured();
+}
+
 export interface SkippedApp {
   externalId: string;
   externalName: string;

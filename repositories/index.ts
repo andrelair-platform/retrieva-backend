@@ -71,3 +71,6 @@ export { FindingRepository, findingRepository } from './drizzle/FindingRepositor
 
 // Risk register + remediation loop (RTV-43)
 export { RiskRepository, riskRepository } from './drizzle/RiskRepository.js';
+
+// Discovery connectors (RTV-91c) — async sweep runs + the proposal inbox.
+export { DiscoveryRepository, discoveryRepository } from './drizzle/DiscoveryRepository.js';
