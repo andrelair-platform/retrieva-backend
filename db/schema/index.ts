@@ -33,6 +33,9 @@ export * from './discoveryProposals.js';
 // Register-completeness agent (RTV-93) — audit run-tracking + the findings inbox.
 export * from './registerCompletenessRuns.js';
 export * from './registerCompletenessFindings.js';
+// CTPP surveillance (RTV-94/95/96) — collection run-tracking + the surveillance-event inbox.
+export * from './surveillanceRuns.js';
+export * from './surveillanceEvents.js';
 export * from './relations.js';
 // Canonical row types inferred from the tables above (RTV-22) — XRow / XInsert.
 export * from './rowTypes.js';

@@ -101,6 +101,22 @@ export interface CompletenessScheduledJobData {
 
 export type CompletenessJobData = CompletenessRunJobData | CompletenessScheduledJobData;
 
+// ── surveillanceJobs queue (RTV-94/95/96) ────────────────────────────────────
+
+/** `run-surveillance` — one external-signal sweep for an org; `runId` is the surveillance_runs row. */
+export interface SurveillanceRunJobData {
+  runId: string;
+  organizationId: string;
+  userId?: string | null;
+}
+
+/** `surveillance-scheduled-sweep` — the repeatable fan-out: enqueues a sweep for the scheduled org. */
+export interface SurveillanceScheduledJobData {
+  scheduled: true;
+}
+
+export type SurveillanceJobData = SurveillanceRunJobData | SurveillanceScheduledJobData;
+
 // ── Job handles (what a worker processor receives) ───────────────────────────
 
 export type AssessmentJob = Job<AssessmentJobData>;
@@ -108,3 +124,4 @@ export type QuestionnaireJob = Job<QuestionnaireJobData>;
 export type MonitoringJob = Job<MonitoringJobData>;
 export type DiscoveryJob = Job<DiscoveryJobData>;
 export type CompletenessJob = Job<CompletenessJobData>;
+export type SurveillanceJob = Job<SurveillanceJobData>;

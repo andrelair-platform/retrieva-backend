@@ -77,3 +77,6 @@ export { DiscoveryRepository, discoveryRepository } from './drizzle/DiscoveryRep
 
 // Register-completeness agent (RTV-93) — audit runs + the findings inbox.
 export { CompletenessRepository, completenessRepository } from './drizzle/CompletenessRepository.js';
+
+// CTPP surveillance (RTV-94/95/96) — collection runs + the surveillance-event inbox + blast-radius.
+export { SurveillanceRepository, surveillanceRepository } from './drizzle/SurveillanceRepository.js';

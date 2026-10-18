@@ -3,6 +3,7 @@ import './questionnaireWorker.js';
 import './monitoringWorker.js';
 import './discoveryWorker.js';
 import './completenessWorker.js';
+import './surveillanceWorker.js';
 import logger from '../config/logger.js';
 import { disconnectRedis } from '../config/redis.js';
 import { closeQueues } from '../config/queue.js';
@@ -17,6 +18,7 @@ logger.info('  - Questionnaire Worker');
 logger.info('  - Monitoring Worker (24h schedule)');
 logger.info('  - Discovery Worker (async sweeps)');
 logger.info('  - Completeness Worker (register audits)');
+logger.info('  - Surveillance Worker (CTPP signals)');
 logger.info('='.repeat(60));
 
 /**

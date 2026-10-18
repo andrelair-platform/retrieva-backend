@@ -28,6 +28,7 @@ import {
   schedulePeriodicReassessmentJob,
   scheduleDiscoverySweep,
   scheduleCompletenessAudit,
+  scheduleSurveillanceSweep,
 } from './config/queue.js';
 
 const port = process.env.PORT || 3000;
@@ -82,6 +83,14 @@ const startServer = async () => {
     // Schedule the repeatable register-completeness audit (RTV-93 — opt-in via COMPLETENESS_SCHEDULE_ENABLED)
     await scheduleCompletenessAudit().catch((err) =>
       logger.error('Failed to schedule completeness audit (non-critical)', {
+        service: 'rag-backend',
+        error: err.message,
+      })
+    );
+
+    // Schedule the repeatable CTPP surveillance sweep (RTV-94 — opt-in via SURVEILLANCE_SCHEDULE_ENABLED)
+    await scheduleSurveillanceSweep().catch((err) =>
+      logger.error('Failed to schedule surveillance sweep (non-critical)', {
         service: 'rag-backend',
         error: err.message,
       })

@@ -2,19 +2,19 @@
 
 ## Columns
 
-| Name            | Type                     | Default           | Nullable | Children                                                                                                                                                                                          | Parents                                         | Comment |
-| --------------- | ------------------------ | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ------- |
-| canonical_name  | text                     |                   | false    |                                                                                                                                                                                                   |                                                 |         |
-| created_at      | timestamp with time zone | now()             | false    |                                                                                                                                                                                                   |                                                 |         |
-| display_name    | text                     |                   | false    |                                                                                                                                                                                                   |                                                 |         |
-| id              | uuid                     | gen_random_uuid() | false    | [public.arrangements](public.arrangements.md) [public.evidence](public.evidence.md) [public.ict_services](public.ict_services.md) [public.provider_dependencies](public.provider_dependencies.md) |                                                 |         |
-| kind            | provider_node_kind       |                   | false    |                                                                                                                                                                                                   |                                                 |         |
-| lei             | text                     |                   | true     |                                                                                                                                                                                                   |                                                 |         |
-| organization_id | uuid                     |                   | false    |                                                                                                                                                                                                   | [public.organizations](public.organizations.md) |         |
-| provider_type   | text                     |                   | true     |                                                                                                                                                                                                   |                                                 |         |
-| tier            | tier                     |                   | true     |                                                                                                                                                                                                   |                                                 |         |
-| updated_at      | timestamp with time zone | now()             | false    |                                                                                                                                                                                                   |                                                 |         |
-| workspace_id    | uuid                     |                   | true     |                                                                                                                                                                                                   | [public.workspaces](public.workspaces.md)       |         |
+| Name            | Type                     | Default           | Nullable | Children                                                                                                                                                                                                                                                      | Parents                                         | Comment |
+| --------------- | ------------------------ | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ------- |
+| canonical_name  | text                     |                   | false    |                                                                                                                                                                                                                                                               |                                                 |         |
+| created_at      | timestamp with time zone | now()             | false    |                                                                                                                                                                                                                                                               |                                                 |         |
+| display_name    | text                     |                   | false    |                                                                                                                                                                                                                                                               |                                                 |         |
+| id              | uuid                     | gen_random_uuid() | false    | [public.arrangements](public.arrangements.md) [public.evidence](public.evidence.md) [public.ict_services](public.ict_services.md) [public.provider_dependencies](public.provider_dependencies.md) [public.surveillance_events](public.surveillance_events.md) |                                                 |         |
+| kind            | provider_node_kind       |                   | false    |                                                                                                                                                                                                                                                               |                                                 |         |
+| lei             | text                     |                   | true     |                                                                                                                                                                                                                                                               |                                                 |         |
+| organization_id | uuid                     |                   | false    |                                                                                                                                                                                                                                                               | [public.organizations](public.organizations.md) |         |
+| provider_type   | text                     |                   | true     |                                                                                                                                                                                                                                                               |                                                 |         |
+| tier            | tier                     |                   | true     |                                                                                                                                                                                                                                                               |                                                 |         |
+| updated_at      | timestamp with time zone | now()             | false    |                                                                                                                                                                                                                                                               |                                                 |         |
+| workspace_id    | uuid                     |                   | true     |                                                                                                                                                                                                                                                               | [public.workspaces](public.workspaces.md)       |         |
 
 ## Constraints
 
@@ -44,6 +44,7 @@ erDiagram
 "public.ict_services" }o--|| "public.provider_nodes" : "FOREIGN KEY (provider_id) REFERENCES provider_nodes(id) ON DELETE CASCADE"
 "public.provider_dependencies" }o--|| "public.provider_nodes" : "FOREIGN KEY (child_node_id) REFERENCES provider_nodes(id) ON DELETE CASCADE"
 "public.provider_dependencies" }o--|| "public.provider_nodes" : "FOREIGN KEY (parent_node_id) REFERENCES provider_nodes(id) ON DELETE CASCADE"
+"public.surveillance_events" }o--o| "public.provider_nodes" : "FOREIGN KEY (provider_node_id) REFERENCES provider_nodes(id) ON DELETE SET NULL"
 "public.provider_nodes" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.provider_nodes" }o--o| "public.workspaces" : "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
 
@@ -120,6 +121,26 @@ erDiagram
   text relationship
   provider_source source
   timestamp_with_time_zone updated_at
+}
+"public.surveillance_events" {
+  boolean alerted
+  jsonb blast_radius
+  timestamp_with_time_zone created_at
+  text external_id
+  uuid id
+  timestamp_with_time_zone observed_at
+  uuid organization_id FK
+  text provider_name
+  uuid provider_node_id FK
+  uuid run_id FK
+  surveillance_severity severity
+  surveillance_source source
+  surveillance_event_status status
+  text summary
+  text title
+  text type
+  timestamp_with_time_zone updated_at
+  text url
 }
 "public.organizations" {
   text country

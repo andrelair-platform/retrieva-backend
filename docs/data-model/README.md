@@ -30,6 +30,8 @@
 | [public.register_completeness_runs](public.register_completeness_runs.md)         | 14      |         | BASE TABLE |
 | [public.risks](public.risks.md)                                                   | 16      |         | BASE TABLE |
 | [public.role_assignments](public.role_assignments.md)                             | 7       |         | BASE TABLE |
+| [public.surveillance_events](public.surveillance_events.md)                       | 18      |         | BASE TABLE |
+| [public.surveillance_runs](public.surveillance_runs.md)                           | 15      |         | BASE TABLE |
 | [public.users](public.users.md)                                                   | 26      |         | BASE TABLE |
 | [public.vendor_questionnaires](public.vendor_questionnaires.md)                   | 20      |         | BASE TABLE |
 | [public.workspace_members](public.workspace_members.md)                           | 10      |         | BASE TABLE |
@@ -75,6 +77,10 @@
 | public.risk_severity                  | critical, high, low, medium                                                                                                                                      |
 | public.risk_status                    | accepted, closed, mitigated, mitigating, open                                                                                                                    |
 | public.scope_type                     | entity, group, legal_entity                                                                                                                                      |
+| public.surveillance_event_status      | acknowledged, open, resolved                                                                                                                                     |
+| public.surveillance_run_status        | failed, queued, running, succeeded                                                                                                                               |
+| public.surveillance_severity          | critical, high, low, medium                                                                                                                                      |
+| public.surveillance_source            | breach, cve, other, statuspage                                                                                                                                   |
 | public.tier                           | critical, important, standard                                                                                                                                    |
 | public.user_role                      | admin, user                                                                                                                                                      |
 | public.vendor_status                  | active, exited, under-review                                                                                                                                     |
@@ -153,6 +159,11 @@ erDiagram
 "public.risks" }o--|| "public.arrangements" : "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE"
 "public.risks" }o--|| "public.findings" : "FOREIGN KEY (finding_id) REFERENCES findings(id) ON DELETE CASCADE"
 "public.role_assignments" }o--|| "public.users" : "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
+"public.surveillance_events" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+"public.surveillance_events" }o--o| "public.provider_nodes" : "FOREIGN KEY (provider_node_id) REFERENCES provider_nodes(id) ON DELETE SET NULL"
+"public.surveillance_events" }o--|| "public.surveillance_runs" : "FOREIGN KEY (run_id) REFERENCES surveillance_runs(id) ON DELETE CASCADE"
+"public.surveillance_runs" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.surveillance_runs" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.users" }o--o| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE SET NULL"
 "public.vendor_questionnaires" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.vendor_questionnaires" }o--|| "public.workspaces" : "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
@@ -515,6 +526,43 @@ erDiagram
   scope_type scope_type
   member_status status
   uuid user_id FK
+}
+"public.surveillance_events" {
+  boolean alerted
+  jsonb blast_radius
+  timestamp_with_time_zone created_at
+  text external_id
+  uuid id
+  timestamp_with_time_zone observed_at
+  uuid organization_id FK
+  text provider_name
+  uuid provider_node_id FK
+  uuid run_id FK
+  surveillance_severity severity
+  surveillance_source source
+  surveillance_event_status status
+  text summary
+  text title
+  text type
+  timestamp_with_time_zone updated_at
+  text url
+}
+"public.surveillance_runs" {
+  jsonb by_severity
+  timestamp_with_time_zone created_at
+  uuid created_by FK
+  text error
+  integer fetched
+  timestamp_with_time_zone finished_at
+  uuid id
+  integer matched
+  integer new_events
+  uuid organization_id FK
+  integer polled
+  integer raised
+  timestamp_with_time_zone started_at
+  surveillance_run_status status
+  timestamp_with_time_zone updated_at
 }
 "public.users" {
   timestamp_with_time_zone created_at
