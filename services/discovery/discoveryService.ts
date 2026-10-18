@@ -42,7 +42,7 @@ export function isSourceConfigured(source: DiscoverySource): boolean {
 export interface SkippedApp {
   externalId: string;
   externalName: string;
-  reason: 'already-registered' | 'duplicate-in-batch';
+  reason: 'already-registered' | 'duplicate-in-batch' | 'already-proposed';
 }
 
 export interface DiscoveryResult {
@@ -65,6 +65,9 @@ export interface RunDiscoveryArgs {
     mapApp?: (app: DiscoveredApp, sessionId: string) => Promise<DiscoveredProposal>;
     listExistingProviders?: (organizationId: string) => Promise<{ displayName?: string }[]>;
     recordAuditFn?: typeof recordAudit;
+    /** source `externalId`s already in the inbox (pending/confirmed) — skip them so a repeated or
+     *  scheduled sweep is idempotent (doesn't re-propose the same app each cycle). */
+    knownExternalIds?: Set<string>;
   };
 }
 
@@ -98,6 +101,7 @@ export async function runDiscovery({
   const proposals: DiscoveredProposal[] = [];
   const skipped: SkippedApp[] = [];
   const seenInBatch = new Set<string>(); // dedupe set 2: within this run (by source app id)
+  const knownExternalIds = deps.knownExternalIds ?? new Set<string>(); // set 3: already in the inbox
 
   for (const app of apps) {
     const externalName = app.label || app.name;
@@ -106,6 +110,13 @@ export async function runDiscovery({
       continue;
     }
     seenInBatch.add(app.id);
+
+    // Dedupe set 3: an app already in the inbox (pending/confirmed) — skip before the LLM call so a
+    // repeated / scheduled sweep stays idempotent.
+    if (knownExternalIds.has(app.id)) {
+      skipped.push({ externalId: app.id, externalName, reason: 'already-proposed' });
+      continue;
+    }
 
     // Cheap pre-dedupe on the app's own name (avoids an LLM call for an obviously-known vendor).
     if (known.has(norm(externalName))) {

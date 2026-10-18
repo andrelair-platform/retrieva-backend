@@ -65,15 +65,23 @@ export interface ReviewReminderJobData {
 
 export type MonitoringJobData = ScheduledJobData | ReviewReminderJobData;
 
-/** `run-discovery` (RTV-91c) — an async discovery sweep triggered by the API; `runId` is the
+/** `run-discovery` (RTV-91c) — an async discovery sweep for one org+source; `runId` is the
  *  discovery_runs row the caller polls. */
-export interface DiscoveryJobData {
+export interface DiscoveryRunJobData {
   runId: string;
   organizationId: string;
   source: 'okta' | 'authentik';
   userId?: string | null;
   dryRun?: boolean;
 }
+
+/** `discovery-scheduled-sweep` (RTV-91d) — the repeatable fan-out: enqueues a run per configured
+ *  source for the scheduled org. Carries no per-run data. */
+export interface DiscoveryScheduledJobData {
+  scheduled: true;
+}
+
+export type DiscoveryJobData = DiscoveryRunJobData | DiscoveryScheduledJobData;
 
 // ── Job handles (what a worker processor receives) ───────────────────────────
 

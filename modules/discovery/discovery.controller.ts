@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import { isSourceConfigured } from '../../services/discovery/discoveryService.js';
-import { discoveryQueue } from '../../config/queue.js';
+import { enqueueDiscoveryRun } from '../../services/discovery/enqueue.js';
 import { discoveryRepository } from '../../repositories/index.js';
 import { confirmProposal } from '../../services/intake/arrangementIntakeService.js';
 import type { DiscoverySource } from '../../services/discovery/types.js';
@@ -33,17 +33,7 @@ function makeRun(source: DiscoverySource) {
     }
 
     const dryRun = req.query.dryRun === 'true' || req.body?.dryRun === true;
-    const run = await discoveryRepository.createRun({
-      organizationId,
-      source,
-      dryRun,
-      createdBy: req.user!.userId,
-    });
-    await discoveryQueue.add(
-      'run-discovery',
-      { runId: run.id, organizationId, source, userId: req.user!.userId, dryRun },
-      { jobId: `discovery-${run.id}` }
-    );
+    const run = await enqueueDiscoveryRun({ organizationId, source, userId: req.user!.userId, dryRun });
 
     sendSuccess(res, 202, `${source} discovery queued`, {
       runId: run.id,

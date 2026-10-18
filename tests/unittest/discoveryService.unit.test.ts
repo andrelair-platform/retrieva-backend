@@ -93,6 +93,24 @@ describe('runDiscovery', () => {
     expect(res.skipped.some((s) => s.reason === 'already-registered')).toBe(true);
   });
 
+  it('skips apps already in the inbox (knownExternalIds) → idempotent re-runs', async () => {
+    const mapApp = vi.fn(async (a) => proposalOf(a.label, a.id));
+    const res = await runDiscovery({
+      source: 'authentik',
+      organizationId: ORG,
+      deps: {
+        listApps: async () => [appOf('1', 'Datadog'), appOf('2', 'Grafana')],
+        listExistingProviders: async () => [],
+        mapApp,
+        recordAuditFn: vi.fn(),
+        knownExternalIds: new Set(['1']), // Datadog already proposed
+      },
+    });
+    expect(res.proposed).toBe(1); // only Grafana
+    expect(mapApp).toHaveBeenCalledTimes(1); // skipped BEFORE the LLM call
+    expect(res.skipped).toContainEqual({ externalId: '1', externalName: 'Datadog', reason: 'already-proposed' });
+  });
+
   it('dry-run does not record an audit entry', async () => {
     const recordAuditFn = vi.fn();
     const res = await runDiscovery({
