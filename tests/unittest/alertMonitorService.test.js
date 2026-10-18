@@ -23,6 +23,7 @@ const { mockWorkspaceRepo, mockAssessmentRepo, mockMemberRepo, mockOrgRepo, mock
     mockWorkspaceRepo: {
       findWithCertifications: vi.fn(),
       findByContractEndingSoon: vi.fn(),
+      findByPriceReviewSoon: vi.fn(),
       findDueForReview: vi.fn(),
       find: vi.fn(),
       findById: vi.fn(),
@@ -101,6 +102,7 @@ function makeOwner(overrides = {}) {
 function setupEmptyChecks() {
   mockWorkspaceRepo.findWithCertifications.mockResolvedValue([]);
   mockWorkspaceRepo.findByContractEndingSoon.mockResolvedValue([]);
+  mockWorkspaceRepo.findByPriceReviewSoon.mockResolvedValue([]);
   mockWorkspaceRepo.findDueForReview.mockResolvedValue([]);
   mockWorkspaceRepo.find.mockResolvedValue([]);
   mockAssessmentRepo.findLatestByWorkspace.mockResolvedValue(null);
@@ -261,6 +263,89 @@ describe('Contract renewal alerts', () => {
       alertsSentAt: { 'contract-renewal-60': new Date(Date.now() - NINETEEN_HOURS_MS) },
     });
     mockWorkspaceRepo.findByContractEndingSoon.mockResolvedValue([workspace]);
+
+    await runMonitoringAlerts();
+
+    expect(emailService.sendMonitoringAlert).not.toHaveBeenCalled();
+  });
+
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('NOTICE-AWARE: warns months out — a 90-day-notice contract ending in 120 days alerts now', async () => {
+    // notice deadline = end−90 = 30 days out; lead is 60d → warn window opened 30 days ago. now is in it.
+    const contractEnd = new Date(Date.now() + 120 * DAY);
+    mockWorkspaceRepo.findByContractEndingSoon.mockResolvedValue([
+      makeWorkspace({ contractEnd, noticePeriodDays: 90 }),
+    ]);
+
+    await runMonitoringAlerts();
+
+    expect(emailService.sendMonitoringAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        alertType: 'contract-renewal-60',
+        details: expect.objectContaining({ noticePeriodDays: 90, pastNoticeDeadline: false }),
+      })
+    );
+  });
+
+  it('NOTICE-AWARE: does NOT warn yet for a 90-day-notice contract ending in 200 days (outside the lead window)', async () => {
+    // notice deadline = end−90 = 110 days out; warn opens at deadline−60 = 50 days out → not yet.
+    const contractEnd = new Date(Date.now() + 200 * DAY);
+    mockWorkspaceRepo.findByContractEndingSoon.mockResolvedValue([
+      makeWorkspace({ contractEnd, noticePeriodDays: 90 }),
+    ]);
+
+    await runMonitoringAlerts();
+
+    expect(emailService.sendMonitoringAlert).not.toHaveBeenCalled();
+  });
+
+  it('no notice period behaves like the legacy 60-day-before-end alert', async () => {
+    const contractEnd = new Date(Date.now() + 30 * DAY);
+    mockWorkspaceRepo.findByContractEndingSoon.mockResolvedValue([makeWorkspace({ contractEnd })]); // noticePeriodDays undefined
+    await runMonitoringAlerts();
+    expect(emailService.sendMonitoringAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        alertType: 'contract-renewal-60',
+        details: expect.objectContaining({ noticePeriodDays: null }),
+      })
+    );
+  });
+});
+
+describe('Price escalation alerts', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupEmptyChecks();
+    mockMemberRepo.findOwnersWithUser.mockResolvedValue([makeOwner()]);
+    emailService.sendMonitoringAlert.mockResolvedValue({});
+  });
+
+  it('warns ahead of a price-review date with the escalation terms', async () => {
+    const priceReviewDate = new Date(Date.now() + 45 * DAY);
+    mockWorkspaceRepo.findByPriceReviewSoon.mockResolvedValue([
+      makeWorkspace({ priceReviewDate, priceEscalation: { type: 'fixed_pct', pct: 7 } }),
+    ]);
+
+    await runMonitoringAlerts();
+
+    expect(emailService.sendMonitoringAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        alertType: 'price-escalation',
+        details: expect.objectContaining({ escalationType: 'fixed_pct', escalationPct: 7 }),
+      })
+    );
+  });
+
+  it('skips a price-escalation alert within the dedup window', async () => {
+    const priceReviewDate = new Date(Date.now() + 45 * DAY);
+    mockWorkspaceRepo.findByPriceReviewSoon.mockResolvedValue([
+      makeWorkspace({
+        priceReviewDate,
+        alertsSentAt: { 'price-escalation': new Date(Date.now() - NINETEEN_HOURS_MS) },
+      }),
+    ]);
 
     await runMonitoringAlerts();
 

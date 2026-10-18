@@ -39,7 +39,7 @@
 | [public.users](public.users.md)                                                   | 26      |         | BASE TABLE |
 | [public.vendor_questionnaires](public.vendor_questionnaires.md)                   | 20      |         | BASE TABLE |
 | [public.workspace_members](public.workspace_members.md)                           | 10      |         | BASE TABLE |
-| [public.workspaces](public.workspaces.md)                                         | 23      |         | BASE TABLE |
+| [public.workspaces](public.workspaces.md)                                         | 26      |         | BASE TABLE |
 
 ## Stored procedures and functions
 
@@ -733,7 +733,10 @@ erDiagram
   uuid id
   text name
   timestamp_with_time_zone next_review_date
+  integer notice_period_days
   uuid organization_id FK
+  jsonb price_escalation
+  timestamp_with_time_zone price_review_date
   text service_type
   workspace_sync_status sync_status
   timestamp_with_time_zone updated_at

@@ -168,7 +168,10 @@ erDiagram
   uuid id
   text name
   timestamp_with_time_zone next_review_date
+  integer notice_period_days
   uuid organization_id FK
+  jsonb price_escalation
+  timestamp_with_time_zone price_review_date
   text service_type
   workspace_sync_status sync_status
   timestamp_with_time_zone updated_at

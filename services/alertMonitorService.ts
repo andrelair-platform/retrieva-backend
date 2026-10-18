@@ -32,11 +32,12 @@ export async function runMonitoringAlerts() {
   const results = await Promise.allSettled([
     checkCertificationExpiry(),
     checkContractRenewal(),
+    checkPriceEscalation(),
     checkAnnualReviewOverdue(),
     checkAssessmentOverdue(),
     checkConcentrationRisk(),
   ]);
-  const labels = ['Cert expiry', 'Contract renewal', 'Annual review', 'Assessment overdue', 'Concentration risk'];
+  const labels = ['Cert expiry', 'Contract renewal', 'Price escalation', 'Annual review', 'Assessment overdue', 'Concentration risk'];
   results.forEach((r, i) => {
     if (r.status === 'rejected') {
       logger.error(`${labels[i]} check failed`, { error: r.reason?.message, service: 'alertMonitor' });
@@ -86,23 +87,71 @@ async function checkCertificationExpiry() {
   }
 }
 
-// Check 2 — Contract renewal (60 days before contractEnd)
+const DAY_MS = 24 * 60 * 60 * 1000;
+const RENEWAL_LEAD_DAYS = 60; // warn this far before the NOTICE DEADLINE
+const RENEWAL_HORIZON_DAYS = 400; // widen the DB scan so long notice periods are caught early
+const PRICE_LEAD_DAYS = 90; // warn this far before a price-review / escalation date
+
+// Check 2 — Contract renewal, NOTICE-PERIOD AWARE. The lock-in point isn't the contract end, it's the
+// NOTICE DEADLINE = contractEnd − noticePeriodDays (the last day to give termination notice). We warn
+// from RENEWAL_LEAD_DAYS before that deadline through to contract end — so a 90-day-notice contract is
+// flagged ~5 months before it ends, not 60 days. No notice period on record ⇒ deadline = contractEnd
+// (the legacy 60-day-before-end behaviour, unchanged).
 async function checkContractRenewal() {
   const now = new Date();
-  const in60Days = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
-
-  const workspaces = await workspaceRepository.findByContractEndingSoon(now, in60Days);
+  const horizon = new Date(now.getTime() + RENEWAL_HORIZON_DAYS * DAY_MS);
+  const workspaces = await workspaceRepository.findByContractEndingSoon(now, horizon);
 
   for (const workspace of workspaces) {
-    const alertKey = 'contract-renewal-60';
+    const contractEnd = new Date(workspace.contractEnd);
+    const notice = Number(workspace.noticePeriodDays) || 0;
+    const noticeDeadline = new Date(contractEnd.getTime() - notice * DAY_MS);
+    const warnFrom = new Date(noticeDeadline.getTime() - RENEWAL_LEAD_DAYS * DAY_MS);
+    // Warn only once we're within the lead window, and keep warning up to contract end.
+    if (now < warnFrom || now > contractEnd) continue;
+
+    const alertKey = 'contract-renewal-60'; // stable key (dedup + back-compat with the prior alert)
     if (isWithinDedupWindow(workspace, alertKey)) continue;
 
     await sendAlertToOwners(workspace, 'contract-renewal-60', {
       contractEnd: formatDate(workspace.contractEnd),
+      noticePeriodDays: notice || null,
+      noticeDeadline: notice ? formatDate(noticeDeadline) : null,
+      daysToNoticeDeadline: Math.max(0, Math.round((noticeDeadline.getTime() - now.getTime()) / DAY_MS)),
+      pastNoticeDeadline: now > noticeDeadline,
     });
     await workspaceRepository.setAlertSentAt(workspace.id, alertKey);
 
-    logger.info('Contract renewal alert sent', { service: 'alertMonitor', workspaceId: workspace.id });
+    logger.info('Contract renewal alert sent', {
+      service: 'alertMonitor',
+      workspaceId: workspace.id,
+      noticePeriodDays: notice,
+      pastNoticeDeadline: now > noticeDeadline,
+    });
+  }
+}
+
+// Check 2b — Price escalation: warn PRICE_LEAD_DAYS before the next price-review / escalation date, so a
+// price increase doesn't land unseen. The structured terms (type/pct) ride along in the alert details.
+async function checkPriceEscalation() {
+  const now = new Date();
+  const soon = new Date(now.getTime() + PRICE_LEAD_DAYS * DAY_MS);
+  const workspaces = await workspaceRepository.findByPriceReviewSoon(now, soon);
+
+  for (const workspace of workspaces) {
+    const alertKey = 'price-escalation';
+    if (isWithinDedupWindow(workspace, alertKey)) continue;
+
+    const terms = (workspace.priceEscalation as Record<string, unknown> | null) || {};
+    await sendAlertToOwners(workspace, 'price-escalation', {
+      priceReviewDate: formatDate(workspace.priceReviewDate),
+      daysToReview: Math.max(0, Math.round((new Date(workspace.priceReviewDate).getTime() - now.getTime()) / DAY_MS)),
+      escalationType: terms.type ?? null,
+      escalationPct: terms.pct ?? null,
+    });
+    await workspaceRepository.setAlertSentAt(workspace.id, alertKey);
+
+    logger.info('Price escalation alert sent', { service: 'alertMonitor', workspaceId: workspace.id });
   }
 }
 

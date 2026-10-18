@@ -60,6 +60,17 @@ export class WorkspaceRepository extends BaseDrizzleRepository {
     return this.updateById(id, { nextReviewDate });
   }
 
+  /** Vendors whose next price-review / escalation date falls in [from, to] — for the lifecycle alert. */
+  async findByPriceReviewSoon(from: Date, to: Date) {
+    return this.find(
+      and(
+        isNotNull(workspaces.priceReviewDate),
+        gte(workspaces.priceReviewDate, from),
+        lte(workspaces.priceReviewDate, to)
+      )
+    );
+  }
+
   async findByOrgAndName(organizationId: string, name: string) {
     return this.findOne(
       and(eq(workspaces.organizationId, organizationId), eq(workspaces.name, name))
