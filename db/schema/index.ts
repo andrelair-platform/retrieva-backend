@@ -42,6 +42,8 @@ export * from './contractAmendments.js';
 export * from './ddqContradictions.js';
 // Dynamic exit strategy & transition planning (RTV-99/100/101/102) — the exit-artefact inbox.
 export * from './exitArtefacts.js';
+// Unified per-vendor DORA score — the append-only score history behind the live trend.
+export * from './doraScoreHistory.js';
 export * from './relations.js';
 // Canonical row types inferred from the tables above (RTV-22) — XRow / XInsert.
 export * from './rowTypes.js';

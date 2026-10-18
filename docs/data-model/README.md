@@ -17,6 +17,7 @@
 | [public.ddq_contradictions](public.ddq_contradictions.md)                         | 18      |         | BASE TABLE |
 | [public.discovery_proposals](public.discovery_proposals.md)                       | 11      |         | BASE TABLE |
 | [public.discovery_runs](public.discovery_runs.md)                                 | 16      |         | BASE TABLE |
+| [public.dora_score_history](public.dora_score_history.md)                         | 7       |         | BASE TABLE |
 | [public.evidence](public.evidence.md)                                             | 17      |         | BASE TABLE |
 | [public.evidence_collection_request](public.evidence_collection_request.md)       | 15      |         | BASE TABLE |
 | [public.exit_artefacts](public.exit_artefacts.md)                                 | 16      |         | BASE TABLE |
@@ -38,7 +39,7 @@
 | [public.users](public.users.md)                                                   | 26      |         | BASE TABLE |
 | [public.vendor_questionnaires](public.vendor_questionnaires.md)                   | 20      |         | BASE TABLE |
 | [public.workspace_members](public.workspace_members.md)                           | 10      |         | BASE TABLE |
-| [public.workspaces](public.workspaces.md)                                         | 19      |         | BASE TABLE |
+| [public.workspaces](public.workspaces.md)                                         | 23      |         | BASE TABLE |
 
 ## Stored procedures and functions
 
@@ -68,6 +69,7 @@
 | public.discovery_run_status           | failed, queued, running, succeeded                                                                                                                               |
 | public.discovery_source               | authentik, erpnext, generic, odata, okta, rest, scim                                                                                                             |
 | public.domain_role                    | analyst, auditor, business_owner, dpo, entity_admin, group_admin, group_compliance, group_risk, ict_risk_officer, legal, vendor_contact, viewer                  |
+| public.dora_rating                    | AMBER, GREEN, RED                                                                                                                                                |
 | public.evidence_category              | bcp_dr_plan, dora_addendum, exit_strategy, iso27001_cert, master_service_agreement, risk_classification, soc2_report, subprocessor_list, vendor_dora_attestation |
 | public.evidence_request_status        | fulfilled, pending, revoked                                                                                                                                      |
 | public.evidence_scope                 | arrangement, provider                                                                                                                                            |
@@ -139,6 +141,8 @@ erDiagram
 "public.discovery_proposals" }o--|| "public.discovery_runs" : "FOREIGN KEY (run_id) REFERENCES discovery_runs(id) ON DELETE CASCADE"
 "public.discovery_runs" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.discovery_runs" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+"public.dora_score_history" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+"public.dora_score_history" }o--|| "public.workspaces" : "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
 "public.evidence" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.evidence" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.evidence" }o--o| "public.provider_nodes" : "FOREIGN KEY (provider_id) REFERENCES provider_nodes(id) ON DELETE CASCADE"
@@ -374,6 +378,15 @@ erDiagram
   timestamp_with_time_zone started_at
   discovery_run_status status
   timestamp_with_time_zone updated_at
+}
+"public.dora_score_history" {
+  jsonb breakdown
+  timestamp_with_time_zone created_at
+  uuid id
+  uuid organization_id FK
+  dora_rating rating
+  integer score
+  uuid workspace_id FK
 }
 "public.evidence" {
   uuid arrangement_id FK
@@ -712,6 +725,10 @@ erDiagram
   text country
   timestamp_with_time_zone created_at
   text description
+  dora_rating dora_rating
+  integer dora_score
+  timestamp_with_time_zone dora_score_at
+  jsonb dora_score_breakdown
   text exit_strategy_doc
   uuid id
   text name

@@ -89,6 +89,10 @@ erDiagram
   text country
   timestamp_with_time_zone created_at
   text description
+  dora_rating dora_rating
+  integer dora_score
+  timestamp_with_time_zone dora_score_at
+  jsonb dora_score_breakdown
   text exit_strategy_doc
   uuid id
   text name

@@ -6,6 +6,7 @@ import {
   pgTable,
   uuid,
   text,
+  integer,
   timestamp,
   jsonb,
   index,
@@ -19,6 +20,7 @@ import {
   vendorStatusEnum,
   workspaceMemberRoleEnum,
   memberStatusEnum,
+  doraRatingEnum,
 } from './enums.js';
 import { users } from './users.js';
 import { organizations } from './organizations.js';
@@ -47,6 +49,13 @@ export const workspaces = pgTable(
     exitStrategyDoc: text('exit_strategy_doc'),
     // Map<certType|alertKey, ISO date>
     alertsSentAt: jsonb('alerts_sent_at').notNull().default({}),
+    // Unified per-vendor DORA score cache (push-updated by the scoring engine on any input change —
+    // assessment/questionnaire/finding/risk). NULL = not yet assessed. Cached here so a vendor list
+    // renders every score without recomputing; the full component breakdown is the jsonb.
+    doraScore: integer('dora_score'), // 0..100, null when not assessed
+    doraRating: doraRatingEnum('dora_rating'), // GREEN | AMBER | RED, null when not assessed
+    doraScoreBreakdown: jsonb('dora_score_breakdown'), // { components, metrics, trend30Days }
+    doraScoreAt: timestamp('dora_score_at', { withTimezone: true }),
     organizationId: uuid('organization_id').references(() => organizations.id, {
       onDelete: 'set null',
     }),

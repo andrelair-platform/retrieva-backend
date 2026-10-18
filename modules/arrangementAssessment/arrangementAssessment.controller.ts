@@ -213,5 +213,9 @@ export const updateRiskStatus = catchAsync(async (req: Request, res: Response) =
       capability,
     },
   });
+  // Push-update the vendor's unified DORA score — a risk state change moves the risk-penalty pillar.
+  const { recalcForArrangementSafe } = await import('../../services/scoring/recalculateDoraScore.js');
+  await recalcForArrangementSafe(organizationId, String(risk.arrangementId));
+
   sendSuccess(res, 200, 'Risk updated', { risk: updated });
 });

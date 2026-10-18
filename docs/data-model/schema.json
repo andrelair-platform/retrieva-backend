@@ -2006,6 +2006,107 @@
       ]
     },
     {
+      "name": "public.dora_score_history",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "breakdown",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "rating",
+          "type": "dora_rating",
+          "nullable": false
+        },
+        {
+          "name": "score",
+          "type": "integer",
+          "nullable": false
+        },
+        {
+          "name": "workspace_id",
+          "type": "uuid",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "dora_score_history_pkey",
+          "def": "CREATE UNIQUE INDEX dora_score_history_pkey ON public.dora_score_history USING btree (id)",
+          "table": "public.dora_score_history",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "dora_score_history_ws_created_idx",
+          "def": "CREATE INDEX dora_score_history_ws_created_idx ON public.dora_score_history USING btree (workspace_id, created_at DESC NULLS LAST)",
+          "table": "public.dora_score_history",
+          "columns": [
+            "workspace_id",
+            "created_at"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "dora_score_history_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.dora_score_history",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "dora_score_history_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.dora_score_history",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "dora_score_history_workspace_id_workspaces_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE",
+          "table": "public.dora_score_history",
+          "referenced_table": "public.workspaces",
+          "columns": [
+            "workspace_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "public.evidence",
       "type": "BASE TABLE",
       "columns": [
@@ -5454,6 +5555,26 @@
           "default": "''::text"
         },
         {
+          "name": "dora_rating",
+          "type": "dora_rating",
+          "nullable": true
+        },
+        {
+          "name": "dora_score",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "dora_score_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "dora_score_breakdown",
+          "type": "jsonb",
+          "nullable": true
+        },
+        {
           "name": "exit_strategy_doc",
           "type": "text",
           "nullable": true
@@ -6098,6 +6219,32 @@
       ],
       "parent_cardinality": "exactly_one",
       "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.dora_score_history",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.dora_score_history",
+      "columns": [
+        "workspace_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.workspaces",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
     },
     {
       "table": "public.evidence",
@@ -7006,6 +7153,14 @@
         "legal",
         "vendor_contact",
         "viewer"
+      ]
+    },
+    {
+      "name": "public.dora_rating",
+      "values": [
+        "AMBER",
+        "GREEN",
+        "RED"
       ]
     },
     {

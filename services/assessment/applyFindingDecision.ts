@@ -130,5 +130,12 @@ export async function applyFindingDecision({
     }
   }
 
+  // Push-update the vendor's unified DORA score — a decided finding (and any risk it opened) changes the
+  // risk-penalty pillar. Resolves the vendor via the arrangement→provider-node link; no-op if unmapped.
+  if (finding.arrangementId) {
+    const { recalcForArrangementSafe } = await import('../scoring/recalculateDoraScore.js');
+    await recalcForArrangementSafe(organizationId, String(finding.arrangementId));
+  }
+
   return { ok: true, finding: updated, risk, override };
 }
