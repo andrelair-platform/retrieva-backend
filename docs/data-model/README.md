@@ -66,7 +66,7 @@
 | public.dependency_level               | high, low, medium                                                                                                                                                |
 | public.discovery_proposal_status      | confirmed, dismissed, pending                                                                                                                                    |
 | public.discovery_run_status           | failed, queued, running, succeeded                                                                                                                               |
-| public.discovery_source               | authentik, erpnext, okta                                                                                                                                         |
+| public.discovery_source               | authentik, erpnext, generic, okta                                                                                                                                |
 | public.domain_role                    | analyst, auditor, business_owner, dpo, entity_admin, group_admin, group_compliance, group_risk, ict_risk_officer, legal, vendor_contact, viewer                  |
 | public.evidence_category              | bcp_dr_plan, dora_addendum, exit_strategy, iso27001_cert, master_service_agreement, risk_classification, soc2_report, subprocessor_list, vendor_dora_attestation |
 | public.evidence_request_status        | fulfilled, pending, revoked                                                                                                                                      |

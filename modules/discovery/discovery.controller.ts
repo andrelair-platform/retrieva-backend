@@ -4,6 +4,7 @@ import { isSourceConfigured } from '../../services/discovery/discoveryService.js
 import { enqueueDiscoveryRun } from '../../services/discovery/enqueue.js';
 import { discoveryRepository } from '../../repositories/index.js';
 import { confirmProposal } from '../../services/intake/arrangementIntakeService.js';
+import { ingestGeneric } from '../../services/discovery/genericIngestion.js';
 import type { DiscoverySource } from '../../services/discovery/types.js';
 
 // Discovery connectors (RTV-91) — ORG-scoped. A connector sweeps a source system and PROPOSES
@@ -21,6 +22,7 @@ const ENV_HINT: Record<DiscoverySource, string> = {
   okta: 'OKTA_ORG_URL and OKTA_API_TOKEN',
   authentik: 'AUTHENTIK_BASE_URL and AUTHENTIK_API_TOKEN',
   erpnext: 'ERPNEXT_BASE_URL, ERPNEXT_API_KEY and ERPNEXT_API_SECRET',
+  generic: 'an uploaded CSV/XLSX file or a pasted JSON array (no env needed)',
 };
 
 /** One enqueue handler per source — same rails, different adapter. Returns 202 + the runId to poll. */
@@ -114,4 +116,62 @@ export const dismissDiscoveryProposal = catchAsync(async (req: Request, res: Res
   const row = await discoveryRepository.setProposalStatus(organizationId, String(req.params.id), 'dismissed');
   if (!row) return sendError(res, 404, 'Proposal not found');
   sendSuccess(res, 200, 'Proposal dismissed', { proposal: row });
+});
+
+// ── Generic AI-ingestion source (RTV-106) ───────────────────────────────────────────────────────────
+// Read the generic input from the request: an uploaded `file` (multer) and/or a pasted JSON array `rows`.
+function genericInput(req: Request) {
+  const buffer = (req as Request & { file?: { buffer?: Buffer } }).file?.buffer;
+  const filename = (req as Request & { file?: { originalname?: string } }).file?.originalname;
+  const json = req.body?.rows;
+  return { buffer, filename, json };
+}
+
+// POST /api/v1/discovery/generic/preview — parse + infer the column mapping on a sample (ONE LLM call),
+// return the inferred mapping + a few normalised rows. No run, no persistence — the human reviews the
+// mapping before committing.
+export const genericPreview = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  const result = await ingestGeneric(genericInput(req), { sessionId: organizationId });
+  sendSuccess(res, 200, 'Generic ingestion preview', {
+    rowCount: result.rowCount,
+    headers: result.headers,
+    mapping: result.mapping,
+    confidence: result.confidence,
+    usedFallback: result.usedFallback,
+    sample: result.sample,
+  });
+});
+
+// POST /api/v1/discovery/generic/run — parse + normalise the upload, then enqueue a discovery run that
+// carries the normalised apps through the SAME async pipeline (worker → mapper → dedup → inbox → confirm).
+export const genericRun = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  const dryRun = req.query.dryRun === 'true' || req.body?.dryRun === true || req.body?.dryRun === 'true';
+
+  const result = await ingestGeneric(genericInput(req), { sessionId: organizationId });
+  if (!result.apps.length) {
+    return sendError(res, 400, 'No vendors could be normalised from the input — check the provider column mapping');
+  }
+  const run = await enqueueDiscoveryRun({
+    organizationId,
+    source: 'generic',
+    userId: req.user!.userId,
+    dryRun,
+    apps: result.apps,
+  });
+  sendSuccess(res, 202, 'Generic discovery queued', {
+    runId: run.id,
+    status: run.status,
+    source: 'generic',
+    dryRun,
+    rowCount: result.rowCount,
+    normalised: result.apps.length,
+    mapping: result.mapping,
+    confidence: result.confidence,
+    usedFallback: result.usedFallback,
+    poll: `/api/v1/discovery/runs/${run.id}`,
+  });
 });

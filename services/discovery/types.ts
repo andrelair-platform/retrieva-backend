@@ -7,7 +7,7 @@
  * AI-ingestion source (upload/point-at-anything → LLM-normalise) will emit into. `meta` carries
  * source-specific hints that help the LLM map the app (sign-on mode, slug, provider, URL, or AP spend).
  */
-export type DiscoverySource = 'okta' | 'authentik' | 'erpnext';
+export type DiscoverySource = 'okta' | 'authentik' | 'erpnext' | 'generic';
 
 export interface DiscoveredApp {
   id: string; // the source record id (Okta app id / Authentik pk / ERPNext supplier)
