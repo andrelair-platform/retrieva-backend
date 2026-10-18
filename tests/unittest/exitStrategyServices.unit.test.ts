@@ -32,31 +32,54 @@ const ctx = (over: Partial<ArrangementContext> = {}): ArrangementContext => ({
 
 beforeEach(() => vi.clearAllMocks());
 
-describe('RTV-100 matchAlternativeProviders', () => {
-  it('uses the injected generator and drops a proposal equal to the incumbent', async () => {
-    const generate = vi.fn(async () => [
-      { name: 'Acme Cloud', providerType: 'cloud', rationale: '', switchingConsiderations: '', dataResidencyFit: '', concentrationNote: '' }, // == incumbent → dropped
-      { name: 'OVHcloud', providerType: 'cloud', rationale: 'EU alt', switchingConsiderations: 'x', dataResidencyFit: 'EU ok', concentrationNote: 'new' },
-    ]);
-    const { payload, usedFallback } = await matchAlternativeProviders(ctx(), { generate });
+describe('RTV-100 matchAlternativeProviders (Verified Substitutes Registry)', () => {
+  const llmAlt = (name) => ({ name, providerType: 'cloud', rationale: 'EU alt', switchingConsiderations: 'x', dataResidencyFit: 'EU ok', concentrationNote: 'new' });
+
+  it('composes the three sources (internal_registry + curated catalog + ai) with provenance, dropping the incumbent', async () => {
+    const generate = vi.fn(async () => [llmAlt('Acme Cloud'), llmAlt('OVHcloud')]); // Acme == incumbent → dropped
+    const loadCatalog = vi.fn(async () => [{ name: 'Scaleway', region: 'EU' }]);
+    const { payload, usedFallback } = await matchAlternativeProviders(ctx({ incumbentSameTypeProviders: ['BigCloud'] }), { generate, loadCatalog });
+
     expect(usedFallback).toBe(false);
-    expect(payload.alternatives.map((a) => a.name)).toEqual(['OVHcloud']);
+    const bySource = Object.fromEntries(payload.alternatives.map((a) => [a.name, a.source]));
+    expect(bySource['BigCloud']).toBe('internal_registry'); // the org's own vetted vendor
+    expect(bySource['Scaleway']).toBe('curated_substitutes_catalog'); // the registry
+    expect(bySource['OVHcloud']).toBe('ai_proposed'); // the LLM
+    expect(payload.alternatives.some((a) => a.name === 'Acme Cloud')).toBe(false); // incumbent dropped
+    // the registry candidate is honestly flagged as concentration-increasing
+    expect(payload.alternatives.find((a) => a.name === 'BigCloud').concentrationNote).toMatch(/concentration/i);
   });
 
-  it('falls back to the curated seed for the provider type on error (never throws)', async () => {
+  it('dedups a name that appears in more than one source (first/registry wins)', async () => {
+    const generate = vi.fn(async () => [llmAlt('OVHcloud')]);
+    const loadCatalog = vi.fn(async () => [{ name: 'OVHcloud', region: 'EU' }]);
+    const { payload } = await matchAlternativeProviders(ctx({ incumbentSameTypeProviders: [] }), { generate, loadCatalog });
+    expect(payload.alternatives.filter((a) => a.name === 'OVHcloud')).toHaveLength(1);
+    expect(payload.alternatives.find((a) => a.name === 'OVHcloud').source).toBe('curated_substitutes_catalog');
+  });
+
+  it('is fail-safe: the LLM failing still yields the catalog + registry (usedFallback=true)', async () => {
     const generate = vi.fn(async () => { throw new Error('LLM down'); });
-    const { payload, usedFallback } = await matchAlternativeProviders(ctx({ providerType: 'cloud' }), { generate });
+    const loadCatalog = vi.fn(async () => [{ name: 'Scaleway', region: 'EU' }, { name: 'OVHcloud', region: 'EU' }]);
+    const { payload, usedFallback } = await matchAlternativeProviders(ctx({ incumbentSameTypeProviders: ['BigCloud'] }), { generate, loadCatalog });
+    expect(usedFallback).toBe(true);
+    expect(payload.alternatives.map((a) => a.name).sort()).toEqual(['BigCloud', 'OVHcloud', 'Scaleway']);
+  });
+
+  it('hard-fallback floor when every source is empty', async () => {
+    const generate = vi.fn(async () => []);
+    const loadCatalog = vi.fn(async () => []);
+    const { payload, usedFallback } = await matchAlternativeProviders(ctx({ providerType: 'cloud', incumbentSameTypeProviders: [] }), { generate, loadCatalog });
     expect(usedFallback).toBe(true);
     expect(payload.alternatives.length).toBeGreaterThan(0);
     expect(payload.alternatives.every((a) => a.name.toLowerCase() !== 'acme cloud')).toBe(true);
   });
 
-  it('default LLM path parses the model JSON', async () => {
+  it('default LLM path parses the model JSON and tags it ai_proposed', async () => {
     invoke.mockResolvedValueOnce({ content: JSON.stringify({ alternatives: [{ name: 'Scaleway', providerType: 'cloud', rationale: 'EU', switchingConsiderations: '', dataResidencyFit: '', concentrationNote: '' }], note: 'verify' }) });
-    const { payload, usedFallback } = await matchAlternativeProviders(ctx());
+    const { payload } = await matchAlternativeProviders(ctx({ incumbentSameTypeProviders: [] })); // no loadCatalog, real LLM path
     expect(invoke).toHaveBeenCalledTimes(1);
-    expect(usedFallback).toBe(false);
-    expect(payload.alternatives[0].name).toBe('Scaleway');
+    expect(payload.alternatives.find((a) => a.name === 'Scaleway').source).toBe('ai_proposed');
   });
 });
 

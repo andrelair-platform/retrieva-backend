@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
-import { exitArtefactRepository } from '../../repositories/index.js';
+import { exitArtefactRepository, substituteProviderRepository } from '../../repositories/index.js';
 import { matchAlternativeProviders } from '../../services/exitStrategy/providerMatching.js';
 import { generateExitBlueprint } from '../../services/exitStrategy/exitBlueprint.js';
 import { modelReintegration } from '../../services/exitStrategy/reintegration.js';
@@ -22,7 +22,11 @@ const CIF = new Set(['critical', 'important']);
 /** A generate handler shared by the three artefact types. */
 function generateHandler(
   type: ExitArtefactType,
-  run: (ctx: ArrangementContext, sessionId: string) => Promise<{ payload: unknown; usedFallback: boolean; summary: string }>
+  run: (
+    ctx: ArrangementContext,
+    sessionId: string,
+    organizationId: string
+  ) => Promise<{ payload: unknown; usedFallback: boolean; summary: string }>
 ) {
   return catchAsync(async (req: Request, res: Response) => {
     const organizationId = requireOrg(req, res);
@@ -35,7 +39,7 @@ function generateHandler(
       return sendError(res, 400, 'Exit planning applies to critical/important (CIF) arrangements only');
     }
 
-    const { payload, usedFallback, summary } = await run(ctx, arrangementId);
+    const { payload, usedFallback, summary } = await run(ctx, arrangementId, organizationId);
     const { row, blocked } = await exitArtefactRepository.upsertDraft(organizationId, arrangementId, type, {
       providerName: ctx.providerName,
       criticality: ctx.criticality,
@@ -52,8 +56,11 @@ function generateHandler(
 }
 
 // POST /api/v1/exit-strategy/arrangements/:arrangementId/provider-matches
-export const draftProviderMatches = generateHandler('provider_match', async (ctx, sessionId) => {
-  const { payload, usedFallback } = await matchAlternativeProviders(ctx, { sessionId });
+export const draftProviderMatches = generateHandler('provider_match', async (ctx, sessionId, organizationId) => {
+  const { payload, usedFallback } = await matchAlternativeProviders(ctx, {
+    sessionId,
+    loadCatalog: (providerType) => substituteProviderRepository.listByType(organizationId, providerType),
+  });
   return { payload, usedFallback, summary: `${payload.alternatives.length} alternative provider(s) proposed for ${ctx.providerName}` };
 });
 

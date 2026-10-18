@@ -98,3 +98,9 @@ export { ExitArtefactRepository, exitArtefactRepository } from './drizzle/ExitAr
 
 // Unified per-vendor DORA score — the vendor-risk graph link + score cache/history persistence.
 export { DoraScoreRepository, doraScoreRepository } from './drizzle/DoraScoreRepository.js';
+
+// Verified Substitutes Registry (RTV-100) — the curated alternative-provider catalog reads + seeder.
+export {
+  SubstituteProviderRepository,
+  substituteProviderRepository,
+} from './drizzle/SubstituteProviderRepository.js';

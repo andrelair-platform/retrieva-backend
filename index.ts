@@ -22,6 +22,7 @@ import { answerFormatter } from './services/answerFormatter.js';
 // concurrency isn't multiplied by the API replica count. The API still SCHEDULES the repeatable jobs
 // below (idempotent in BullMQ); the dedicated worker consumes them.
 import { seedDefaultTemplate } from './seeds/questionnaireTemplate.seed.js';
+import { seedSubstituteProviders } from './seeds/substituteProviders.seed.js';
 import {
   scheduleMonitoringJob,
   scheduleWeeklyDigestJob,
@@ -48,6 +49,9 @@ const startServer = async () => {
 
     // Seed default questionnaire template (idempotent)
     await seedDefaultTemplate();
+
+    // Seed the Verified Substitutes Registry — the curated alternative-provider catalog (idempotent)
+    await seedSubstituteProviders();
 
     // Schedule monitoring alerts job (non-critical — runs every 24h)
     await scheduleMonitoringJob().catch((err) =>
