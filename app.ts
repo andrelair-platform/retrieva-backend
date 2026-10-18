@@ -34,6 +34,7 @@ import completenessRoutes from './modules/completeness/completeness.routes.js';
 import surveillanceRoutes from './modules/surveillance/surveillance.routes.js';
 import amendmentsRoutes from './modules/amendments/amendments.routes.js';
 import ddqContradictionsRoutes from './modules/ddq-contradictions/ddq-contradictions.routes.js';
+import exitStrategyRoutes from './modules/exit-strategy/exit-strategy.routes.js';
 import questionnaireRoutes from './routes/questionnaireRoutes.js';
 import questionnairePublicRoutes from './routes/questionnairePublicRoutes.js';
 import publicEvidenceRoutes from './routes/publicEvidenceRoutes.js';
@@ -346,6 +347,10 @@ app.use(
   setEntityContext,
   ddqContradictionsRoutes
 );
+// Dynamic exit strategy (RTV-99/100/101/102) — org-scoped. For a CIF arrangement, drafts exit artefacts
+// (alternative providers / exit blueprint / reintegration estimate) into an inbox for the risk owner;
+// setEntityContext applies RTV-54 isolation to the arrangement-context load + inbox.
+app.use('/api/v1/exit-strategy', optionalAuth, requireActivePlan, setEntityContext, exitStrategyRoutes);
 // Decision inbox (RTV-67) — org-scoped cross-arrangement queue of draft findings + open risks;
 // setEntityContext applies RTV-54 isolation so it spans exactly the arrangements the caller may see.
 app.use(

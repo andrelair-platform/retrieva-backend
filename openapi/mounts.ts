@@ -31,6 +31,7 @@ import completenessRoutes from '../modules/completeness/completeness.routes.js';
 import surveillanceRoutes from '../modules/surveillance/surveillance.routes.js';
 import amendmentsRoutes from '../modules/amendments/amendments.routes.js';
 import ddqContradictionsRoutes from '../modules/ddq-contradictions/ddq-contradictions.routes.js';
+import exitStrategyRoutes from '../modules/exit-strategy/exit-strategy.routes.js';
 import questionnaireRoutes from '../routes/questionnaireRoutes.js';
 import questionnairePublicRoutes from '../routes/questionnairePublicRoutes.js';
 import publicEvidenceRoutes from '../routes/publicEvidenceRoutes.js';
@@ -67,6 +68,7 @@ export const API_MOUNTS: ApiMount[] = [
   { prefix: '/api/v1/surveillance', router: surveillanceRoutes, tag: 'surveillance' },
   { prefix: '/api/v1/amendments', router: amendmentsRoutes, tag: 'amendments' },
   { prefix: '/api/v1/ddq-contradictions', router: ddqContradictionsRoutes, tag: 'ddq-contradictions' },
+  { prefix: '/api/v1/exit-strategy', router: exitStrategyRoutes, tag: 'exit-strategy' },
   { prefix: '/api/v1/decision-queue', router: decisionQueueRoutes, tag: 'decision-queue' },
   { prefix: '/api/v1/arrangements/intake', router: intakeRoutes, tag: 'intake' },
   { prefix: '/api/v1/arrangements', router: evidenceRoutes, tag: 'evidence' },

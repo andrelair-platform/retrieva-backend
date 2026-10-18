@@ -92,3 +92,6 @@ export {
   DdqContradictionRepository,
   ddqContradictionRepository,
 } from './drizzle/DdqContradictionRepository.js';
+
+// Dynamic exit strategy (RTV-99/100/101/102) — the exit-artefact inbox + CIF arrangement-context loader.
+export { ExitArtefactRepository, exitArtefactRepository } from './drizzle/ExitArtefactRepository.js';

@@ -40,6 +40,8 @@ export * from './surveillanceEvents.js';
 export * from './contractAmendments.js';
 // Answer-vs-evidence contradiction detection (RTV-103/105) — the DDQ contradiction inbox.
 export * from './ddqContradictions.js';
+// Dynamic exit strategy & transition planning (RTV-99/100/101/102) — the exit-artefact inbox.
+export * from './exitArtefacts.js';
 export * from './relations.js';
 // Canonical row types inferred from the tables above (RTV-22) — XRow / XInsert.
 export * from './rowTypes.js';

@@ -2409,6 +2409,203 @@
       ]
     },
     {
+      "name": "public.exit_artefacts",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "arrangement_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "criticality",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "decided_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "decision_note",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "payload",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "provider_name",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "status",
+          "type": "exit_artefact_status",
+          "nullable": false,
+          "default": "'draft'::exit_artefact_status"
+        },
+        {
+          "name": "summary",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "type",
+          "type": "exit_artefact_type",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "used_fallback",
+          "type": "text",
+          "nullable": false,
+          "default": "'false'::text"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "exit_artefacts_arrangement_idx",
+          "def": "CREATE INDEX exit_artefacts_arrangement_idx ON public.exit_artefacts USING btree (arrangement_id)",
+          "table": "public.exit_artefacts",
+          "columns": [
+            "arrangement_id"
+          ]
+        },
+        {
+          "name": "exit_artefacts_dedup_idx",
+          "def": "CREATE UNIQUE INDEX exit_artefacts_dedup_idx ON public.exit_artefacts USING btree (organization_id, arrangement_id, type)",
+          "table": "public.exit_artefacts",
+          "columns": [
+            "organization_id",
+            "arrangement_id",
+            "type"
+          ]
+        },
+        {
+          "name": "exit_artefacts_org_status_idx",
+          "def": "CREATE INDEX exit_artefacts_org_status_idx ON public.exit_artefacts USING btree (organization_id, status)",
+          "table": "public.exit_artefacts",
+          "columns": [
+            "organization_id",
+            "status"
+          ]
+        },
+        {
+          "name": "exit_artefacts_pkey",
+          "def": "CREATE UNIQUE INDEX exit_artefacts_pkey ON public.exit_artefacts USING btree (id)",
+          "table": "public.exit_artefacts",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "exit_artefacts_arrangement_id_arrangements_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE",
+          "table": "public.exit_artefacts",
+          "referenced_table": "public.arrangements",
+          "columns": [
+            "arrangement_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "exit_artefacts_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.exit_artefacts",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "exit_artefacts_decided_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.exit_artefacts",
+          "referenced_table": "public.users",
+          "columns": [
+            "decided_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "exit_artefacts_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.exit_artefacts",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "exit_artefacts_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.exit_artefacts",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "public.findings",
       "type": "BASE TABLE",
       "columns": [
@@ -6007,6 +6204,58 @@
       "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE"
     },
     {
+      "table": "public.exit_artefacts",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.exit_artefacts",
+      "columns": [
+        "decided_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.exit_artefacts",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.exit_artefacts",
+      "columns": [
+        "arrangement_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.arrangements",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE"
+    },
+    {
       "table": "public.findings",
       "columns": [
         "created_by"
@@ -6782,6 +7031,22 @@
       "values": [
         "arrangement",
         "provider"
+      ]
+    },
+    {
+      "name": "public.exit_artefact_status",
+      "values": [
+        "approved",
+        "draft",
+        "rejected"
+      ]
+    },
+    {
+      "name": "public.exit_artefact_type",
+      "values": [
+        "exit_blueprint",
+        "provider_match",
+        "reintegration_model"
       ]
     },
     {
