@@ -52,6 +52,10 @@ ERPNEXT_BASE_URL=https://erp.your-domain
 ERPNEXT_API_KEY=<frappe api key>
 ERPNEXT_API_SECRET=<frappe api secret>   # → Authorization: token <key>:<secret>
 ERPNEXT_INVOICE_LOOKBACK_DAYS=365        # optional (default 365)
+ERPNEXT_HOST_HEADER=erp.your-domain      # optional — split-horizon: dial an internal svc
+                                         # (ERPNEXT_BASE_URL=http://erpnext.erp.svc…:8080) but send
+                                         # Host=<site> so Frappe routes to the right site. Unset when
+                                         # ERPNEXT_BASE_URL already is the site's own URL.
 ```
 
 Tokens are runtime secrets — never committed.
