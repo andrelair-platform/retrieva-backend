@@ -8,6 +8,9 @@ import {
   oktaRun,
   authentikRun,
   erpnextRun,
+  restRun,
+  scimRun,
+  odataRun,
   genericPreview,
   genericRun,
   listRuns,
@@ -26,6 +29,11 @@ const router = Router();
 router.post('/okta/run', authenticate, validateBody(discoveryRunBody), oktaRun);
 router.post('/authentik/run', authenticate, validateBody(discoveryRunBody), authentikRun);
 router.post('/erpnext/run', authenticate, validateBody(discoveryRunBody), erpnextRun);
+
+// Standard-protocol connectors (RTV-107) — config-driven; same async enqueue → 202 { runId }.
+router.post('/rest/run', authenticate, validateBody(discoveryRunBody), restRun);
+router.post('/scim/run', authenticate, validateBody(discoveryRunBody), scimRun);
+router.post('/odata/run', authenticate, validateBody(discoveryRunBody), odataRun);
 
 // Generic AI-ingestion (RTV-106) — upload a CSV/XLSX `file` and/or paste a JSON array `rows`. The LLM
 // infers the column mapping; `/preview` returns it for review, `/run` enqueues the normalised apps

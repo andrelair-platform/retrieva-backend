@@ -13,9 +13,42 @@ no built-in connector. Adding a source is just a new client; the rails below are
 > **Scaling to real customers (not hand-built per vendor).** Okta/Authentik/ERPNext are the concrete
 > connectors *this* deployment (ktayl) uses — reference implementations of the `DiscoverySource` /
 > `DiscoveredApp` plug-in contract, not the product ceiling. A customer on Entra ID + SAP uses the same
-> rails via: first-class connectors for the common systems · standard-protocol connectors (SCIM/OData/
-> generic REST — RTV-107, backlogged) · and the **generic AI-ingestion source (RTV-106, below)** as the
+> rails via: first-class connectors for the common systems · **standard-protocol connectors (SCIM/OData/
+> generic REST — RTV-107, below)** · and the **generic AI-ingestion source (RTV-106, below)** as the
 > universal fallback. The specific connectors are the high-value head of a long tail the AI covers.
+
+## Tier-2: standard-protocol connectors (RTV-107)
+
+The middle of the connector strategy: **one connector per _protocol_** replaces N per-vendor connectors
+for the systems that conform. Most IdPs speak **SCIM**; SAP/Dynamics speak **OData**; many apps expose a
+listable **REST** collection. Each is **config-driven** — no code change to onboard a conforming system —
+delivered as a single JSON secret per protocol (platform secret convention / ESO), never in code. An
+unset protocol `503`s (not configured); egress to the customer endpoint is gated by a scoped netpol
+(deployment-side). All three reuse the identical async pipeline + provenance; where the protocol response
+lacks a field, the LLM mapper fills the gap.
+
+| Protocol | `source` | Records at (default) | Pagination | Typical systems |
+|---|---|---|---|---|
+| Generic REST | `rest` | config `recordsPath` (e.g. `data.items`) | `none` / `nextLink` (config path) | any listable REST collection |
+| SCIM | `scim` | `Resources` | `startIndex`/`count` | Entra ID, Okta, Google (SCIM) |
+| OData | `odata` | `value` | `@odata.nextLink` | SAP, Dynamics |
+
+```bash
+# configure (one JSON secret per protocol — ESO delivers it as env):
+DISCOVERY_REST_CONFIG='{"baseUrl":"https://api.acme.com","listPath":"/v1/vendors","auth":{"type":"bearer","value":"<tok>"},"recordsPath":"data.items","mapping":{"id":"id","label":"name","service":"category"},"pagination":"nextLink","nextLinkPath":"links.next"}'
+DISCOVERY_SCIM_CONFIG='{"baseUrl":"https://idp.acme.com","listPath":"/scim/v2/Users","auth":{"type":"bearer","value":"<tok>"}}'       # Resources/scim/displayName defaulted
+DISCOVERY_ODATA_CONFIG='{"baseUrl":"https://sap.acme.com","listPath":"/odata/Suppliers","auth":{"type":"basic","value":"user:pass"},"mapping":{"label":"SupplierName"}}'
+
+# run (same async rails → 202 { runId }, poll like any source):
+curl -X POST https://<api>/api/v1/discovery/rest/run  -H "Authorization: Bearer <jwt>"
+curl -X POST https://<api>/api/v1/discovery/scim/run  -H "Authorization: Bearer <jwt>"
+curl -X POST https://<api>/api/v1/discovery/odata/run -H "Authorization: Bearer <jwt>"
+```
+
+**Auth types:** `bearer` (token) · `basic` (`"user:pass"`) · `apikey` (custom `header` + value) · `none`.
+**Field mapping** (`mapping`) and `recordsPath`/`nextLinkPath` are **dot-paths** into the JSON response
+(`a.b.c`). `mapping.label` (the human name) is required; `id` defaults to a synthesised stable id;
+`service`/`spend` become `meta` hints for the mapper. Pagination is bounded by `maxPages` (default 10).
 
 ## Tier-3: generic AI-ingestion (RTV-106)
 

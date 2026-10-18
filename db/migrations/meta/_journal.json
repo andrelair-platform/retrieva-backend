@@ -176,6 +176,13 @@
       "when": 1792340908603,
       "tag": "0024_lonely_shadow_king",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792342505659,
+      "tag": "0025_omniscient_master_mold",
+      "breakpoints": true
     }
   ]
 }

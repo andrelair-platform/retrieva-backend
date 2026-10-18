@@ -17,6 +17,8 @@ import { getErpnextConfig } from '../../config/erpnext.js';
 import { listOktaApps } from './oktaClient.js';
 import { listAuthentikApps } from './authentikClient.js';
 import { listErpnextApps } from './erpnextClient.js';
+import { listRestApps, listScimApps, listOdataApps } from './protocolClient.js';
+import { isProtocolConfigured } from '../../config/protocolDiscovery.js';
 import { mapAppToProposal, type DiscoveredProposal } from './appToProposal.js';
 import type { DiscoveredApp, DiscoverySource } from './types.js';
 import { providerGraphRepository } from '../../repositories/index.js';
@@ -47,6 +49,11 @@ const CLIENTS: Record<
       throw new Error('generic discovery requires an uploaded/pasted dataset (deps.listApps)');
     },
   },
+  // Standard-protocol connectors (RTV-107) — config-driven (one JSON secret per protocol); isConfigured
+  // reflects whether that protocol's config is present.
+  rest: { isConfigured: () => isProtocolConfigured('rest'), listApps: () => listRestApps() },
+  scim: { isConfigured: () => isProtocolConfigured('scim'), listApps: () => listScimApps() },
+  odata: { isConfigured: () => isProtocolConfigured('odata'), listApps: () => listOdataApps() },
 };
 
 /** Whether a source's connector is configured (env present) — the controller 503s early if not. */

@@ -23,6 +23,9 @@ const ENV_HINT: Record<DiscoverySource, string> = {
   authentik: 'AUTHENTIK_BASE_URL and AUTHENTIK_API_TOKEN',
   erpnext: 'ERPNEXT_BASE_URL, ERPNEXT_API_KEY and ERPNEXT_API_SECRET',
   generic: 'an uploaded CSV/XLSX file or a pasted JSON array (no env needed)',
+  rest: 'DISCOVERY_REST_CONFIG (a JSON secret: baseUrl, listPath, auth, recordsPath, mapping)',
+  scim: 'DISCOVERY_SCIM_CONFIG (a JSON secret: baseUrl, listPath, auth)',
+  odata: 'DISCOVERY_ODATA_CONFIG (a JSON secret: baseUrl, listPath, auth)',
 };
 
 /** One enqueue handler per source — same rails, different adapter. Returns 202 + the runId to poll. */
@@ -51,6 +54,10 @@ function makeRun(source: DiscoverySource) {
 export const oktaRun = makeRun('okta');
 export const authentikRun = makeRun('authentik');
 export const erpnextRun = makeRun('erpnext');
+// Standard-protocol connectors (RTV-107) — same async rails; 503 if the protocol's config secret is unset.
+export const restRun = makeRun('rest');
+export const scimRun = makeRun('scim');
+export const odataRun = makeRun('odata');
 
 // GET /api/v1/discovery/runs — recent sweeps for the org.
 export const listRuns = catchAsync(async (req: Request, res: Response) => {

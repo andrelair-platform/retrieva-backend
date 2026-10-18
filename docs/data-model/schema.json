@@ -6985,7 +6985,10 @@
         "authentik",
         "erpnext",
         "generic",
-        "okta"
+        "odata",
+        "okta",
+        "rest",
+        "scim"
       ]
     },
     {
