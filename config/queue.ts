@@ -2,7 +2,12 @@ import 'dotenv/config';
 import { Queue, type ConnectionOptions } from 'bullmq';
 import { redisConnection } from './redis.js';
 import logger from './logger.js';
-import type { AssessmentJobData, QuestionnaireJobData, MonitoringJobData } from '../types/jobs.js';
+import type {
+  AssessmentJobData,
+  QuestionnaireJobData,
+  MonitoringJobData,
+  DiscoveryJobData,
+} from '../types/jobs.js';
 
 // BullMQ bundles its own copy of ioredis, so the top-level ioredis instance is a
 // structurally-distinct (but runtime-identical) type — cast at this single boundary.
@@ -79,6 +84,25 @@ export const monitoringQueue = new Queue<MonitoringJobData>('monitoringJobs', {
     },
     removeOnFail: {
       count: 20,
+    },
+  },
+});
+
+// Discovery sweeps (RTV-91c) — one job per API-triggered sweep; the worker runs the (slow, many-app)
+// LLM mapping off the request path and writes the result to discovery_runs / the proposal inbox.
+export const discoveryQueue = new Queue<DiscoveryJobData>('discoveryJobs', {
+  connection,
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: {
+      type: 'exponential',
+      delay: 30_000,
+    },
+    removeOnComplete: {
+      count: 20,
+    },
+    removeOnFail: {
+      count: 50,
     },
   },
 });
@@ -200,10 +224,12 @@ const queueEventListeners: {
   assessmentJobs: QueueErrorListener | null;
   questionnaireJobs: QueueErrorListener | null;
   monitoringJobs: QueueErrorListener | null;
+  discoveryJobs: QueueErrorListener | null;
 } = {
   assessmentJobs: null,
   questionnaireJobs: null,
   monitoringJobs: null,
+  discoveryJobs: null,
 };
 
 queueEventListeners.assessmentJobs = (error: Error) => {
@@ -220,6 +246,11 @@ queueEventListeners.monitoringJobs = (error: Error) => {
   logger.error('Monitoring jobs queue error:', { error: error.message, stack: error.stack });
 };
 monitoringQueue.on('error', queueEventListeners.monitoringJobs);
+
+queueEventListeners.discoveryJobs = (error: Error) => {
+  logger.error('Discovery jobs queue error:', { error: error.message, stack: error.stack });
+};
+discoveryQueue.on('error', queueEventListeners.discoveryJobs);
 
 logger.info('BullMQ queues initialized successfully');
 
@@ -242,10 +273,15 @@ export const closeQueues = async () => {
       monitoringQueue.off('error', queueEventListeners.monitoringJobs);
     }
 
+    if (queueEventListeners.discoveryJobs) {
+      discoveryQueue.off('error', queueEventListeners.discoveryJobs);
+    }
+
     await Promise.all([
       assessmentQueue.close(),
       questionnaireQueue.close(),
       monitoringQueue.close(),
+      discoveryQueue.close(),
     ]);
     logger.info('All queues closed gracefully');
   } catch (error) {

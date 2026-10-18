@@ -27,6 +27,9 @@ export * from './risks.js';
 export * from './assessmentRuns.js';
 // Run-gate approvals (RTV-85) — the human-decision record for the supervisor's interrupt() gates.
 export * from './assessmentRunApprovals.js';
+// Discovery connectors (RTV-91c) — async sweep run-tracking + the proposal inbox.
+export * from './discoveryRuns.js';
+export * from './discoveryProposals.js';
 export * from './relations.js';
 // Canonical row types inferred from the tables above (RTV-22) — XRow / XInsert.
 export * from './rowTypes.js';

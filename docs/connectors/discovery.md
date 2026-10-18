@@ -8,18 +8,22 @@ IT surfaces itself into the Register of Information instead of being typed in by
 source is just a new client; the rails below are source-agnostic.
 
 **Governance rule they obey:** *autonomous discovery & drafting, never autonomous sign-off.* A
-connector **never writes an arrangement**. It returns proposals; a human confirms each one through the
-existing intake flow.
+connector **never writes an arrangement**. It produces proposals in an **inbox**; a human confirms
+each one into the Register (or dismisses it).
+
+**Async (RTV-91c).** A sweep maps every app with a per-app LLM call, which exceeds the ingress 60s
+timeout on a large estate. So the sweep runs as a **BullMQ job**: `POST …/run` enqueues it and returns
+`202 { runId }`; the **discovery worker** runs the sweep off the request path and persists the result
+to `discovery_runs` + the proposal **inbox** (`discovery_proposals`), which you poll.
 
 ## Flow (identical for every source)
 
-```
-source /apps (read-only)  →  LLM maps each app → proposed arrangement  →  dedupe  →  proposals[]
-                             (LiteLLM gateway, Langfuse-traced)                          │
-                                                                                         ▼
-                                           human confirms → POST /api/v1/arrangements/intake/confirm
-                                                           → arrangement created in the Register
-```
+[![Discovery sweep (async)](../architecture/img/discovery-flow.png)](../architecture/img/discovery-flow.svg)
+
+*Generated from code — `docs/diagrams/discovery_flow.py` (mingrammer `diagrams`).*
+
+*Governance holds end-to-end: the worker **drafts** proposals into the inbox; nothing reaches the
+Register until a human **confirms** (filling the fields an IdP can't know).*
 
 ## Configure (each source optional; unset ⇒ `503 not configured`)
 
@@ -35,44 +39,56 @@ AUTHENTIK_API_TOKEN=<read-only API token>
 
 Tokens are runtime secrets — never committed.
 
-## Run
+## Run (async)
 
 ```bash
-# Okta — preview (dry run; produces proposals, records nothing):
-curl -X POST https://<api>/api/v1/discovery/okta/run \
-  -H "Authorization: Bearer <jwt>" -H 'Content-Type: application/json' -d '{"dryRun": true}'
-
-# Authentik — real run (same proposals + an audit-log record of the sweep):
+# 1. Trigger a sweep → 202 { runId }. dryRun=true previews (counts + inline proposals, no inbox/audit).
 curl -X POST https://<api>/api/v1/discovery/authentik/run \
   -H "Authorization: Bearer <jwt>" -H 'Content-Type: application/json' -d '{}'
+#   → { "ok": true, "data": { "runId": "…", "status": "queued", "poll": "/api/v1/discovery/runs/…" } }
+
+# 2. Poll the run → status + proposals (inbox items for a real run; inline preview for a dry run).
+curl -H "Authorization: Bearer <jwt>" https://<api>/api/v1/discovery/runs/<runId>
+
+# 3. The inbox across runs:
+curl -H "Authorization: Bearer <jwt>" "https://<api>/api/v1/discovery/proposals?status=pending"
+
+# 4. Confirm a proposal into an arrangement (fill the fields the IdP can't know, esp. legalEntityName):
+curl -X POST https://<api>/api/v1/discovery/proposals/<id>/confirm \
+  -H "Authorization: Bearer <jwt>" -H 'Content-Type: application/json' \
+  -d '{"proposal": {"legalEntityName": "Acme SA"}}'
+#   or dismiss it:
+curl -X POST https://<api>/api/v1/discovery/proposals/<id>/dismiss -H "Authorization: Bearer <jwt>"
 ```
 
-Response:
+`GET …/runs/:id` response:
 
 ```jsonc
 {
   "ok": true,
   "data": {
-    "source": "authentik",
-    "configured": true,
-    "dryRun": false,
-    "discovered": 42,          // apps returned by the source
-    "proposed": 18,            // new proposals (after dedupe)
+    "run": { "id": "…", "source": "authentik", "status": "succeeded", "dryRun": false,
+             "discovered": 42, "proposed": 18, "skippedCount": 1, "startedAt": "…", "finishedAt": "…" },
     "proposals": [
-      {
+      { "id": "…", "status": "pending", "source": "authentik", "externalName": "Grafana",
         "proposal": { "providerName": "Grafana Labs", "ictServiceName": "Observability",
                       "businessFunctionName": "IT Operations", "legalEntityName": null,
-                      "criticality": "important", "confidence": 0.8, "notes": "..." },
-        "provenance": { "source": "authentik", "externalId": "…", "externalName": "Grafana" }
-      }
-    ],
-    "skipped": [ { "externalId": "…", "externalName": "Slack", "reason": "already-registered" } ]
+                      "criticality": "important", "confidence": 0.8, "notes": "…" } }
+    ]
   }
 }
 ```
 
-Confirm a proposal by POSTing its `proposal` object to `/api/v1/arrangements/intake/confirm` (the
-analyst fills `legalEntityName` — an IdP can't know which entity contracts the app).
+### Endpoints
+
+| Method + path | What |
+|---|---|
+| `POST /api/v1/discovery/{okta,authentik}/run` | enqueue a sweep → `202 { runId }` |
+| `GET /api/v1/discovery/runs` | recent sweeps for the org |
+| `GET /api/v1/discovery/runs/:id` | a run's status + its proposals |
+| `GET /api/v1/discovery/proposals?status=&runId=` | the proposal inbox |
+| `POST /api/v1/discovery/proposals/:id/confirm` | confirm → create the arrangement (body merges over the proposal) |
+| `POST /api/v1/discovery/proposals/:id/dismiss` | drop a proposal |
 
 ## Provenance & dedupe
 
@@ -92,12 +108,16 @@ analyst fills `legalEntityName` — an IdP can't know which entity contracts the
 | `services/discovery/authentikClient.ts` | Authentik `/api/v3/core/applications/` lister (Bearer, page-number pagination) |
 | `services/discovery/appToProposal.ts` | LLM app→proposal mapper (reuses intake's pure `normalizeProposal`; LLM injectable) |
 | `services/discovery/discoveryService.ts` | orchestrator — `runDiscovery({source})` + a `CLIENTS` registry; dedupe, dry-run, audit; collaborators injectable |
-| `modules/discovery/*` | `POST /api/v1/discovery/{okta,authentik}/run` |
+| `config/queue.ts` · `types/jobs.ts` | the `discoveryJobs` BullMQ queue + `DiscoveryJobData` (RTV-91c async) |
+| `workers/discoveryWorker.ts` | the worker: runs the sweep in the caller's entity scope, persists run + inbox (`processDiscoveryJob` is injectable) |
+| `db/schema/discoveryRuns.ts` · `discoveryProposals.ts` | the run-tracking table + the proposal inbox (+ enums) |
+| `repositories/drizzle/DiscoveryRepository.ts` | run/inbox persistence (org-scoped reads, RTV-54 entity filter) |
+| `modules/discovery/*` | `POST …/run` (enqueue) + the runs/proposals polling + confirm/dismiss endpoints |
 
 All LLM calls go through the LiteLLM gateway (`purpose: 'analysis'`, `jsonMode`) and are Langfuse-traced.
-Every collaborator (client, mapper, repo, audit) is injectable, so the whole flow unit-tests with no
-network, model, or DB (`tests/unittest/{okta,authentik}Client.unit.test.ts`,
-`appToProposal.unit.test.ts`, `discoveryService.unit.test.ts`).
+Every collaborator (client, mapper, repo, audit, worker handler) is injectable, so the whole flow
+unit-tests with no network, model, or DB (`tests/unittest/{okta,authentik}Client.unit.test.ts`,
+`appToProposal.unit.test.ts`, `discoveryService.unit.test.ts`, `discoveryWorker.unit.test.ts`).
 
 ## Adding another source
 
@@ -108,5 +128,5 @@ network, model, or DB (`tests/unittest/{okta,authentik}Client.unit.test.ts`,
 
 ## Not in this slice
 
-Scheduled/continuous sweeps, non-IdP sources (AP/ERP → RTV-92), and a persisted discovery inbox
-(proposals are returned for immediate confirmation, mirroring contract intake).
+Scheduled/continuous sweeps (the sweep is API-triggered, not yet on a repeatable schedule) and
+non-IdP sources (AP/ERP → RTV-92). The async job + persisted inbox landed in RTV-91c.

@@ -1288,6 +1288,300 @@
       ]
     },
     {
+      "name": "public.discovery_proposals",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "arrangement_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "external_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "external_name",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "proposal",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "run_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "source",
+          "type": "discovery_source",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "discovery_proposal_status",
+          "nullable": false,
+          "default": "'pending'::discovery_proposal_status"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "discovery_proposals_org_status_idx",
+          "def": "CREATE INDEX discovery_proposals_org_status_idx ON public.discovery_proposals USING btree (organization_id, status)",
+          "table": "public.discovery_proposals",
+          "columns": [
+            "organization_id",
+            "status"
+          ]
+        },
+        {
+          "name": "discovery_proposals_pkey",
+          "def": "CREATE UNIQUE INDEX discovery_proposals_pkey ON public.discovery_proposals USING btree (id)",
+          "table": "public.discovery_proposals",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "discovery_proposals_run_idx",
+          "def": "CREATE INDEX discovery_proposals_run_idx ON public.discovery_proposals USING btree (run_id)",
+          "table": "public.discovery_proposals",
+          "columns": [
+            "run_id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "discovery_proposals_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.discovery_proposals",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "discovery_proposals_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.discovery_proposals",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "discovery_proposals_run_id_discovery_runs_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (run_id) REFERENCES discovery_runs(id) ON DELETE CASCADE",
+          "table": "public.discovery_proposals",
+          "referenced_table": "public.discovery_runs",
+          "columns": [
+            "run_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.discovery_runs",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "discovered",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "dry_run",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "error",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "preview",
+          "type": "jsonb",
+          "nullable": true
+        },
+        {
+          "name": "proposed",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "skipped",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "skipped_count",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "source",
+          "type": "discovery_source",
+          "nullable": false
+        },
+        {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "discovery_run_status",
+          "nullable": false,
+          "default": "'queued'::discovery_run_status"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "discovery_runs_org_created_idx",
+          "def": "CREATE INDEX discovery_runs_org_created_idx ON public.discovery_runs USING btree (organization_id, created_at)",
+          "table": "public.discovery_runs",
+          "columns": [
+            "organization_id",
+            "created_at"
+          ]
+        },
+        {
+          "name": "discovery_runs_org_status_idx",
+          "def": "CREATE INDEX discovery_runs_org_status_idx ON public.discovery_runs USING btree (organization_id, status)",
+          "table": "public.discovery_runs",
+          "columns": [
+            "organization_id",
+            "status"
+          ]
+        },
+        {
+          "name": "discovery_runs_pkey",
+          "def": "CREATE UNIQUE INDEX discovery_runs_pkey ON public.discovery_runs USING btree (id)",
+          "table": "public.discovery_runs",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "discovery_runs_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.discovery_runs",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "discovery_runs_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.discovery_runs",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "discovery_runs_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.discovery_runs",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "public.evidence",
       "type": "BASE TABLE",
       "columns": [
@@ -4346,6 +4640,58 @@
       "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
     },
     {
+      "table": "public.discovery_proposals",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.discovery_proposals",
+      "columns": [
+        "run_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.discovery_runs",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (run_id) REFERENCES discovery_runs(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.discovery_runs",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.discovery_runs",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
       "table": "public.evidence",
       "columns": [
         "created_by"
@@ -4987,6 +5333,30 @@
         "high",
         "low",
         "medium"
+      ]
+    },
+    {
+      "name": "public.discovery_proposal_status",
+      "values": [
+        "confirmed",
+        "dismissed",
+        "pending"
+      ]
+    },
+    {
+      "name": "public.discovery_run_status",
+      "values": [
+        "failed",
+        "queued",
+        "running",
+        "succeeded"
+      ]
+    },
+    {
+      "name": "public.discovery_source",
+      "values": [
+        "authentik",
+        "okta"
       ]
     },
     {

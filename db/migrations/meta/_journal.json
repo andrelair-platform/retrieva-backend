@@ -120,6 +120,13 @@
       "when": 1792133187033,
       "tag": "0016_tense_thor",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792294898900,
+      "tag": "0017_acoustic_wendigo",
+      "breakpoints": true
     }
   ]
 }

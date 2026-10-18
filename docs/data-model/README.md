@@ -13,6 +13,8 @@
 | [public.conversations](public.conversations.md)                                   | 9       |         | BASE TABLE |
 | [public.critical_function_dependencies](public.critical_function_dependencies.md) | 2       |         | BASE TABLE |
 | [public.critical_functions](public.critical_functions.md)                         | 8       |         | BASE TABLE |
+| [public.discovery_proposals](public.discovery_proposals.md)                       | 11      |         | BASE TABLE |
+| [public.discovery_runs](public.discovery_runs.md)                                 | 16      |         | BASE TABLE |
 | [public.evidence](public.evidence.md)                                             | 17      |         | BASE TABLE |
 | [public.evidence_collection_request](public.evidence_collection_request.md)       | 15      |         | BASE TABLE |
 | [public.findings](public.findings.md)                                             | 17      |         | BASE TABLE |
@@ -49,6 +51,9 @@
 | public.assessment_status              | analyzing, complete, failed, indexing, pending                                                                                                                   |
 | public.criticality                    | critical, important                                                                                                                                              |
 | public.dependency_level               | high, low, medium                                                                                                                                                |
+| public.discovery_proposal_status      | confirmed, dismissed, pending                                                                                                                                    |
+| public.discovery_run_status           | failed, queued, running, succeeded                                                                                                                               |
+| public.discovery_source               | authentik, okta                                                                                                                                                  |
 | public.domain_role                    | analyst, auditor, business_owner, dpo, entity_admin, group_admin, group_compliance, group_risk, ict_risk_officer, legal, vendor_contact, viewer                  |
 | public.evidence_category              | bcp_dr_plan, dora_addendum, exit_strategy, iso27001_cert, master_service_agreement, risk_classification, soc2_report, subprocessor_list, vendor_dora_attestation |
 | public.evidence_request_status        | fulfilled, pending, revoked                                                                                                                                      |
@@ -102,6 +107,10 @@ erDiagram
 "public.critical_function_dependencies" }o--|| "public.critical_functions" : "FOREIGN KEY (critical_function_id) REFERENCES critical_functions(id) ON DELETE CASCADE"
 "public.critical_functions" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.critical_functions" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+"public.discovery_proposals" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+"public.discovery_proposals" }o--|| "public.discovery_runs" : "FOREIGN KEY (run_id) REFERENCES discovery_runs(id) ON DELETE CASCADE"
+"public.discovery_runs" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.discovery_runs" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.evidence" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.evidence" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.evidence" }o--o| "public.provider_nodes" : "FOREIGN KEY (provider_id) REFERENCES provider_nodes(id) ON DELETE CASCADE"
@@ -253,6 +262,37 @@ erDiagram
   uuid id
   text name
   uuid organization_id FK
+  timestamp_with_time_zone updated_at
+}
+"public.discovery_proposals" {
+  uuid arrangement_id
+  timestamp_with_time_zone created_at
+  text external_id
+  text external_name
+  uuid id
+  uuid organization_id FK
+  jsonb proposal
+  uuid run_id FK
+  discovery_source source
+  discovery_proposal_status status
+  timestamp_with_time_zone updated_at
+}
+"public.discovery_runs" {
+  timestamp_with_time_zone created_at
+  uuid created_by FK
+  integer discovered
+  boolean dry_run
+  text error
+  timestamp_with_time_zone finished_at
+  uuid id
+  uuid organization_id FK
+  jsonb preview
+  integer proposed
+  jsonb skipped
+  integer skipped_count
+  discovery_source source
+  timestamp_with_time_zone started_at
+  discovery_run_status status
   timestamp_with_time_zone updated_at
 }
 "public.evidence" {

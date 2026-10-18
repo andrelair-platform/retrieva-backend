@@ -198,3 +198,19 @@ export const assessmentRunApprovalStatusEnum = pgEnum('assessment_run_approval_s
   'expired',
   'superseded',
 ]);
+
+// Discovery connectors (RTV-91c) — the async sweep's run lifecycle + the inbox proposal lifecycle.
+export const discoverySourceEnum = pgEnum('discovery_source', ['okta', 'authentik']);
+
+export const discoveryRunStatusEnum = pgEnum('discovery_run_status', [
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+]);
+
+export const discoveryProposalStatusEnum = pgEnum('discovery_proposal_status', [
+  'pending',
+  'confirmed',
+  'dismissed',
+]);
