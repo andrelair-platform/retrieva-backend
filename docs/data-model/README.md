@@ -34,6 +34,7 @@
 | [public.register_completeness_runs](public.register_completeness_runs.md)         | 14      |         | BASE TABLE |
 | [public.risks](public.risks.md)                                                   | 16      |         | BASE TABLE |
 | [public.role_assignments](public.role_assignments.md)                             | 7       |         | BASE TABLE |
+| [public.substitute_providers](public.substitute_providers.md)                     | 10      |         | BASE TABLE |
 | [public.surveillance_events](public.surveillance_events.md)                       | 18      |         | BASE TABLE |
 | [public.surveillance_runs](public.surveillance_runs.md)                           | 15      |         | BASE TABLE |
 | [public.users](public.users.md)                                                   | 26      |         | BASE TABLE |
@@ -184,6 +185,8 @@ erDiagram
 "public.risks" }o--|| "public.arrangements" : "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE"
 "public.risks" }o--|| "public.findings" : "FOREIGN KEY (finding_id) REFERENCES findings(id) ON DELETE CASCADE"
 "public.role_assignments" }o--|| "public.users" : "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
+"public.substitute_providers" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.substitute_providers" }o--o| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.surveillance_events" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.surveillance_events" }o--o| "public.provider_nodes" : "FOREIGN KEY (provider_node_id) REFERENCES provider_nodes(id) ON DELETE SET NULL"
 "public.surveillance_events" }o--|| "public.surveillance_runs" : "FOREIGN KEY (run_id) REFERENCES surveillance_runs(id) ON DELETE CASCADE"
@@ -617,6 +620,18 @@ erDiagram
   scope_type scope_type
   member_status status
   uuid user_id FK
+}
+"public.substitute_providers" {
+  timestamp_with_time_zone created_at
+  uuid created_by FK
+  uuid id
+  text name
+  text note
+  uuid organization_id FK
+  text provider_type
+  text region
+  text source
+  timestamp_with_time_zone updated_at
 }
 "public.surveillance_events" {
   boolean alerted

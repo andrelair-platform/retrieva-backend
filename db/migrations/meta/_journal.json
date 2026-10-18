@@ -197,6 +197,13 @@
       "when": 1792348157268,
       "tag": "0027_warm_scalphunter",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1792349004669,
+      "tag": "0028_puzzling_paper_doll",
+      "breakpoints": true
     }
   ]
 }

@@ -37,12 +37,20 @@ POST /exit-strategy/:id/reject  { note? }           rejects (then it can be rege
 
 ## The three agents
 
-### RTV-100 — alternative-provider matching
-There is **no global provider catalogue** (providers are org-scoped), so the AI **proposes** credible
-real-world alternatives for the provider's **type + service + data-residency/data-class constraints**,
-and is **concentration-aware** — it's told the org's other same-type providers so it avoids proposing one
-that deepens shared-substrate risk. Fail-safe → a curated seed of common alternatives per provider type
-(cloud/ai_ml/software/data/network). Proposals are options to verify, **not endorsements**.
+### RTV-100 — alternative-provider matching ("Curated Substitutes Catalog & LLM Matcher")
+Not an external market-data scrape. Candidates come from **three sources**, each tagged with its
+provenance (`source`) so the risk owner sees where it came from:
+1. **`internal_registry`** — vendors already onboarded + vetted in the org's **Register of Information**
+   of the same type (known-good, low onboarding cost) — honestly flagged as **concentration-increasing**
+   (switching to one you already use consolidates reliance; weigh against Art. 29).
+2. **`curated_substitutes_catalog`** — the **Verified Substitutes Registry** (`substitute_providers`): a
+   maintained table of credible alternatives per type, platform-seeded on boot + extensible per org.
+3. **`ai_proposed`** — the LLM, for the long tail, grounded in the provider type + data-residency/
+   data-class constraints and the org's existing concentration.
+
+Composed with **concentration-aware dedup** (vetted registry first, then catalog, then AI; the incumbent
+is never proposed). **Fail-safe**: if the LLM fails, the registry + catalog still produce a draft (a small
+hard-coded floor is the last resort). Every candidate is a **proposal to verify, not an endorsement**.
 
 ### RTV-101 — exit-blueprint generator
 A structured, phased blueprint — trigger & notice → data portability & extraction → key handover & KT →
@@ -74,9 +82,10 @@ sensitivity.
 | File | Role |
 |---|---|
 | `services/exitStrategy/types.ts` | `ArrangementContext` + the three typed payload shapes |
-| `services/exitStrategy/providerMatching.ts` | RTV-100 — LLM match + curated-seed fallback |
+| `services/exitStrategy/providerMatching.ts` | RTV-100 — 3-source matcher (registry + catalog + LLM) |
 | `services/exitStrategy/exitBlueprint.ts` | RTV-101 — LLM blueprint + deterministic template |
 | `services/exitStrategy/reintegration.ts` | RTV-102 — LLM estimate + deterministic estimate |
+| `db/schema/substituteProviders.ts` · `repositories/drizzle/SubstituteProviderRepository.ts` · `seeds/substituteProviders.seed.ts` | the Verified Substitutes Registry (curated catalog) |
 | `modules/exit-strategy/*` | the generate + inbox (list/get/approve/reject) API |
 | `db/schema/exitArtefacts.ts` | the artefact inbox (+ type/status enums) |
 | `repositories/drizzle/ExitArtefactRepository.ts` | CIF arrangement-context loader + inbox persistence |
@@ -88,5 +97,5 @@ Every collaborator is injectable → the agents + controller unit-test with no D
 
 The frontend (the exit-planning console + artefact rendering) is a story on `retrieva`; wiring an
 approved artefact to the `exit_strategy` evidence category / the arrangement lifecycle `start_exit`
-transition; a maintained substitutes catalogue (today RTV-100 is LLM-proposed + a seed floor, not a
-curated dataset); cost modelling with real rate cards.
+transition; a CRUD API for org-specific catalog entries (the registry table + platform seeds exist; an
+"add our own substitute" endpoint is the next slice); cost modelling with real rate cards.

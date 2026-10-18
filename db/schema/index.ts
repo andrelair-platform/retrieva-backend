@@ -44,6 +44,8 @@ export * from './ddqContradictions.js';
 export * from './exitArtefacts.js';
 // Unified per-vendor DORA score — the append-only score history behind the live trend.
 export * from './doraScoreHistory.js';
+// Verified Substitutes Registry (RTV-100) — the curated alternative-provider catalog.
+export * from './substituteProviders.js';
 export * from './relations.js';
 // Canonical row types inferred from the tables above (RTV-22) — XRow / XInsert.
 export * from './rowTypes.js';

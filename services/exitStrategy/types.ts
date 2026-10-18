@@ -20,6 +20,9 @@ export interface ArrangementContext {
   incumbentSameTypeProviders: string[];
 }
 
+/** Where a proposed alternative came from (provenance shown to the risk owner). */
+export type AlternativeSource = 'curated_substitutes_catalog' | 'internal_registry' | 'ai_proposed';
+
 /** RTV-100 — one proposed alternative provider. */
 export interface AlternativeProvider {
   name: string;
@@ -28,6 +31,7 @@ export interface AlternativeProvider {
   switchingConsiderations: string; // migration effort / lock-in notes
   dataResidencyFit: string; // how it meets the arrangement's residency/data-class needs
   concentrationNote: string; // whether it adds/reduces concentration vs the org's incumbents
+  source: AlternativeSource; // curated catalog / the org's own Register / LLM-proposed
 }
 
 export interface ProviderMatchPayload {

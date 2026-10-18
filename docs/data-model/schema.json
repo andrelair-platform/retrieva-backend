@@ -4584,6 +4584,142 @@
       ]
     },
     {
+      "name": "public.substitute_providers",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "note",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "provider_type",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "region",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "nullable": false,
+          "default": "'curated'::text"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "substitute_providers_dedup_idx",
+          "def": "CREATE UNIQUE INDEX substitute_providers_dedup_idx ON public.substitute_providers USING btree (organization_id, provider_type, name)",
+          "table": "public.substitute_providers",
+          "columns": [
+            "organization_id",
+            "provider_type",
+            "name"
+          ]
+        },
+        {
+          "name": "substitute_providers_org_idx",
+          "def": "CREATE INDEX substitute_providers_org_idx ON public.substitute_providers USING btree (organization_id)",
+          "table": "public.substitute_providers",
+          "columns": [
+            "organization_id"
+          ]
+        },
+        {
+          "name": "substitute_providers_pkey",
+          "def": "CREATE UNIQUE INDEX substitute_providers_pkey ON public.substitute_providers USING btree (id)",
+          "table": "public.substitute_providers",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "substitute_providers_type_idx",
+          "def": "CREATE INDEX substitute_providers_type_idx ON public.substitute_providers USING btree (provider_type)",
+          "table": "public.substitute_providers",
+          "columns": [
+            "provider_type"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "substitute_providers_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.substitute_providers",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "substitute_providers_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.substitute_providers",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "substitute_providers_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.substitute_providers",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "public.surveillance_events",
       "type": "BASE TABLE",
       "columns": [
@@ -6793,6 +6929,32 @@
       ],
       "parent_cardinality": "exactly_one",
       "def": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.substitute_providers",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.substitute_providers",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
     },
     {
       "table": "public.surveillance_events",
