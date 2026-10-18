@@ -10,7 +10,7 @@ vi.mock('../../config/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-const config = { baseUrl: 'https://erp.acme.com', apiKey: 'K', apiSecret: 'S', lookbackDays: 365 };
+const config = { baseUrl: 'https://erp.acme.com', apiKey: 'K', apiSecret: 'S', lookbackDays: 365, hostHeader: '' };
 const resp = (body: unknown) => ({ ok: true, status: 200, json: async () => body, text: async () => '' });
 
 describe('aggregateInvoices', () => {
@@ -57,6 +57,20 @@ describe('listErpnextApps', () => {
     expect(fetchImpl.mock.calls[1][0]).toContain('limit_start=100');
     expect(apps.some((a) => a.id === 'LAST')).toBe(true);
     expect(apps).toHaveLength(101);
+  });
+
+  it('sends a Host header when hostHeader is configured (Frappe split-horizon routing)', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(resp({ data: [] }));
+    await listErpnextApps({ config: { ...config, hostHeader: 'erp.devandre.sbs' }, fetchImpl, since: '2026-01-01' });
+    const [, init] = fetchImpl.mock.calls[0];
+    expect((init.headers as Record<string, string>).Host).toBe('erp.devandre.sbs');
+  });
+
+  it('does NOT send a Host header when hostHeader is empty', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(resp({ data: [] }));
+    await listErpnextApps({ config, fetchImpl, since: '2026-01-01' });
+    const [, init] = fetchImpl.mock.calls[0];
+    expect((init.headers as Record<string, string>).Host).toBeUndefined();
   });
 
   it('returns [] when not configured', async () => {
