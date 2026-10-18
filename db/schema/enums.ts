@@ -214,3 +214,22 @@ export const discoveryProposalStatusEnum = pgEnum('discovery_proposal_status', [
   'confirmed',
   'dismissed',
 ]);
+
+// Register-completeness agent (RTV-93) — audits the Register of Information for structural gaps.
+export const completenessRunStatusEnum = pgEnum('completeness_run_status', [
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+]);
+
+// Gap severity: high on critical/important arrangements (+ the proportionality gate), else medium.
+export const completenessSeverityEnum = pgEnum('completeness_severity', ['high', 'medium', 'low']);
+
+// Finding lifecycle in the completeness inbox. A re-scan reopens a resolved-then-reappearing gap and
+// auto-resolves a gap that's been fixed (no longer in the current scan).
+export const completenessFindingStatusEnum = pgEnum('completeness_finding_status', [
+  'open',
+  'acknowledged',
+  'resolved',
+]);

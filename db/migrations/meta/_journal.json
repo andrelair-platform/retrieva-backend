@@ -127,6 +127,13 @@
       "when": 1792294898900,
       "tag": "0017_acoustic_wendigo",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792309754448,
+      "tag": "0018_cute_rachel_grey",
+      "breakpoints": true
     }
   ]
 }

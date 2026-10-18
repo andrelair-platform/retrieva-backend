@@ -83,9 +83,28 @@ export interface DiscoveryScheduledJobData {
 
 export type DiscoveryJobData = DiscoveryRunJobData | DiscoveryScheduledJobData;
 
+// ── completenessJobs queue (RTV-93) ──────────────────────────────────────────
+
+/** `run-completeness` — one Register-completeness audit for an org; `runId` is the
+ *  register_completeness_runs row the caller polls. */
+export interface CompletenessRunJobData {
+  runId: string;
+  organizationId: string;
+  userId?: string | null;
+}
+
+/** `completeness-scheduled-audit` (RTV-93) — the repeatable fan-out: enqueues an audit for the
+ *  scheduled org. Carries no per-run data. */
+export interface CompletenessScheduledJobData {
+  scheduled: true;
+}
+
+export type CompletenessJobData = CompletenessRunJobData | CompletenessScheduledJobData;
+
 // ── Job handles (what a worker processor receives) ───────────────────────────
 
 export type AssessmentJob = Job<AssessmentJobData>;
 export type QuestionnaireJob = Job<QuestionnaireJobData>;
 export type MonitoringJob = Job<MonitoringJobData>;
 export type DiscoveryJob = Job<DiscoveryJobData>;
+export type CompletenessJob = Job<CompletenessJobData>;
