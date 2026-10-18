@@ -5596,8 +5596,23 @@
           "nullable": true
         },
         {
+          "name": "notice_period_days",
+          "type": "integer",
+          "nullable": true
+        },
+        {
           "name": "organization_id",
           "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "price_escalation",
+          "type": "jsonb",
+          "nullable": true
+        },
+        {
+          "name": "price_review_date",
+          "type": "timestamp with time zone",
           "nullable": true
         },
         {

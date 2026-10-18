@@ -343,6 +343,15 @@ export const mfaDisableSchema = z
 export const mongoIdSchema = z.string().uuid('Invalid ID format');
 
 // Workspace Schemas
+// Price-escalation terms (RTV lifecycle): a small structured clause the renewal/escalation monitor reads.
+const priceEscalationSchema = z
+  .object({
+    type: z.enum(['none', 'fixed_pct', 'cpi_linked']),
+    pct: z.number().min(0).max(1000).optional(),
+    note: z.string().max(500).optional(),
+  })
+  .strict();
+
 export const createWorkspaceSchema = z
   .object({
     name: z.string().min(1, 'Workspace name is required').max(200, 'Name too long').trim(),
@@ -352,6 +361,9 @@ export const createWorkspaceSchema = z
     country: z.string().max(100, 'Country too long').optional(),
     contractStart: z.string().max(50).optional().nullable(),
     contractEnd: z.string().max(50).optional().nullable(),
+    noticePeriodDays: z.number().int().min(0).max(3650).optional().nullable(),
+    priceReviewDate: z.string().max(50).optional().nullable(),
+    priceEscalation: priceEscalationSchema.optional().nullable(),
     vendorFunctions: z.array(z.string().max(200)).max(50, 'Too many vendor functions').optional(),
   })
   .strict();
@@ -365,6 +377,9 @@ export const updateWorkspaceSchema = z
     country: z.string().max(100, 'Country too long').optional(),
     contractStart: z.string().max(50).optional().nullable(),
     contractEnd: z.string().max(50).optional().nullable(),
+    noticePeriodDays: z.number().int().min(0).max(3650).optional().nullable(),
+    priceReviewDate: z.string().max(50).optional().nullable(),
+    priceEscalation: priceEscalationSchema.optional().nullable(),
     nextReviewDate: z.string().max(50).optional().nullable(),
     vendorStatus: z.enum(['active', 'under-review', 'exited']).optional(),
     certifications: z.array(z.string().max(200)).max(50, 'Too many certifications').optional(),

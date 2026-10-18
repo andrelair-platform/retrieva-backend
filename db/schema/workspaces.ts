@@ -41,6 +41,15 @@ export const workspaces = pgTable(
     contractStart: timestamp('contract_start', { withTimezone: true }),
     contractEnd: timestamp('contract_end', { withTimezone: true }),
     nextReviewDate: timestamp('next_review_date', { withTimezone: true }),
+    // Contract-lifecycle tracking (DORA Art. 30 termination/notice). `noticePeriodDays` is the advance
+    // notice the contract requires → the renewal monitor warns ahead of the NOTICE DEADLINE
+    // (contractEnd − notice), i.e. months before lock-in, not a fixed 60-day heads-up.
+    noticePeriodDays: integer('notice_period_days'), // nullable; absent ⇒ warn 60d before contractEnd
+    // Price-escalation tracking: the next price-review / escalation date (the monitor alerts ahead of it)
+    // + the structured terms.
+    priceReviewDate: timestamp('price_review_date', { withTimezone: true }),
+    // { type: 'none' | 'fixed_pct' | 'cpi_linked', pct?: number, note?: string }
+    priceEscalation: jsonb('price_escalation'),
     vendorStatus: vendorStatusEnum('vendor_status').notNull().default('under-review'),
     // [{ type, validUntil, status }]
     certifications: jsonb('certifications').notNull().default([]),

@@ -66,6 +66,9 @@ class WorkspaceService {
       country,
       contractStart,
       contractEnd,
+      noticePeriodDays,
+      priceReviewDate,
+      priceEscalation,
       vendorFunctions,
     } = data;
 
@@ -81,6 +84,9 @@ class WorkspaceService {
       country: country?.trim() || '',
       contractStart: contractStart ? new Date(contractStart) : null,
       contractEnd: contractEnd ? new Date(contractEnd) : null,
+      noticePeriodDays: noticePeriodDays ?? null,
+      priceReviewDate: priceReviewDate ? new Date(priceReviewDate) : null,
+      priceEscalation: priceEscalation ?? null,
       vendorFunctions: Array.isArray(vendorFunctions) ? vendorFunctions : [],
     });
 
@@ -128,6 +134,9 @@ class WorkspaceService {
       serviceType,
       contractStart,
       contractEnd,
+      noticePeriodDays,
+      priceReviewDate,
+      priceEscalation,
       nextReviewDate,
       vendorStatus,
       certifications,
@@ -144,6 +153,10 @@ class WorkspaceService {
     if (contractStart !== undefined)
       patch.contractStart = contractStart ? new Date(contractStart) : null;
     if (contractEnd !== undefined) patch.contractEnd = contractEnd ? new Date(contractEnd) : null;
+    if (noticePeriodDays !== undefined) patch.noticePeriodDays = noticePeriodDays ?? null;
+    if (priceReviewDate !== undefined)
+      patch.priceReviewDate = priceReviewDate ? new Date(priceReviewDate) : null;
+    if (priceEscalation !== undefined) patch.priceEscalation = priceEscalation ?? null;
     if (nextReviewDate !== undefined)
       patch.nextReviewDate = nextReviewDate ? new Date(nextReviewDate) : null;
     if (vendorStatus !== undefined) patch.vendorStatus = vendorStatus;
