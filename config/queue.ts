@@ -8,6 +8,7 @@ import type {
   MonitoringJobData,
   DiscoveryJobData,
   CompletenessJobData,
+  SurveillanceJobData,
 } from '../types/jobs.js';
 
 // BullMQ bundles its own copy of ioredis, so the top-level ioredis instance is a
@@ -23,6 +24,9 @@ const DISCOVERY_SCHEDULE_HOURS = parseInt(process.env.DISCOVERY_SCHEDULE_HOURS |
 // RTV-93 — opt-in repeatable register-completeness audit. Off unless COMPLETENESS_SCHEDULE_ENABLED=true.
 const COMPLETENESS_SCHEDULE_ENABLED = process.env.COMPLETENESS_SCHEDULE_ENABLED === 'true';
 const COMPLETENESS_SCHEDULE_HOURS = parseInt(process.env.COMPLETENESS_SCHEDULE_HOURS || '', 10) || 24;
+// RTV-94 — opt-in repeatable CTPP surveillance sweep. Off unless SURVEILLANCE_SCHEDULE_ENABLED=true.
+const SURVEILLANCE_SCHEDULE_ENABLED = process.env.SURVEILLANCE_SCHEDULE_ENABLED === 'true';
+const SURVEILLANCE_SCHEDULE_HOURS = parseInt(process.env.SURVEILLANCE_SCHEDULE_HOURS || '', 10) || 6;
 
 /**
  * Queue for assessment file indexing and gap analysis jobs
@@ -118,6 +122,25 @@ export const discoveryQueue = new Queue<DiscoveryJobData>('discoveryJobs', {
 // scans the register off the request path and writes the result to register_completeness_runs / the
 // findings inbox.
 export const completenessQueue = new Queue<CompletenessJobData>('completenessJobs', {
+  connection,
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: {
+      type: 'exponential',
+      delay: 30_000,
+    },
+    removeOnComplete: {
+      count: 20,
+    },
+    removeOnFail: {
+      count: 50,
+    },
+  },
+});
+
+// CTPP surveillance sweeps (RTV-94) — one job per API-triggered or scheduled sweep; the worker polls
+// external feeds off the request path and writes events + blast-radius to surveillance_runs / the inbox.
+export const surveillanceQueue = new Queue<SurveillanceJobData>('surveillanceJobs', {
   connection,
   defaultJobOptions: {
     attempts: 2,
@@ -319,6 +342,42 @@ export async function scheduleCompletenessAudit() {
   logger.info('Completeness audit scheduled', { service: 'queue', intervalHours: COMPLETENESS_SCHEDULE_HOURS });
 }
 
+/**
+ * Schedule the repeatable CTPP surveillance sweep (RTV-94). OPT-IN: registers the repeatable only when
+ * SURVEILLANCE_SCHEDULE_ENABLED=true; else REMOVES any existing one. Every SURVEILLANCE_SCHEDULE_HOURS
+ * (default 6h) the fan-out job enqueues a sweep for SURVEILLANCE_SCHEDULE_ORG_ID (see
+ * workers/surveillanceWorker.ts → runScheduledSweep).
+ */
+export async function scheduleSurveillanceSweep() {
+  const jobName = 'surveillance-scheduled-sweep';
+
+  const existingJobs = await withTimeout(surveillanceQueue.getRepeatableJobs(), QUEUE_OP_TIMEOUT);
+  for (const job of existingJobs) {
+    if (job.name === jobName) {
+      await withTimeout(surveillanceQueue.removeRepeatableByKey(job.key), QUEUE_OP_TIMEOUT);
+    }
+  }
+
+  if (!SURVEILLANCE_SCHEDULE_ENABLED) {
+    logger.info('Surveillance sweep schedule disabled (SURVEILLANCE_SCHEDULE_ENABLED != true)', { service: 'queue' });
+    return;
+  }
+
+  await withTimeout(
+    surveillanceQueue.add(
+      jobName,
+      { scheduled: true },
+      {
+        repeat: { every: SURVEILLANCE_SCHEDULE_HOURS * 60 * 60 * 1000 },
+        jobId: 'surveillance-scheduled-sweep',
+      }
+    ),
+    QUEUE_OP_TIMEOUT
+  );
+
+  logger.info('Surveillance sweep scheduled', { service: 'queue', intervalHours: SURVEILLANCE_SCHEDULE_HOURS });
+}
+
 // ISSUE #34 FIX: Store event listener references for cleanup
 type QueueErrorListener = (error: Error) => void;
 const queueEventListeners: {
@@ -327,12 +386,14 @@ const queueEventListeners: {
   monitoringJobs: QueueErrorListener | null;
   discoveryJobs: QueueErrorListener | null;
   completenessJobs: QueueErrorListener | null;
+  surveillanceJobs: QueueErrorListener | null;
 } = {
   assessmentJobs: null,
   questionnaireJobs: null,
   monitoringJobs: null,
   discoveryJobs: null,
   completenessJobs: null,
+  surveillanceJobs: null,
 };
 
 queueEventListeners.assessmentJobs = (error: Error) => {
@@ -359,6 +420,11 @@ queueEventListeners.completenessJobs = (error: Error) => {
   logger.error('Completeness jobs queue error:', { error: error.message, stack: error.stack });
 };
 completenessQueue.on('error', queueEventListeners.completenessJobs);
+
+queueEventListeners.surveillanceJobs = (error: Error) => {
+  logger.error('Surveillance jobs queue error:', { error: error.message, stack: error.stack });
+};
+surveillanceQueue.on('error', queueEventListeners.surveillanceJobs);
 
 logger.info('BullMQ queues initialized successfully');
 
@@ -389,12 +455,17 @@ export const closeQueues = async () => {
       completenessQueue.off('error', queueEventListeners.completenessJobs);
     }
 
+    if (queueEventListeners.surveillanceJobs) {
+      surveillanceQueue.off('error', queueEventListeners.surveillanceJobs);
+    }
+
     await Promise.all([
       assessmentQueue.close(),
       questionnaireQueue.close(),
       monitoringQueue.close(),
       discoveryQueue.close(),
       completenessQueue.close(),
+      surveillanceQueue.close(),
     ]);
     logger.info('All queues closed gracefully');
   } catch (error) {

@@ -233,3 +233,23 @@ export const completenessFindingStatusEnum = pgEnum('completeness_finding_status
   'acknowledged',
   'resolved',
 ]);
+
+// Continuous CTPP & supply-chain surveillance (RTV-94/95/96) — ingest external signals about tracked
+// providers (status-page incidents to start) → match to a provider node → classify → alert.
+export const surveillanceSourceEnum = pgEnum('surveillance_source', ['statuspage', 'cve', 'breach', 'other']);
+
+export const surveillanceSeverityEnum = pgEnum('surveillance_severity', ['critical', 'high', 'medium', 'low']);
+
+export const surveillanceRunStatusEnum = pgEnum('surveillance_run_status', [
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+]);
+
+// Event lifecycle in the surveillance inbox (the HITL surface — informs, never auto-rates).
+export const surveillanceEventStatusEnum = pgEnum('surveillance_event_status', [
+  'open',
+  'acknowledged',
+  'resolved',
+]);

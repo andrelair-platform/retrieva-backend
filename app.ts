@@ -31,6 +31,7 @@ import {
 import intakeRoutes from './modules/intake/intake.routes.js';
 import discoveryRoutes from './modules/discovery/discovery.routes.js';
 import completenessRoutes from './modules/completeness/completeness.routes.js';
+import surveillanceRoutes from './modules/surveillance/surveillance.routes.js';
 import questionnaireRoutes from './routes/questionnaireRoutes.js';
 import questionnairePublicRoutes from './routes/questionnairePublicRoutes.js';
 import publicEvidenceRoutes from './routes/publicEvidenceRoutes.js';
@@ -318,6 +319,16 @@ app.use(
   requireActivePlan,
   setEntityContext,
   completenessRoutes
+);
+// CTPP surveillance (RTV-94/95/96) — org-scoped. Polls external feeds about tracked providers →
+// surveillance events + blast-radius + alerts (informs, never auto-rates); setEntityContext applies
+// RTV-54 isolation to the scan.
+app.use(
+  '/api/v1/surveillance',
+  optionalAuth,
+  requireActivePlan,
+  setEntityContext,
+  surveillanceRoutes
 );
 // Decision inbox (RTV-67) — org-scoped cross-arrangement queue of draft findings + open risks;
 // setEntityContext applies RTV-54 isolation so it spans exactly the arrangements the caller may see.

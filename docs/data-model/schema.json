@@ -3862,6 +3862,368 @@
       ]
     },
     {
+      "name": "public.surveillance_events",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "alerted",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "blast_radius",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "external_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "observed_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "provider_name",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "provider_node_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "run_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "severity",
+          "type": "surveillance_severity",
+          "nullable": false,
+          "default": "'low'::surveillance_severity"
+        },
+        {
+          "name": "source",
+          "type": "surveillance_source",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "surveillance_event_status",
+          "nullable": false,
+          "default": "'open'::surveillance_event_status"
+        },
+        {
+          "name": "summary",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "type",
+          "type": "text",
+          "nullable": false,
+          "default": "'incident'::text"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "url",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "surveillance_events_dedup_idx",
+          "def": "CREATE UNIQUE INDEX surveillance_events_dedup_idx ON public.surveillance_events USING btree (organization_id, source, external_id)",
+          "table": "public.surveillance_events",
+          "columns": [
+            "organization_id",
+            "source",
+            "external_id"
+          ]
+        },
+        {
+          "name": "surveillance_events_org_status_idx",
+          "def": "CREATE INDEX surveillance_events_org_status_idx ON public.surveillance_events USING btree (organization_id, status)",
+          "table": "public.surveillance_events",
+          "columns": [
+            "organization_id",
+            "status"
+          ]
+        },
+        {
+          "name": "surveillance_events_pkey",
+          "def": "CREATE UNIQUE INDEX surveillance_events_pkey ON public.surveillance_events USING btree (id)",
+          "table": "public.surveillance_events",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "surveillance_events_provider_idx",
+          "def": "CREATE INDEX surveillance_events_provider_idx ON public.surveillance_events USING btree (provider_node_id)",
+          "table": "public.surveillance_events",
+          "columns": [
+            "provider_node_id"
+          ]
+        },
+        {
+          "name": "surveillance_events_run_idx",
+          "def": "CREATE INDEX surveillance_events_run_idx ON public.surveillance_events USING btree (run_id)",
+          "table": "public.surveillance_events",
+          "columns": [
+            "run_id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "surveillance_events_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.surveillance_events",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "surveillance_events_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.surveillance_events",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "surveillance_events_provider_node_id_provider_nodes_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (provider_node_id) REFERENCES provider_nodes(id) ON DELETE SET NULL",
+          "table": "public.surveillance_events",
+          "referenced_table": "public.provider_nodes",
+          "columns": [
+            "provider_node_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "surveillance_events_run_id_surveillance_runs_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (run_id) REFERENCES surveillance_runs(id) ON DELETE CASCADE",
+          "table": "public.surveillance_events",
+          "referenced_table": "public.surveillance_runs",
+          "columns": [
+            "run_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.surveillance_runs",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "by_severity",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "error",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "fetched",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "matched",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "new_events",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "polled",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "raised",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "surveillance_run_status",
+          "nullable": false,
+          "default": "'queued'::surveillance_run_status"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "surveillance_runs_org_created_idx",
+          "def": "CREATE INDEX surveillance_runs_org_created_idx ON public.surveillance_runs USING btree (organization_id, created_at)",
+          "table": "public.surveillance_runs",
+          "columns": [
+            "organization_id",
+            "created_at"
+          ]
+        },
+        {
+          "name": "surveillance_runs_org_status_idx",
+          "def": "CREATE INDEX surveillance_runs_org_status_idx ON public.surveillance_runs USING btree (organization_id, status)",
+          "table": "public.surveillance_runs",
+          "columns": [
+            "organization_id",
+            "status"
+          ]
+        },
+        {
+          "name": "surveillance_runs_pkey",
+          "def": "CREATE UNIQUE INDEX surveillance_runs_pkey ON public.surveillance_runs USING btree (id)",
+          "table": "public.surveillance_runs",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "surveillance_runs_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.surveillance_runs",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "surveillance_runs_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.surveillance_runs",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "surveillance_runs_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.surveillance_runs",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "public.users",
       "type": "BASE TABLE",
       "columns": [
@@ -5481,6 +5843,71 @@
       "def": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
     },
     {
+      "table": "public.surveillance_events",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.surveillance_events",
+      "columns": [
+        "provider_node_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.provider_nodes",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (provider_node_id) REFERENCES provider_nodes(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.surveillance_events",
+      "columns": [
+        "run_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.surveillance_runs",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (run_id) REFERENCES surveillance_runs(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.surveillance_runs",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.surveillance_runs",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
       "table": "public.users",
       "columns": [
         "organization_id"
@@ -5890,6 +6317,41 @@
         "entity",
         "group",
         "legal_entity"
+      ]
+    },
+    {
+      "name": "public.surveillance_event_status",
+      "values": [
+        "acknowledged",
+        "open",
+        "resolved"
+      ]
+    },
+    {
+      "name": "public.surveillance_run_status",
+      "values": [
+        "failed",
+        "queued",
+        "running",
+        "succeeded"
+      ]
+    },
+    {
+      "name": "public.surveillance_severity",
+      "values": [
+        "critical",
+        "high",
+        "low",
+        "medium"
+      ]
+    },
+    {
+      "name": "public.surveillance_source",
+      "values": [
+        "breach",
+        "cve",
+        "other",
+        "statuspage"
       ]
     },
     {
