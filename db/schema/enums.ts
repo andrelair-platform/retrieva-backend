@@ -253,3 +253,7 @@ export const surveillanceEventStatusEnum = pgEnum('surveillance_event_status', [
   'acknowledged',
   'resolved',
 ]);
+
+// Contract-amendment redliner (RTV-97/98) — a drafted DORA Art-30 clause awaiting legal review.
+// Drafts are PROPOSED; a human accepts (optionally with edits) or rejects — never auto-applied.
+export const amendmentStatusEnum = pgEnum('amendment_status', ['pending', 'accepted', 'rejected']);

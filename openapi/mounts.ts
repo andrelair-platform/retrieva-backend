@@ -29,6 +29,7 @@ import intakeRoutes from '../modules/intake/intake.routes.js';
 import discoveryRoutes from '../modules/discovery/discovery.routes.js';
 import completenessRoutes from '../modules/completeness/completeness.routes.js';
 import surveillanceRoutes from '../modules/surveillance/surveillance.routes.js';
+import amendmentsRoutes from '../modules/amendments/amendments.routes.js';
 import questionnaireRoutes from '../routes/questionnaireRoutes.js';
 import questionnairePublicRoutes from '../routes/questionnairePublicRoutes.js';
 import publicEvidenceRoutes from '../routes/publicEvidenceRoutes.js';
@@ -63,6 +64,7 @@ export const API_MOUNTS: ApiMount[] = [
   { prefix: '/api/v1/discovery', router: discoveryRoutes, tag: 'discovery' },
   { prefix: '/api/v1/register-completeness', router: completenessRoutes, tag: 'register-completeness' },
   { prefix: '/api/v1/surveillance', router: surveillanceRoutes, tag: 'surveillance' },
+  { prefix: '/api/v1/amendments', router: amendmentsRoutes, tag: 'amendments' },
   { prefix: '/api/v1/decision-queue', router: decisionQueueRoutes, tag: 'decision-queue' },
   { prefix: '/api/v1/arrangements/intake', router: intakeRoutes, tag: 'intake' },
   { prefix: '/api/v1/arrangements', router: evidenceRoutes, tag: 'evidence' },

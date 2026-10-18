@@ -981,6 +981,209 @@
       ]
     },
     {
+      "name": "public.contract_amendments",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "article",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "assessment_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "category",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "decided_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "draft_text",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "edited_text",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "gap_level",
+          "type": "text",
+          "nullable": false,
+          "default": "'missing'::text"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "rationale",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "status",
+          "type": "amendment_status",
+          "nullable": false,
+          "default": "'pending'::amendment_status"
+        },
+        {
+          "name": "template_ref",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "vendor_name",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "contract_amendments_assessment_idx",
+          "def": "CREATE INDEX contract_amendments_assessment_idx ON public.contract_amendments USING btree (assessment_id)",
+          "table": "public.contract_amendments",
+          "columns": [
+            "assessment_id"
+          ]
+        },
+        {
+          "name": "contract_amendments_dedup_idx",
+          "def": "CREATE UNIQUE INDEX contract_amendments_dedup_idx ON public.contract_amendments USING btree (organization_id, assessment_id, article)",
+          "table": "public.contract_amendments",
+          "columns": [
+            "organization_id",
+            "assessment_id",
+            "article"
+          ]
+        },
+        {
+          "name": "contract_amendments_org_status_idx",
+          "def": "CREATE INDEX contract_amendments_org_status_idx ON public.contract_amendments USING btree (organization_id, status)",
+          "table": "public.contract_amendments",
+          "columns": [
+            "organization_id",
+            "status"
+          ]
+        },
+        {
+          "name": "contract_amendments_pkey",
+          "def": "CREATE UNIQUE INDEX contract_amendments_pkey ON public.contract_amendments USING btree (id)",
+          "table": "public.contract_amendments",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "contract_amendments_assessment_id_assessments_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE",
+          "table": "public.contract_amendments",
+          "referenced_table": "public.assessments",
+          "columns": [
+            "assessment_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "contract_amendments_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.contract_amendments",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "contract_amendments_decided_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.contract_amendments",
+          "referenced_table": "public.users",
+          "columns": [
+            "decided_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "contract_amendments_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.contract_amendments",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "contract_amendments_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.contract_amendments",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "public.conversations",
       "type": "BASE TABLE",
       "columns": [
@@ -5232,6 +5435,58 @@
       "def": "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE CASCADE"
     },
     {
+      "table": "public.contract_amendments",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.contract_amendments",
+      "columns": [
+        "decided_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.contract_amendments",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.contract_amendments",
+      "columns": [
+        "assessment_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.assessments",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE"
+    },
+    {
       "table": "public.conversations",
       "columns": [
         "user_id"
@@ -6047,6 +6302,14 @@
     }
   ],
   "enums": [
+    {
+      "name": "public.amendment_status",
+      "values": [
+        "accepted",
+        "pending",
+        "rejected"
+      ]
+    },
     {
       "name": "public.arrangement_lifecycle",
       "values": [

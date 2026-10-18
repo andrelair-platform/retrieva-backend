@@ -32,6 +32,7 @@ import intakeRoutes from './modules/intake/intake.routes.js';
 import discoveryRoutes from './modules/discovery/discovery.routes.js';
 import completenessRoutes from './modules/completeness/completeness.routes.js';
 import surveillanceRoutes from './modules/surveillance/surveillance.routes.js';
+import amendmentsRoutes from './modules/amendments/amendments.routes.js';
 import questionnaireRoutes from './routes/questionnaireRoutes.js';
 import questionnairePublicRoutes from './routes/questionnairePublicRoutes.js';
 import publicEvidenceRoutes from './routes/publicEvidenceRoutes.js';
@@ -330,6 +331,10 @@ app.use(
   setEntityContext,
   surveillanceRoutes
 );
+// Contract-amendment redliner (RTV-97/98) — org-scoped. Drafts DORA Art-30 amendment clauses for a
+// CONTRACT_A30 assessment's gaps into an inbox (proposed, never auto-applied); setEntityContext applies
+// RTV-54 isolation so the assessment-gap load + inbox span exactly what the caller may see.
+app.use('/api/v1/amendments', optionalAuth, requireActivePlan, setEntityContext, amendmentsRoutes);
 // Decision inbox (RTV-67) — org-scoped cross-arrangement queue of draft findings + open risks;
 // setEntityContext applies RTV-54 isolation so it spans exactly the arrangements the caller may see.
 app.use(
