@@ -38,6 +38,8 @@ export * from './surveillanceRuns.js';
 export * from './surveillanceEvents.js';
 // Contract-amendment redliner (RTV-97/98) — the drafted Art-30 amendment inbox.
 export * from './contractAmendments.js';
+// Answer-vs-evidence contradiction detection (RTV-103/105) — the DDQ contradiction inbox.
+export * from './ddqContradictions.js';
 export * from './relations.js';
 // Canonical row types inferred from the tables above (RTV-22) — XRow / XInsert.
 export * from './rowTypes.js';

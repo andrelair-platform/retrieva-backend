@@ -86,3 +86,9 @@ export {
   ContractAmendmentRepository,
   contractAmendmentRepository,
 } from './drizzle/ContractAmendmentRepository.js';
+
+// Answer-vs-evidence contradiction detection (RTV-103/105) — the DDQ contradiction inbox + loader.
+export {
+  DdqContradictionRepository,
+  ddqContradictionRepository,
+} from './drizzle/DdqContradictionRepository.js';

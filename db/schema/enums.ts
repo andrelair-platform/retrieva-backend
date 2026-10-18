@@ -257,3 +257,14 @@ export const surveillanceEventStatusEnum = pgEnum('surveillance_event_status', [
 // Contract-amendment redliner (RTV-97/98) — a drafted DORA Art-30 clause awaiting legal review.
 // Drafts are PROPOSED; a human accepts (optionally with edits) or rejects — never auto-applied.
 export const amendmentStatusEnum = pgEnum('amendment_status', ['pending', 'accepted', 'rejected']);
+
+// Answer-vs-evidence contradiction detection (RTV-103/105) — a vendor DDQ answer that contradicts the
+// vendor's own uploaded evidence, flagged into an inbox for analyst review. It INFORMS, never auto-fails
+// a vendor. `dismissed` = reviewed and judged a false positive; `resolved` = handled.
+export const ddqContradictionSeverityEnum = pgEnum('ddq_contradiction_severity', ['high', 'medium', 'low']);
+export const ddqContradictionStatusEnum = pgEnum('ddq_contradiction_status', [
+  'open',
+  'acknowledged',
+  'resolved',
+  'dismissed',
+]);

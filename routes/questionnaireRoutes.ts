@@ -6,6 +6,7 @@ import {
   deleteQuestionnaire,
   sendQuestionnaire,
   revokeQuestionnaire,
+  generateFollowUps,
 } from '../controllers/questionnaireController.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireWorkspaceAccess } from '../middleware/workspaceAuth.js';
@@ -89,6 +90,20 @@ router.post(
   requireWorkspaceAccess,
   validateParams(idParamsSchema),
   revokeQuestionnaire
+);
+
+/**
+ * @route  POST /api/v1/questionnaires/:id/follow-ups
+ * @desc   RTV-104 interactive round — generate follow-up questions for weak/contradicted answers,
+ *         append them, and re-open the questionnaire for a second vendor round
+ * @access Private
+ */
+router.post(
+  '/:id/follow-ups',
+  authenticate,
+  requireWorkspaceAccess,
+  validateParams(idParamsSchema),
+  generateFollowUps
 );
 
 /**

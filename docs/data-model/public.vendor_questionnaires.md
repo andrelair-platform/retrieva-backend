@@ -2,28 +2,28 @@
 
 ## Columns
 
-| Name                | Type                     | Default                       | Nullable | Children | Parents                                                             | Comment |
-| ------------------- | ------------------------ | ----------------------------- | -------- | -------- | ------------------------------------------------------------------- | ------- |
-| arrangement_id      | uuid                     |                               | true     |          | [public.arrangements](public.arrangements.md)                       |         |
-| created_at          | timestamp with time zone | now()                         | false    |          |                                                                     |         |
-| created_by          | uuid                     |                               | true     |          | [public.users](public.users.md)                                     |         |
-| id                  | uuid                     | gen_random_uuid()             | false    |          |                                                                     |         |
-| overall_score       | integer                  |                               | true     |          |                                                                     |         |
-| questions           | jsonb                    | '[]'::jsonb                   | false    |          |                                                                     |         |
-| responded_at        | timestamp with time zone |                               | true     |          |                                                                     |         |
-| results             | jsonb                    |                               | true     |          |                                                                     |         |
-| revoked_at          | timestamp with time zone |                               | true     |          |                                                                     |         |
-| sent_at             | timestamp with time zone |                               | true     |          |                                                                     |         |
-| status              | questionnaire_status     | 'draft'::questionnaire_status | false    |          |                                                                     |         |
-| status_message      | text                     | ''::text                      | false    |          |                                                                     |         |
-| template_id         | uuid                     |                               | true     |          | [public.questionnaire_templates](public.questionnaire_templates.md) |         |
-| token               | text                     |                               | true     |          |                                                                     |         |
-| token_expires_at    | timestamp with time zone |                               | true     |          |                                                                     |         |
-| updated_at          | timestamp with time zone | now()                         | false    |          |                                                                     |         |
-| vendor_contact_name | text                     | ''::text                      | false    |          |                                                                     |         |
-| vendor_email        | text                     |                               | false    |          |                                                                     |         |
-| vendor_name         | text                     |                               | false    |          |                                                                     |         |
-| workspace_id        | uuid                     |                               | false    |          | [public.workspaces](public.workspaces.md)                           |         |
+| Name                | Type                     | Default                       | Nullable | Children                                                  | Parents                                                             | Comment |
+| ------------------- | ------------------------ | ----------------------------- | -------- | --------------------------------------------------------- | ------------------------------------------------------------------- | ------- |
+| arrangement_id      | uuid                     |                               | true     |                                                           | [public.arrangements](public.arrangements.md)                       |         |
+| created_at          | timestamp with time zone | now()                         | false    |                                                           |                                                                     |         |
+| created_by          | uuid                     |                               | true     |                                                           | [public.users](public.users.md)                                     |         |
+| id                  | uuid                     | gen_random_uuid()             | false    | [public.ddq_contradictions](public.ddq_contradictions.md) |                                                                     |         |
+| overall_score       | integer                  |                               | true     |                                                           |                                                                     |         |
+| questions           | jsonb                    | '[]'::jsonb                   | false    |                                                           |                                                                     |         |
+| responded_at        | timestamp with time zone |                               | true     |                                                           |                                                                     |         |
+| results             | jsonb                    |                               | true     |                                                           |                                                                     |         |
+| revoked_at          | timestamp with time zone |                               | true     |                                                           |                                                                     |         |
+| sent_at             | timestamp with time zone |                               | true     |                                                           |                                                                     |         |
+| status              | questionnaire_status     | 'draft'::questionnaire_status | false    |                                                           |                                                                     |         |
+| status_message      | text                     | ''::text                      | false    |                                                           |                                                                     |         |
+| template_id         | uuid                     |                               | true     |                                                           | [public.questionnaire_templates](public.questionnaire_templates.md) |         |
+| token               | text                     |                               | true     |                                                           |                                                                     |         |
+| token_expires_at    | timestamp with time zone |                               | true     |                                                           |                                                                     |         |
+| updated_at          | timestamp with time zone | now()                         | false    |                                                           |                                                                     |         |
+| vendor_contact_name | text                     | ''::text                      | false    |                                                           |                                                                     |         |
+| vendor_email        | text                     |                               | false    |                                                           |                                                                     |         |
+| vendor_name         | text                     |                               | false    |                                                           |                                                                     |         |
+| workspace_id        | uuid                     |                               | false    |                                                           | [public.workspaces](public.workspaces.md)                           |         |
 
 ## Constraints
 
@@ -51,6 +51,7 @@ erDiagram
 
 "public.vendor_questionnaires" }o--o| "public.arrangements" : "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE SET NULL"
 "public.vendor_questionnaires" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.ddq_contradictions" }o--|| "public.vendor_questionnaires" : "FOREIGN KEY (questionnaire_id) REFERENCES vendor_questionnaires(id) ON DELETE CASCADE"
 "public.vendor_questionnaires" }o--o| "public.questionnaire_templates" : "FOREIGN KEY (template_id) REFERENCES questionnaire_templates(id) ON DELETE SET NULL"
 "public.vendor_questionnaires" }o--|| "public.workspaces" : "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
 
@@ -121,6 +122,26 @@ erDiagram
   jsonb refresh_tokens
   user_role role
   timestamp_with_time_zone updated_at
+}
+"public.ddq_contradictions" {
+  text answer_text
+  uuid arrangement_id FK
+  jsonb citations
+  timestamp_with_time_zone created_at
+  uuid created_by FK
+  timestamp_with_time_zone decided_at
+  uuid decided_by FK
+  text dora_article
+  uuid id
+  uuid organization_id FK
+  text question_id
+  text question_text
+  uuid questionnaire_id FK
+  text reason
+  ddq_contradiction_severity severity
+  ddq_contradiction_status status
+  timestamp_with_time_zone updated_at
+  text vendor_name
 }
 "public.questionnaire_templates" {
   timestamp_with_time_zone created_at
