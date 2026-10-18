@@ -29,6 +29,7 @@ import {
   arrangementGraphRouter,
 } from './modules/arrangements/arrangements.routes.js';
 import intakeRoutes from './modules/intake/intake.routes.js';
+import discoveryRoutes from './modules/discovery/discovery.routes.js';
 import questionnaireRoutes from './routes/questionnaireRoutes.js';
 import questionnairePublicRoutes from './routes/questionnairePublicRoutes.js';
 import publicEvidenceRoutes from './routes/publicEvidenceRoutes.js';
@@ -304,6 +305,9 @@ app.use(
 // Register of Information (RT.02.01) — org-scoped projection of the arrangement graph (RTV-38);
 // setEntityContext applies RTV-54 row-level isolation to the graph reads.
 app.use('/api/v1/register', optionalAuth, requireActivePlan, setEntityContext, registerRoutes);
+// Discovery connectors (RTV-91) — org-scoped. Sweep a source system (Okta) → PROPOSE arrangements
+// for human confirmation (nothing auto-written); setEntityContext applies RTV-54 isolation to dedupe.
+app.use('/api/v1/discovery', optionalAuth, requireActivePlan, setEntityContext, discoveryRoutes);
 // Decision inbox (RTV-67) — org-scoped cross-arrangement queue of draft findings + open risks;
 // setEntityContext applies RTV-54 isolation so it spans exactly the arrangements the caller may see.
 app.use(
