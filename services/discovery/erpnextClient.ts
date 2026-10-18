@@ -9,6 +9,8 @@
  * arrangement and judge ICT-relevance; dedup + the human confirm step filter the rest. `fetch` is
  * injectable so unit tests run with no network. Pure transport — no LLM, no DB.
  */
+import http from 'node:http';
+import https from 'node:https';
 import { getErpnextConfig, type ErpnextConfig } from '../../config/erpnext.js';
 import logger from '../../config/logger.js';
 import type { DiscoveredApp } from './types.js';
@@ -19,6 +21,45 @@ type FetchLike = (url: string, init?: Record<string, unknown>) => Promise<{
   json(): Promise<unknown>;
   text(): Promise<string>;
 }>;
+
+/**
+ * A minimal http/https-core GET transport used ONLY when a Host header must be overridden. undici's
+ * `fetch` derives Host from the URL and ignores a user-supplied Host header, but Frappe routes by Host
+ * to its site (see config `ERPNEXT_HOST_HEADER`). Node's core http honours an explicit Host, so we dial
+ * the base URL's host/IP while sending `Host: <site>`. GET-only, JSON — all this client needs.
+ */
+const coreFetch: FetchLike = (url, init = {}) =>
+  new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const mod = u.protocol === 'https:' ? https : http;
+    const req = mod.request(
+      {
+        protocol: u.protocol,
+        hostname: u.hostname,
+        port: u.port || (u.protocol === 'https:' ? 443 : 80),
+        path: u.pathname + u.search, // URL() has already percent-encoded the path
+        method: (init.method as string) || 'GET',
+        headers: (init.headers as Record<string, string>) || {},
+      },
+      (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => (body += c));
+        res.on('end', () =>
+          resolve({
+            ok: (res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300,
+            status: res.statusCode ?? 0,
+            json: async () => JSON.parse(body),
+            text: async () => body,
+          })
+        );
+      }
+    );
+    req.on('error', reject);
+    const signal = init.signal as AbortSignal | undefined;
+    if (signal) signal.addEventListener('abort', () => req.destroy(new Error('aborted')), { once: true });
+    req.end();
+  });
 
 export interface ListErpnextAppsDeps {
   config?: ErpnextConfig | null;
@@ -88,7 +129,10 @@ export function aggregateInvoices(rows: InvoiceRow[]): DiscoveredApp[] {
 export async function listErpnextApps(deps: ListErpnextAppsDeps = {}): Promise<DiscoveredApp[]> {
   const config = deps.config ?? getErpnextConfig();
   if (!config) return [];
-  const fetchImpl = deps.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
+  // When a Host override is configured (split-horizon: dial the svc, Host = the Frappe site), use the
+  // http-core transport that honours an explicit Host; otherwise the standard fetch. Tests inject fetchImpl.
+  const fetchImpl =
+    deps.fetchImpl ?? (config.hostHeader ? coreFetch : (globalThis.fetch as unknown as FetchLike));
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxPages = deps.maxPages ?? DEFAULT_MAX_PAGES;
   const pageSize = deps.pageSize ?? DEFAULT_PAGE_SIZE;
@@ -121,6 +165,8 @@ export async function listErpnextApps(deps: ListErpnextAppsDeps = {}): Promise<D
         headers: {
           Authorization: `token ${config.apiKey}:${config.apiSecret}`,
           Accept: 'application/json',
+          // Frappe routes by Host to its site — send the site name when dialing an internal svc name.
+          ...(config.hostHeader ? { Host: config.hostHeader } : {}),
         },
         signal: controller.signal,
       });
