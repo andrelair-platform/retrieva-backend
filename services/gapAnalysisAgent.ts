@@ -338,5 +338,11 @@ export async function runGapAnalysis({ assessmentId, userId: _userId, job }: any
     overallRisk,
   });
 
+  // Push-update the vendor's unified DORA score — the gap-analysis pillar just changed (fire-and-forget).
+  if (assessment.workspaceId) {
+    const { recalculateDoraScoreSafe } = await import('./scoring/recalculateDoraScore.js');
+    await recalculateDoraScoreSafe(String(assessment.workspaceId));
+  }
+
   return { gapCount: gaps.length, overallRisk };
 }

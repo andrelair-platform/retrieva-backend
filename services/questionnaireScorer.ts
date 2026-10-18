@@ -203,5 +203,11 @@ export async function runScoring(questionnaireId: string, job?: any) {
     scoredCount: scoredQuestions.length,
   });
 
+  // Push-update the vendor's unified DORA score — the DDQ pillar just changed (fire-and-forget).
+  if (questionnaire.workspaceId) {
+    const { recalculateDoraScoreSafe } = await import('./scoring/recalculateDoraScore.js');
+    await recalculateDoraScoreSafe(String(questionnaire.workspaceId));
+  }
+
   return { overallScore, scoredCount: scoredQuestions.length };
 }

@@ -95,3 +95,6 @@ export {
 
 // Dynamic exit strategy (RTV-99/100/101/102) — the exit-artefact inbox + CIF arrangement-context loader.
 export { ExitArtefactRepository, exitArtefactRepository } from './drizzle/ExitArtefactRepository.js';
+
+// Unified per-vendor DORA score — the vendor-risk graph link + score cache/history persistence.
+export { DoraScoreRepository, doraScoreRepository } from './drizzle/DoraScoreRepository.js';

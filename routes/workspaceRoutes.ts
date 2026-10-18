@@ -14,6 +14,7 @@ import {
   revokeMember,
   updateMember,
   getComplianceScore,
+  getDoraScore,
 } from '../controllers/workspaceMemberController.js';
 import { authenticate } from '../middleware/auth.js';
 import { canInviteMembers } from '../middleware/workspaceAuth.js';
@@ -44,6 +45,13 @@ router.get(
   authenticate,
   validateParams(workspaceIdParamsSchema),
   getComplianceScore
+);
+// Unified per-vendor DORA risk score (cached; ?recompute=true forces a fresh roll-up).
+router.get(
+  '/:workspaceId/dora-score',
+  authenticate,
+  validateParams(workspaceIdParamsSchema),
+  getDoraScore
 );
 router.get(
   '/:workspaceId',

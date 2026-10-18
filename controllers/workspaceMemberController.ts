@@ -1,7 +1,8 @@
 import type { Request, Response, NextFunction } from "express";
-import { catchAsync, sendSuccess } from '../utils/index.js';
+import { catchAsync, sendSuccess, sendError } from '../utils/index.js';
 import { workspaceService } from '../services/WorkspaceService.js';
-import { assessmentRepository } from '../repositories/index.js';
+import { assessmentRepository, workspaceRepository } from '../repositories/index.js';
+import { recalculateDoraScore } from '../services/scoring/recalculateDoraScore.js';
 
 export const createWorkspace = catchAsync(async (req: Request, res: Response) => {
   const workspace = await workspaceService.createWorkspace(req.user!.userId, req.body);
@@ -69,4 +70,31 @@ export const updateMember = catchAsync(async (req: Request, res: Response) => {
 export const getComplianceScore = catchAsync(async (req: Request, res: Response) => {
   const score = await assessmentRepository.getComplianceScore(String(String(req.params.workspaceId)));
   sendSuccess(res, 200, 'Compliance score retrieved', { score });
+});
+
+// GET /api/v1/workspaces/:workspaceId/dora-score[?recompute=true] — the unified per-vendor DORA risk
+// score. Returns the cached value (fast) by default; ?recompute=true forces a fresh recompute first.
+export const getDoraScore = catchAsync(async (req: Request, res: Response) => {
+  const workspaceId = String(req.params.workspaceId);
+  if (req.query.recompute === 'true') {
+    const breakdown = await recalculateDoraScore(workspaceId);
+    if (!breakdown) return sendError(res, 404, 'Workspace not found or has no organization');
+    return sendSuccess(res, 200, 'DORA score recomputed', {
+      score: breakdown.unifiedScore,
+      rating: breakdown.rating,
+      assessed: breakdown.assessed,
+      trend30Days: breakdown.trend30Days,
+      components: breakdown.components,
+      metrics: breakdown.metrics,
+    });
+  }
+  const ws = await workspaceRepository.findById(workspaceId);
+  if (!ws) return sendError(res, 404, 'Workspace not found');
+  sendSuccess(res, 200, 'DORA score retrieved', {
+    score: ws.doraScore ?? null,
+    rating: ws.doraRating ?? null,
+    assessed: ws.doraScore !== null && ws.doraScore !== undefined,
+    breakdown: ws.doraScoreBreakdown ?? null,
+    scoredAt: ws.doraScoreAt ?? null,
+  });
 });

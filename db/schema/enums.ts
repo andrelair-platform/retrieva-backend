@@ -281,6 +281,10 @@ export const ddqContradictionStatusEnum = pgEnum('ddq_contradiction_status', [
   'dismissed',
 ]);
 
+// Unified per-vendor DORA risk score — the live RAG rating cached on the vendor (workspace). GREEN ≥80,
+// AMBER 60–79, RED <60 (or a CIF with a heavy open-risk penalty). Computed by the scoring engine.
+export const doraRatingEnum = pgEnum('dora_rating', ['GREEN', 'AMBER', 'RED']);
+
 // Dynamic exit strategy & transition planning (RTV-99/100/101/102) — for CIF (critical/important)
 // arrangements, Retrieva drafts exit artefacts: alternative-provider matches, an exit blueprint, and a
 // reintegration estimate. Each is a DRAFT for the risk owner (status) — proposed, never auto-decided.
