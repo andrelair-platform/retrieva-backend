@@ -9,10 +9,19 @@ matches each to a provider node, computes its **blast-radius** on the concentrat
 Register entry; material events land in the **event inbox** (the HITL surface) for a human to
 acknowledge / resolve.
 
-**Source today:** **Statuspage** incidents — the Atlassian-Statuspage v2 JSON API
-(`<base>/api/v2/incidents.json`) that many CTPPs/SaaS expose (GitHub, Datadog, Cloudflare, Stripe, …).
-Free, no-auth, uniform, and maps 1:1 to a provider node by its curated status URL. Adding a source is a
-new client on the same rails (CVE/breach feeds → a later slice).
+**Sources today — two, on the same source-agnostic rails:**
+- **Statuspage incidents** (outages) — the Atlassian-Statuspage v2 JSON API (`<base>/api/v2/incidents.json`)
+  that many CTPPs/SaaS expose (GitHub, Datadog, Cloudflare, Stripe, …). Free, no-auth, uniform; mapped to
+  a provider node by its curated status URL (`config/surveillanceSources.ts`).
+- **CVE advisories** (vulnerabilities) — **OSV.dev** (`POST https://api.osv.dev/v1/query`, free/no-auth/
+  fast; chosen over the rate-limited, flaky NVD v2). A CTPP is tracked by the OSS packages / SDKs it (or
+  we) depend on — a curated `canonicalName → {ecosystem,name}[]` map (`cvePackagesForProvider`, env-
+  extensible via `SURVEILLANCE_CVE_EXTRA`). Both feeds normalise to the same `SurveillanceSignal` and flow
+  through the identical classify → blast-radius → alert pipeline.
+
+Adding a further source (breach feeds, regulatory actions) is a new client on the same rails.
+> **Egress:** the surveillance `toFQDNs` allow-list must include `api.osv.dev` (alongside the status
+> hosts) when the CVE source is enabled (deployment side).
 
 ## Flow (async)
 
@@ -95,9 +104,10 @@ historical incident. Two guards:
 
 | File | Role |
 |---|---|
-| `config/surveillanceSources.ts` | curated canonicalName→status-page map (+ env extras); `statuspageForProvider`, `isSurveillanceConfigured` |
-| `services/surveillance/types.ts` | `SurveillanceSignal` / `SurveillanceEventDraft` / `TrackedProvider` |
+| `config/surveillanceSources.ts` | curated status-page map + CVE package map (+ env extras); `statuspageForProvider`, `cvePackagesForProvider` |
+| `services/surveillance/types.ts` | `SurveillanceSignal` / `SurveillanceEventDraft` / `TrackedProvider` (statusUrl + cvePackages) |
 | `services/surveillance/statuspageClient.ts` | Statuspage `incidents.json` lister (fetch injectable) |
+| `services/surveillance/cveClient.ts` | OSV.dev advisory lister — `listCveAdvisories` + `cveToImpact` (fetch injectable) |
 | `services/surveillance/classify.ts` | impact→base + LLM severity/relevance (fail-safe) |
 | `services/surveillance/surveillanceService.ts` | orchestrator — poll + dedup + classify (pure; injectable) |
 | `services/surveillance/enqueue.ts` · `config/queue.ts` · `types/jobs.ts` | the `surveillanceJobs` queue + schedule |
@@ -111,6 +121,7 @@ Every collaborator is injectable → the whole flow unit-tests with no network/L
 
 ## Not in this slice
 
-CVE/breach feed clients (the rails are source-agnostic — a later slice); the dashboard visualisation of
-per-node live signal state (a frontend story on `retrieva`); predictive scoring. Per-org source config
-(the status-page map is platform-level today).
+Breach-feed + regulatory-action + geopolitical sources (the rails are source-agnostic — a further
+client each; outages via Statuspage + CVEs via OSV are built); the dashboard visualisation of per-node
+live signal state (a frontend story on `retrieva`); predictive scoring. Per-org source config (the
+status-page + CVE maps are platform-level + env-extensible today, not yet a per-org UI).

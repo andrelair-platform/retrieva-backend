@@ -63,8 +63,13 @@ export async function processSurveillanceJob(job: Job<SurveillanceRunJobData>, d
       ? await resolveScope({ userId } as Parameters<typeof resolveEntityScope>[0])
       : SYSTEM_SCOPE;
 
-    // Dedup set across the inbox (statuspage source), + run the sweep in the caller's scope.
-    const knownExternalIds = new Set(await repo.listKnownExternalIds(organizationId, 'statuspage'));
+    // Dedup set across the inbox for BOTH sources (statuspage incidents + cve advisories) — ids don't
+    // collide, so a union is safe + keeps re-polls idempotent. Then run the sweep in the caller's scope.
+    const [spKnown, cveKnown] = await Promise.all([
+      repo.listKnownExternalIds(organizationId, 'statuspage'),
+      repo.listKnownExternalIds(organizationId, 'cve'),
+    ]);
+    const knownExternalIds = new Set([...spKnown, ...cveKnown]);
     const result = await withScope(scope, () => run({ organizationId, deps: { knownExternalIds } }));
 
     // Persist the new events (dedup on the unique index), then attach blast-radius + alert material ones.

@@ -7,12 +7,13 @@
 export type SurveillanceSource = 'statuspage' | 'cve' | 'breach' | 'other';
 export type SurveillanceSeverity = 'critical' | 'high' | 'medium' | 'low';
 
-/** A tracked provider the collector can watch: its graph node + the status feed we found for it. */
+/** A tracked provider the collector can watch: its graph node + the feeds we found for it. */
 export interface TrackedProvider {
   nodeId: string;
   name: string; // display name (snapshot onto the event)
   canonicalName: string;
-  statusUrl: string; // the Statuspage base URL (from the curated source map)
+  statusUrl: string; // the Statuspage base URL (from the curated source map), or '' if none
+  cvePackages?: Array<{ ecosystem: string; name: string }>; // OSV packages to watch (RTV-94 CVE source)
 }
 
 /** One raw external signal, normalised. Deterministic fields are parsed from the feed, never LLM-guessed. */
