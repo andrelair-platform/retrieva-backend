@@ -15,6 +15,7 @@ import { workspaceRepository } from '../repositories/drizzle/WorkspaceRepository
 import { criticalFunctionRepository } from '../repositories/drizzle/CriticalFunctionRepository.js';
 import { providerGraphRepository } from '../repositories/drizzle/ProviderGraphRepository.js';
 import { assessmentRepository } from '../repositories/drizzle/AssessmentRepository.js';
+import { arrangementRepository } from '../repositories/drizzle/ArrangementRepository.js';
 import logger from '../config/logger.js';
 
 const CRITICALITY_WEIGHT = { critical: 2, important: 1 };
@@ -164,10 +165,42 @@ export function computeConcentration({
 }
 
 /**
- * Load an organisation's graph and compute concentration. Thin DB wrapper — all logic
- * is in computeConcentration (pure). Injectable deps for testing.
+ * Per-entity slice (RTV-54 concentration, Option A — the bridge). Restrict a computeConcentration
+ * input to a single legal entity's provider set: `providerWorkspaceIds` is the distinct set of
+ * assessed-workspace ids that entity's arrangements use (ArrangementRepository.listProviderWorkspaceIds-
+ * ByEntity). PURE + unit-testable.
+ *   - providers        → only those the entity uses;
+ *   - criticalFunctions→ only CIFs whose dependsOn intersects that set, with dependsOn trimmed to it
+ *     (provider-derived proxy: CIFs aren't entity-scoped yet — that's the Option-B convergence);
+ *   - edges            → nth-party edges fanning out from one of the entity's providers.
  */
-export async function analyzeOrganization(organizationId: string, deps: any = {}) {
+export function scopeGraphToProviders(
+  { providers = [], criticalFunctions = [], edges = [] }: any,
+  providerWorkspaceIds: Set<string>
+) {
+  const inScope = (id: unknown) => providerWorkspaceIds.has(String(id));
+  return {
+    providers: providers.filter((p: any) => inScope(p.id)),
+    criticalFunctions: criticalFunctions
+      .map((c: any) => ({ ...c, dependsOn: (c.dependsOn || []).filter(inScope) }))
+      .filter((c: any) => c.dependsOn.length > 0),
+    edges: edges.filter(
+      (e: any) => e.parent?.kind === 'workspace' && e.parent.workspaceId && inScope(e.parent.workspaceId)
+    ),
+  };
+}
+
+/**
+ * Load an organisation's graph and compute concentration. Thin DB wrapper — all logic
+ * is in computeConcentration (pure). Injectable deps for testing. When `legalEntityId` is given,
+ * the graph is sliced to that one entity's providers (per-entity concentration) via the arrangement
+ * bridge; omit it for the consolidated group-wide view.
+ */
+export async function analyzeOrganization(
+  organizationId: string,
+  deps: any = {},
+  legalEntityId?: string
+) {
   const wsRepo = deps.workspaceRepo || workspaceRepository;
   const cfRepo = deps.criticalFunctionRepo || criticalFunctionRepository;
   const graphRepo = deps.providerGraphRepo || providerGraphRepository;
@@ -177,14 +210,7 @@ export async function analyzeOrganization(organizationId: string, deps: any = {}
     cfRepo.listByOrg(organizationId),
     graphRepo.loadConfirmedEdges(organizationId),
   ]);
-  logger.info('Concentration analysis', {
-    service: 'concentration',
-    organizationId,
-    providers: workspaces.length,
-    criticalFunctions: cfs.length,
-    edges: edges.length,
-  });
-  return computeConcentration({
+  let input = {
     providers: workspaces.map((w: any) => ({ id: String(w.id), name: w.name, tier: w.vendorTier })),
     criticalFunctions: cfs.map((c: any) => ({
       id: String(c.id),
@@ -193,7 +219,25 @@ export async function analyzeOrganization(organizationId: string, deps: any = {}
       dependsOn: (c.dependsOn || []).map(String),
     })),
     edges,
+  };
+  if (legalEntityId) {
+    const arrRepo = deps.arrangementRepo || arrangementRepository;
+    const ids = new Set<string>(
+      ((await arrRepo.listProviderWorkspaceIdsByEntity(organizationId, legalEntityId)) as string[]).map(
+        (x) => String(x)
+      )
+    );
+    input = scopeGraphToProviders(input, ids);
+  }
+  logger.info('Concentration analysis', {
+    service: 'concentration',
+    organizationId,
+    legalEntityId: legalEntityId || null,
+    providers: input.providers.length,
+    criticalFunctions: input.criticalFunctions.length,
+    edges: input.edges.length,
   });
+  return computeConcentration(input);
 }
 
 /**
@@ -201,16 +245,32 @@ export async function analyzeOrganization(organizationId: string, deps: any = {}
  * the concentration score so the UI can size/colour them; edges include CIF→provider
  * dependencies + provider→sub-provider nth-party links.
  */
-export async function getGraph(organizationId: string, deps: any = {}) {
+export async function getGraph(organizationId: string, deps: any = {}, legalEntityId?: string) {
   const wsRepo = deps.workspaceRepo || workspaceRepository;
   const cfRepo = deps.criticalFunctionRepo || criticalFunctionRepository;
   const graphRepo = deps.providerGraphRepo || providerGraphRepository;
 
-  const [workspaces, cfs, edges] = await Promise.all([
+  let [workspaces, cfs, edges] = await Promise.all([
     wsRepo.findByOrganization(organizationId),
     cfRepo.listByOrg(organizationId),
     graphRepo.listDependencies(organizationId),
   ]);
+  if (legalEntityId) {
+    const arrRepo = deps.arrangementRepo || arrangementRepository;
+    const ids = new Set<string>(
+      ((await arrRepo.listProviderWorkspaceIdsByEntity(organizationId, legalEntityId)) as string[]).map(
+        (x) => String(x)
+      )
+    );
+    const inScope = (id: unknown) => ids.has(String(id));
+    workspaces = workspaces.filter((w: any) => inScope(w.id));
+    cfs = cfs
+      .map((c: any) => ({ ...c, dependsOn: (c.dependsOn || []).filter(inScope) }))
+      .filter((c: any) => c.dependsOn.length > 0);
+    edges = edges.filter(
+      (e: any) => e.parent?.kind === 'workspace' && e.parent.workspaceId && inScope(e.parent.workspaceId)
+    );
+  }
   const analysis = computeConcentration({
     providers: workspaces.map((w: any) => ({ id: String(w.id), name: w.name, tier: w.vendorTier })),
     criticalFunctions: cfs.map((c: any) => ({

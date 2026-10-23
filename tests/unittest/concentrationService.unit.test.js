@@ -9,7 +9,13 @@ vi.mock('../../config/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const { computeConcentration, parseSubproviderExtraction, getGraph } = await import('../../services/concentrationService.js');
+const {
+  computeConcentration,
+  parseSubproviderExtraction,
+  getGraph,
+  scopeGraphToProviders,
+  analyzeOrganization,
+} = await import('../../services/concentrationService.js');
 
 // Scenario: two functions, three providers, a shared Azure substrate.
 //   Claims (critical)   → Azure, OpenAI
@@ -25,8 +31,14 @@ const criticalFunctions = [
   { id: 'pay', name: 'Payments', criticality: 'important', dependsOn: ['az'] },
 ];
 const edges = [
-  { parent: { kind: 'workspace', workspaceId: 'oa', name: 'OpenAI' }, child: { kind: 'external', name: 'Azure-infra' } },
-  { parent: { kind: 'workspace', workspaceId: 'az', name: 'Azure' }, child: { kind: 'external', name: 'Azure-infra' } },
+  {
+    parent: { kind: 'workspace', workspaceId: 'oa', name: 'OpenAI' },
+    child: { kind: 'external', name: 'Azure-infra' },
+  },
+  {
+    parent: { kind: 'workspace', workspaceId: 'az', name: 'Azure' },
+    child: { kind: 'external', name: 'Azure-infra' },
+  },
 ];
 
 describe('computeConcentration', () => {
@@ -65,11 +77,20 @@ describe('computeConcentration', () => {
 
   it('is cycle-safe (a provider graph with a loop does not hang)', () => {
     const looped = computeConcentration({
-      providers: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }],
+      providers: [
+        { id: 'a', name: 'A' },
+        { id: 'b', name: 'B' },
+      ],
       criticalFunctions: [{ id: 'f', name: 'F', criticality: 'critical', dependsOn: ['a'] }],
       edges: [
-        { parent: { kind: 'workspace', workspaceId: 'a', name: 'A' }, child: { kind: 'workspace', workspaceId: 'b', name: 'B' } },
-        { parent: { kind: 'workspace', workspaceId: 'b', name: 'B' }, child: { kind: 'workspace', workspaceId: 'a', name: 'A' } },
+        {
+          parent: { kind: 'workspace', workspaceId: 'a', name: 'A' },
+          child: { kind: 'workspace', workspaceId: 'b', name: 'B' },
+        },
+        {
+          parent: { kind: 'workspace', workspaceId: 'b', name: 'B' },
+          child: { kind: 'workspace', workspaceId: 'a', name: 'A' },
+        },
       ],
     });
     // A→B→A cycle: F reaches both A and B, terminates
@@ -87,14 +108,16 @@ describe('computeConcentration', () => {
 
 describe('parseSubproviderExtraction (P2 auto-extraction)', () => {
   it('parses a clean JSON subprocessor list', () => {
-    const raw = '{"subproviders":[{"name":"Microsoft Azure","service":"cloud infrastructure"},{"name":"Cloudflare","service":"CDN"}]}';
+    const raw =
+      '{"subproviders":[{"name":"Microsoft Azure","service":"cloud infrastructure"},{"name":"Cloudflare","service":"CDN"}]}';
     const out = parseSubproviderExtraction(raw, 'OpenAI');
     expect(out).toHaveLength(2);
     expect(out[0]).toEqual({ name: 'Microsoft Azure', service: 'cloud infrastructure' });
   });
 
   it('tolerates prose around the JSON and dedups + drops self-reference', () => {
-    const raw = 'Here is the list:\n{"subproviders":[{"name":"Azure"},{"name":"azure"},{"name":"OpenAI"}]}\nThanks';
+    const raw =
+      'Here is the list:\n{"subproviders":[{"name":"Azure"},{"name":"azure"},{"name":"OpenAI"}]}\nThanks';
     const out = parseSubproviderExtraction(raw, 'OpenAI');
     expect(out.map((o) => o.name)).toEqual(['Azure']); // dup "azure" dropped, self "OpenAI" dropped
   });
@@ -150,5 +173,54 @@ describe('getGraph (P3 viz contract)', () => {
     expect(g.edges.some((e) => e.kind === 'depends_on')).toBe(true);
     expect(g.edges.some((e) => e.kind === 'sub_processes_via')).toBe(true);
     expect(g.summary).toBeTruthy(); // embeds the concentration analysis
+  });
+});
+
+// ── Per-entity concentration (RTV-54, Option A — the arrangement bridge) ─────────────────────────
+describe('scopeGraphToProviders (per-entity slice)', () => {
+  it('restricts providers, trims/drops CIF dependencies, and filters edges to the entity set', () => {
+    const scoped = scopeGraphToProviders({ providers, criticalFunctions, edges }, new Set(['az']));
+    expect(scoped.providers.map((p) => p.id)).toEqual(['az']); // oa + sf dropped
+    expect(scoped.criticalFunctions.map((c) => c.id).sort()).toEqual(['claims', 'pay']); // both touch az
+    expect(scoped.criticalFunctions.find((c) => c.id === 'claims').dependsOn).toEqual(['az']); // oa trimmed off
+    expect(scoped.edges).toHaveLength(1); // openai→azure-infra dropped (parent oa out of scope)
+    expect(scoped.edges[0].parent.workspaceId).toBe('az');
+  });
+
+  it('drops a CIF whose dependencies are entirely out of the entity scope', () => {
+    const scoped = scopeGraphToProviders({ providers, criticalFunctions, edges }, new Set(['sf']));
+    expect(scoped.criticalFunctions).toHaveLength(0); // neither CIF depends on sf
+    expect(scoped.providers.map((p) => p.id)).toEqual(['sf']);
+  });
+});
+
+describe('analyzeOrganization (entity-scoped via the arrangement bridge)', () => {
+  const makeDeps = () => ({
+    workspaceRepo: {
+      findByOrganization: async () =>
+        providers.map((p) => ({ id: p.id, name: p.name, vendorTier: p.tier })),
+    },
+    criticalFunctionRepo: { listByOrg: async () => criticalFunctions },
+    providerGraphRepo: { loadConfirmedEdges: async () => edges },
+    arrangementRepo: { listProviderWorkspaceIdsByEntity: vi.fn(async () => ['az']) }, // the DE branch only uses Azure
+  });
+
+  it('group-wide (no legalEntityId) keeps every provider and never touches the bridge', async () => {
+    const deps = makeDeps();
+    const r = await analyzeOrganization('org1', deps);
+    expect(r.providerConcentration.some((p) => p.key === 'w:oa')).toBe(true); // OpenAI present
+    expect(deps.arrangementRepo.listProviderWorkspaceIdsByEntity).not.toHaveBeenCalled();
+  });
+
+  it('per-entity (legalEntityId) slices to that branch’s providers only', async () => {
+    const deps = makeDeps();
+    const r = await analyzeOrganization('org1', deps, 'entity-DE');
+    expect(deps.arrangementRepo.listProviderWorkspaceIdsByEntity).toHaveBeenCalledWith(
+      'org1',
+      'entity-DE'
+    );
+    expect(r.providerConcentration.some((p) => p.key === 'w:oa')).toBe(false); // OpenAI not in the DE branch
+    expect(r.providerConcentration.some((p) => p.key === 'w:az')).toBe(true); // Azure is
+    expect(r.singlePointsOfFailure.length).toBeGreaterThan(0); // both functions now hang off Azure alone
   });
 });

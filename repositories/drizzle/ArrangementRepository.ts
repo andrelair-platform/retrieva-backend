@@ -7,9 +7,9 @@
  * arrangement graph inherits RTV-54 entity isolation for free (ADR §8) — a row in entity A is
  * invisible under an entity-B scope the moment ENTITY_ISOLATION_MODE=enforce (already prod).
  */
-import { and, eq, desc, sql } from 'drizzle-orm';
+import { and, eq, desc, sql, isNotNull } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
-import { arrangements, findings } from '../../db/schema/index.js';
+import { arrangements, findings, providerNodes } from '../../db/schema/index.js';
 import { entityScopeCondition, legalEntityScopeCondition } from '../../services/security/entityScope.js';
 
 export class ArrangementRepository extends BaseDrizzleRepository {
@@ -91,6 +91,33 @@ export class ArrangementRepository extends BaseDrizzleRepository {
       ),
       { orderBy: [desc(arrangements.createdAt)] }
     );
+  }
+
+  /**
+   * The distinct set of ASSESSED-provider (workspace) ids a single legal entity's arrangements use.
+   * This is the bridge between the entity-aware arrangement graph (arrangements.legalEntityId →
+   * provider_nodes) and the workspace-keyed concentration graph (provider_nodes.workspaceId) — it
+   * lets concentration be sliced to one branch without a schema change (per-entity concentration).
+   * External provider nodes (no workspace) are excluded here — concentration keys on workspaces.
+   */
+  async listProviderWorkspaceIdsByEntity(
+    organizationId: string,
+    legalEntityId: string
+  ): Promise<string[]> {
+    const rows = await this.db
+      .selectDistinct({ workspaceId: providerNodes.workspaceId })
+      .from(arrangements)
+      .innerJoin(providerNodes, eq(arrangements.providerId, providerNodes.id))
+      .where(
+        and(
+          eq(arrangements.organizationId, organizationId),
+          eq(arrangements.legalEntityId, legalEntityId),
+          isNotNull(providerNodes.workspaceId),
+          entityScopeCondition(arrangements.organizationId, { action: 'arrangement:read' }),
+          legalEntityScopeCondition(arrangements.legalEntityId, { action: 'arrangement:read' })
+        )
+      );
+    return rows.map((r: { workspaceId: unknown }) => String(r.workspaceId)).filter(Boolean);
   }
 
   /**
