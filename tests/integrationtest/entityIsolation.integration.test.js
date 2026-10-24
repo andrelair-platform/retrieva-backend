@@ -3,25 +3,30 @@
  * Two legal entities A ⊥ B; a user of A must not read/write B's rows by id, in `enforce`
  * mode. `shadow`/`off` do not filter; `platform_admin` sees across. Exercises the full
  * chain: resolveEntityScope (role_assignments) → runWithEntityScope → repo query filter.
+ *
+ * Vehicle: the org-scoped `legal_entities` table via LegalEntityRepository (its reads AND-in
+ * `entityScopeCondition(legal_entities.organizationId)` — the same org-level isolation the
+ * retired critical_functions repo used to demonstrate; ADR-0001 removed that table).
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
-import { sql } from 'drizzle-orm';
+import { sql, and, eq } from 'drizzle-orm';
 import { startPg, stopPg } from './pgSetup.js';
 import { connectPg, disconnectPg, getDb } from '../../config/db.js';
 import { runMigrations } from '../../db/migrate.js';
-import { users, organizations, roleAssignments, criticalFunctions } from '../../db/schema/index.js';
-import { CriticalFunctionRepository } from '../../repositories/drizzle/CriticalFunctionRepository.js';
+import { users, organizations, roleAssignments, legalEntities } from '../../db/schema/index.js';
+import { LegalEntityRepository } from '../../repositories/drizzle/LegalEntityRepository.js';
+import { entityScopeCondition } from '../../services/security/entityScope.js';
 import { resolveEntityScope } from '../../services/security/entityScope.js';
 import { runWithEntityScope } from '../../db/entityContext.js';
 
 let db;
-let cfRepo;
+let leRepo;
 let userA;
 let userB;
 let orgA;
 let orgB;
-let cfA;
-let cfB;
+let leA;
+let leB;
 
 const mkUser = async () => {
   const [u] = await db
@@ -31,13 +36,24 @@ const mkUser = async () => {
   return u;
 };
 
+// A scoped delete-by-id-and-org (the IDOR write path): the same filter a scoped repo mutation
+// applies — id + org + the RTV-54 entity condition. Returns the deleted rows ([] when blocked).
+const scopedDelete = (organizationId, id) =>
+  leRepo.deleteWhere(
+    and(
+      eq(legalEntities.id, id),
+      eq(legalEntities.organizationId, organizationId),
+      entityScopeCondition(legalEntities.organizationId, { action: 'arrangement:edit' })
+    )
+  );
+
 describe('Entity isolation (RTV-54, AC-4 IDOR)', () => {
   beforeAll(async () => {
     await startPg();
     await connectPg();
     await runMigrations();
     db = getDb();
-    cfRepo = new CriticalFunctionRepository({ db });
+    leRepo = new LegalEntityRepository({ db });
   });
   afterAll(async () => {
     await disconnectPg();
@@ -45,7 +61,7 @@ describe('Entity isolation (RTV-54, AC-4 IDOR)', () => {
   });
   beforeEach(async () => {
     await db.execute(
-      sql`truncate table critical_functions, role_assignments, organizations, users restart identity cascade`
+      sql`truncate table legal_entities, role_assignments, organizations, users restart identity cascade`
     );
     userA = await mkUser();
     userB = await mkUser();
@@ -70,13 +86,13 @@ describe('Entity isolation (RTV-54, AC-4 IDOR)', () => {
       { userId: userA.id, scopeType: 'entity', scopeId: orgA.id, role: 'analyst' },
       { userId: userB.id, scopeType: 'entity', scopeId: orgB.id, role: 'analyst' },
     ]);
-    [cfA] = await db
-      .insert(criticalFunctions)
-      .values({ organizationId: orgA.id, name: 'Payments A', criticality: 'critical' })
+    [leA] = await db
+      .insert(legalEntities)
+      .values({ organizationId: orgA.id, name: 'Legal Entity A' })
       .returning();
-    [cfB] = await db
-      .insert(criticalFunctions)
-      .values({ organizationId: orgB.id, name: 'Payments B', criticality: 'critical' })
+    [leB] = await db
+      .insert(legalEntities)
+      .values({ organizationId: orgB.id, name: 'Legal Entity B' })
       .returning();
   });
   afterEach(() => {
@@ -93,41 +109,41 @@ describe('Entity isolation (RTV-54, AC-4 IDOR)', () => {
   it('enforce: A reads its own entity, but gets NOTHING for B', async () => {
     process.env.ENTITY_ISOLATION_MODE = 'enforce';
     const [own, cross] = await asUser({ ...userA, organizationId: orgA.id }, async () => [
-      await cfRepo.listByOrg(orgA.id),
-      await cfRepo.listByOrg(orgB.id), // cross-entity read attempt
+      await leRepo.listByOrg(orgA.id),
+      await leRepo.listByOrg(orgB.id), // cross-entity read attempt
     ]);
-    expect(own.map((c) => c.id)).toEqual([cfA.id]);
+    expect(own.map((c) => c.id)).toEqual([leA.id]);
     expect(cross).toEqual([]); // isolation: B's rows are invisible to A
   });
 
   it("enforce: A cannot delete B's row by id (guessing the id or the org)", async () => {
     process.env.ENTITY_ISOLATION_MODE = 'enforce';
     const [byOrgB, byOrgA] = await asUser({ ...userA, organizationId: orgA.id }, async () => [
-      await cfRepo.deleteByIdAndOrg(orgB.id, cfB.id), // scope denies org B
-      await cfRepo.deleteByIdAndOrg(orgA.id, cfB.id), // id belongs to B, not A
+      await scopedDelete(orgB.id, leB.id), // scope denies org B
+      await scopedDelete(orgA.id, leB.id), // id belongs to B, not A
     ]);
-    expect(byOrgB).toBeNull();
-    expect(byOrgA).toBeNull();
+    expect(byOrgB).toEqual([]);
+    expect(byOrgA).toEqual([]);
     // B's row survives
     const survived = await db
       .select()
-      .from(criticalFunctions)
-      .where(sql`id = ${cfB.id}`);
+      .from(legalEntities)
+      .where(sql`id = ${leB.id}`);
     expect(survived).toHaveLength(1);
   });
 
   it('shadow: A still SEES B (no filter), proving shadow is observe-only', async () => {
     process.env.ENTITY_ISOLATION_MODE = 'shadow';
     const cross = await asUser({ ...userA, organizationId: orgA.id }, () =>
-      cfRepo.listByOrg(orgB.id)
+      leRepo.listByOrg(orgB.id)
     );
-    expect(cross.map((c) => c.id)).toEqual([cfB.id]);
+    expect(cross.map((c) => c.id)).toEqual([leB.id]);
   });
 
   it('off: no filtering (current behaviour)', async () => {
     process.env.ENTITY_ISOLATION_MODE = 'off';
     const cross = await asUser({ ...userA, organizationId: orgA.id }, () =>
-      cfRepo.listByOrg(orgB.id)
+      leRepo.listByOrg(orgB.id)
     );
     expect(cross).toHaveLength(1);
   });
@@ -136,8 +152,8 @@ describe('Entity isolation (RTV-54, AC-4 IDOR)', () => {
     process.env.ENTITY_ISOLATION_MODE = 'enforce';
     const scope = await resolveEntityScope({ userId: userA.id, platformAdmin: true });
     const [a, b] = await runWithEntityScope(scope, async () => [
-      await cfRepo.listByOrg(orgA.id),
-      await cfRepo.listByOrg(orgB.id),
+      await leRepo.listByOrg(orgA.id),
+      await leRepo.listByOrg(orgB.id),
     ]);
     expect(a).toHaveLength(1);
     expect(b).toHaveLength(1);

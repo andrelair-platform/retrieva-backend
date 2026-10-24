@@ -12,21 +12,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- graph nodes/edges + injectable repos are
    heterogeneous; the concentration algorithm walks an untyped provider graph. */
 import { workspaceRepository } from '../repositories/drizzle/WorkspaceRepository.js';
-import { criticalFunctionRepository } from '../repositories/drizzle/CriticalFunctionRepository.js';
 import { providerGraphRepository } from '../repositories/drizzle/ProviderGraphRepository.js';
 import { assessmentRepository } from '../repositories/drizzle/AssessmentRepository.js';
 import { arrangementRepository } from '../repositories/drizzle/ArrangementRepository.js';
 import { businessFunctionRepository } from '../repositories/drizzle/BusinessFunctionRepository.js';
 import logger from '../config/logger.js';
 
-// Concentration input source (ADR-0001): 'arrangements' = the entity-aware arrangement graph
-// (business_functions → arrangements) — the DEFAULT since Phase 2 cutover; 'legacy' = the org-scoped
-// critical_functions model (kept behind the flag until Phase 3 removes it). Override per-call via
-// deps.concentrationSource or process-wide via CONCENTRATION_SOURCE.
+// Concentration is built from the entity-aware arrangement graph (business_functions → arrangements
+// → provider_nodes → workspaces) — the single function model (ADR-0001; the legacy org-scoped
+// critical_functions model was removed in Phase 3). Per-function criticality = the highest
+// arrangement tier it carries (fallback: critical_or_important ? important : standard).
 const TIER_RANK: Record<string, number> = { standard: 0, important: 1, critical: 2 };
 const higherTier = (a: string, b: string) => ((TIER_RANK[b] ?? 0) > (TIER_RANK[a] ?? 0) ? b : a);
-const concentrationSource = (deps: any) =>
-  deps.concentrationSource || process.env.CONCENTRATION_SOURCE || 'arrangements';
 
 const CRITICALITY_WEIGHT = { critical: 2, important: 1 };
 const MAX_DEPTH = 12; // cycle/blowup guard for chain traversal
@@ -175,36 +172,10 @@ export function computeConcentration({
 }
 
 /**
- * Per-entity slice (RTV-54 concentration, Option A — the bridge). Restrict a computeConcentration
- * input to a single legal entity's provider set: `providerWorkspaceIds` is the distinct set of
- * assessed-workspace ids that entity's arrangements use (ArrangementRepository.listProviderWorkspaceIds-
- * ByEntity). PURE + unit-testable.
- *   - providers        → only those the entity uses;
- *   - criticalFunctions→ only CIFs whose dependsOn intersects that set, with dependsOn trimmed to it
- *     (provider-derived proxy: CIFs aren't entity-scoped yet — that's the Option-B convergence);
- *   - edges            → nth-party edges fanning out from one of the entity's providers.
- */
-export function scopeGraphToProviders(
-  { providers = [], criticalFunctions = [], edges = [] }: any,
-  providerWorkspaceIds: Set<string>
-) {
-  const inScope = (id: unknown) => providerWorkspaceIds.has(String(id));
-  return {
-    providers: providers.filter((p: any) => inScope(p.id)),
-    criticalFunctions: criticalFunctions
-      .map((c: any) => ({ ...c, dependsOn: (c.dependsOn || []).filter(inScope) }))
-      .filter((c: any) => c.dependsOn.length > 0),
-    edges: edges.filter(
-      (e: any) => e.parent?.kind === 'workspace' && e.parent.workspaceId && inScope(e.parent.workspaceId)
-    ),
-  };
-}
-
-/**
  * Load an organisation's graph and compute concentration. Thin DB wrapper — all logic
  * is in computeConcentration (pure). Injectable deps for testing. When `legalEntityId` is given,
- * the graph is sliced to that one entity's providers (per-entity concentration) via the arrangement
- * bridge; omit it for the consolidated group-wide view.
+ * the graph is sliced natively to that one entity's business functions + arrangements (per-entity
+ * concentration); omit it for the consolidated group-wide view.
  */
 /**
  * Build the computeConcentration input from the entity-aware arrangement graph (ADR-0001, Phase 1):
@@ -272,50 +243,7 @@ export async function analyzeOrganization(
   deps: any = {},
   legalEntityId?: string
 ) {
-  // ADR-0001 Phase 1: route the SUMMARY through the arrangement-native builder when enabled
-  // (flag-gated, default off). getGraph (viz) cuts over in Phase 2.
-  if (concentrationSource(deps) === 'arrangements') {
-    const input = await buildConcentrationInputFromArrangements(organizationId, deps, legalEntityId);
-    logger.info('Concentration analysis', {
-      service: 'concentration',
-      source: 'arrangements',
-      organizationId,
-      legalEntityId: legalEntityId || null,
-      providers: input.providers.length,
-      criticalFunctions: input.criticalFunctions.length,
-      edges: input.edges.length,
-    });
-    return computeConcentration(input);
-  }
-
-  const wsRepo = deps.workspaceRepo || workspaceRepository;
-  const cfRepo = deps.criticalFunctionRepo || criticalFunctionRepository;
-  const graphRepo = deps.providerGraphRepo || providerGraphRepository;
-
-  const [workspaces, cfs, edges] = await Promise.all([
-    wsRepo.findByOrganization(organizationId),
-    cfRepo.listByOrg(organizationId),
-    graphRepo.loadConfirmedEdges(organizationId),
-  ]);
-  let input = {
-    providers: workspaces.map((w: any) => ({ id: String(w.id), name: w.name, tier: w.vendorTier })),
-    criticalFunctions: cfs.map((c: any) => ({
-      id: String(c.id),
-      name: c.name,
-      criticality: c.criticality,
-      dependsOn: (c.dependsOn || []).map(String),
-    })),
-    edges,
-  };
-  if (legalEntityId) {
-    const arrRepo = deps.arrangementRepo || arrangementRepository;
-    const ids = new Set<string>(
-      ((await arrRepo.listProviderWorkspaceIdsByEntity(organizationId, legalEntityId)) as string[]).map(
-        (x) => String(x)
-      )
-    );
-    input = scopeGraphToProviders(input, ids);
-  }
+  const input = await buildConcentrationInputFromArrangements(organizationId, deps, legalEntityId);
   logger.info('Concentration analysis', {
     service: 'concentration',
     organizationId,
@@ -335,48 +263,19 @@ export async function analyzeOrganization(
 export async function getGraph(organizationId: string, deps: any = {}, legalEntityId?: string) {
   const graphRepo = deps.providerGraphRepo || providerGraphRepository;
 
-  // 1. Normalised function model (providers + functions) from the active source.
-  //    arrangements (default, ADR-0001) = business_functions → arrangements → provider workspaces;
-  //    legacy = the org-scoped critical_functions model, with the Option-A per-entity proxy slice.
-  let providers: Array<{ id: string; name: string; tier?: string }>;
-  let functions: Array<{ id: string; name: string; criticality: string; dependsOn: string[] }>;
-  if (concentrationSource(deps) === 'arrangements') {
-    const input = await buildConcentrationInputFromArrangements(organizationId, deps, legalEntityId);
-    providers = input.providers.map((p: any) => ({ id: String(p.id), name: p.name, tier: p.tier }));
-    functions = input.criticalFunctions.map((c: any) => ({
+  // 1. Function model (providers + functions) from the arrangement graph (ADR-0001): business_functions
+  //    → arrangements → provider workspaces, sliced natively by legalEntityId when scoped.
+  const input = await buildConcentrationInputFromArrangements(organizationId, deps, legalEntityId);
+  const providers: Array<{ id: string; name: string; tier?: string }> = input.providers.map(
+    (p: any) => ({ id: String(p.id), name: p.name, tier: p.tier })
+  );
+  const functions: Array<{ id: string; name: string; criticality: string; dependsOn: string[] }> =
+    input.criticalFunctions.map((c: any) => ({
       id: String(c.id),
       name: c.name,
       criticality: c.criticality,
       dependsOn: (c.dependsOn || []).map(String),
     }));
-  } else {
-    const wsRepo = deps.workspaceRepo || workspaceRepository;
-    const cfRepo = deps.criticalFunctionRepo || criticalFunctionRepository;
-    const [workspaces, cfs] = await Promise.all([
-      wsRepo.findByOrganization(organizationId),
-      cfRepo.listByOrg(organizationId),
-    ]);
-    providers = workspaces.map((w: any) => ({ id: String(w.id), name: w.name, tier: w.vendorTier }));
-    functions = cfs.map((c: any) => ({
-      id: String(c.id),
-      name: c.name,
-      criticality: c.criticality,
-      dependsOn: (c.dependsOn || []).map(String),
-    }));
-    if (legalEntityId) {
-      const arrRepo = deps.arrangementRepo || arrangementRepository;
-      const ids = new Set<string>(
-        ((await arrRepo.listProviderWorkspaceIdsByEntity(organizationId, legalEntityId)) as string[]).map(
-          (x) => String(x)
-        )
-      );
-      const inScope = (id: unknown) => ids.has(String(id));
-      providers = providers.filter((p) => inScope(p.id));
-      functions = functions
-        .map((c) => ({ ...c, dependsOn: c.dependsOn.filter(inScope) }))
-        .filter((c) => c.dependsOn.length > 0);
-    }
-  }
 
   // 2. nth-party edges (independent of the function model) — all edges for the viz, sliced to the
   //    entity's provider set when scoped. The analysis below only counts the confirmed ones.
@@ -438,22 +337,16 @@ export async function getGraph(organizationId: string, deps: any = {}, legalEnti
 
 // ── Critical functions (the register's business functions, read-only) ────────
 //
-// ADR-0001 Phase 2: concentration functions now come from the register's `business_functions`
-// via arrangements (the single, grounded function model) — so the list is read-only here and the
-// manual create/update/delete path is retired. The legacy `critical_functions` model is still
-// readable behind CONCENTRATION_SOURCE=legacy until Phase 3 drops it.
+// ADR-0001: concentration functions come from the register's `business_functions` via arrangements
+// (the single, grounded function model) — read-only here; there is no manual authoring path.
 
 export async function listCriticalFunctions(
   organizationId: string,
   deps: any = {},
   legalEntityId?: string
 ) {
-  if (concentrationSource(deps) === 'arrangements') {
-    const input = await buildConcentrationInputFromArrangements(organizationId, deps, legalEntityId);
-    return input.criticalFunctions;
-  }
-  const cfRepo = deps.criticalFunctionRepo || criticalFunctionRepository;
-  return cfRepo.listByOrg(organizationId);
+  const input = await buildConcentrationInputFromArrangements(organizationId, deps, legalEntityId);
+  return input.criticalFunctions;
 }
 
 // ── nth-party dependency edges ───────────────────────────────────────────────

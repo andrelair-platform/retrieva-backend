@@ -41,10 +41,6 @@ export {
   vendorQuestionnaireRepository,
 } from './drizzle/VendorQuestionnaireRepository.js';
 export {
-  CriticalFunctionRepository,
-  criticalFunctionRepository,
-} from './drizzle/CriticalFunctionRepository.js';
-export {
   ProviderGraphRepository,
   providerGraphRepository,
 } from './drizzle/ProviderGraphRepository.js';

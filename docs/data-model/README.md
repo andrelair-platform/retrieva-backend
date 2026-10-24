@@ -12,8 +12,6 @@
 | [public.business_functions](public.business_functions.md)                         | 8       |         | BASE TABLE |
 | [public.contract_amendments](public.contract_amendments.md)                       | 17      |         | BASE TABLE |
 | [public.conversations](public.conversations.md)                                   | 9       |         | BASE TABLE |
-| [public.critical_function_dependencies](public.critical_function_dependencies.md) | 2       |         | BASE TABLE |
-| [public.critical_functions](public.critical_functions.md)                         | 8       |         | BASE TABLE |
 | [public.ddq_contradictions](public.ddq_contradictions.md)                         | 18      |         | BASE TABLE |
 | [public.discovery_proposals](public.discovery_proposals.md)                       | 11      |         | BASE TABLE |
 | [public.discovery_runs](public.discovery_runs.md)                                 | 16      |         | BASE TABLE |
@@ -129,10 +127,6 @@ erDiagram
 "public.contract_amendments" }o--|| "public.assessments" : "FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE"
 "public.conversations" }o--o| "public.users" : "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL"
 "public.conversations" }o--o| "public.workspaces" : "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
-"public.critical_function_dependencies" }o--|| "public.workspaces" : "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
-"public.critical_function_dependencies" }o--|| "public.critical_functions" : "FOREIGN KEY (critical_function_id) REFERENCES critical_functions(id) ON DELETE CASCADE"
-"public.critical_functions" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
-"public.critical_functions" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.ddq_contradictions" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.ddq_contradictions" }o--o| "public.users" : "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.ddq_contradictions" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
@@ -316,20 +310,6 @@ erDiagram
   timestamp_with_time_zone updated_at
   uuid user_id FK
   uuid workspace_id FK
-}
-"public.critical_function_dependencies" {
-  uuid critical_function_id FK
-  uuid workspace_id FK
-}
-"public.critical_functions" {
-  timestamp_with_time_zone created_at
-  uuid created_by FK
-  criticality criticality
-  text description
-  uuid id
-  text name
-  uuid organization_id FK
-  timestamp_with_time_zone updated_at
 }
 "public.ddq_contradictions" {
   text answer_text

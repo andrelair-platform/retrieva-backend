@@ -17,8 +17,6 @@ import type {
   conversations,
   messages,
   assessments,
-  criticalFunctions,
-  criticalFunctionDependencies,
   providerNodes,
   providerDependencies,
   questionnaireTemplates,
@@ -81,9 +79,3 @@ export type FindingRow = typeof findings.$inferSelect;
 export type FindingInsert = typeof findings.$inferInsert;
 export type RiskRow = typeof risks.$inferSelect;
 export type RiskInsert = typeof risks.$inferInsert;
-
-// ── critical-function legacy graph (pre-arrangement model) ──────────────────
-export type CriticalFunctionRow = typeof criticalFunctions.$inferSelect;
-export type CriticalFunctionInsert = typeof criticalFunctions.$inferInsert;
-export type CriticalFunctionDependencyRow = typeof criticalFunctionDependencies.$inferSelect;
-export type CriticalFunctionDependencyInsert = typeof criticalFunctionDependencies.$inferInsert;

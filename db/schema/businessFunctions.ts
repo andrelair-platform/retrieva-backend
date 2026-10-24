@@ -4,9 +4,9 @@
 // pull the full DORA obligation set, others are lighter-touch. This drives downstream
 // materiality (RTV-32 change engine) and register scoping (RTV-38).
 //
-// NOTE: distinct from the legacy `critical_functions` table (RTV-48 concentration graph, which
-// keeps its own `dependsOn` workspaces M2M for concentrationService). Convergence of the two
-// function models is deferred to RTV-37+; RTV-36 is additive and leaves critical_functions intact.
+// This is the SINGLE function model: concentration also derives from it via arrangements
+// (ADR-0001 — the legacy org-scoped `critical_functions` table + its workspace M2M were removed
+// in Phase 3). Per-function provider dependencies come from BF → arrangement → provider_node.
 import { pgTable, uuid, text, boolean, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { organizations } from './organizations.js';
 import { legalEntities } from './legalEntities.js';

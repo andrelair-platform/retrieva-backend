@@ -13,7 +13,6 @@ const {
   computeConcentration,
   parseSubproviderExtraction,
   getGraph,
-  scopeGraphToProviders,
   analyzeOrganization,
   buildConcentrationInputFromArrangements,
   listCriticalFunctions,
@@ -136,101 +135,7 @@ describe('parseSubproviderExtraction (P2 auto-extraction)', () => {
   });
 });
 
-describe('getGraph (P3 viz contract — legacy source)', () => {
-  // RTV-49: getGraph reads through injected Drizzle repos (deps), not Mongoose models.
-  // Pinned to the legacy critical_functions source (ADR-0001 default is now 'arrangements').
-  const deps = {
-    concentrationSource: 'legacy',
-    workspaceRepo: {
-      findByOrganization: async () => [
-        { id: 'az', name: 'Azure', vendorTier: 'critical' },
-        { id: 'oa', name: 'OpenAI', vendorTier: 'important' },
-      ],
-    },
-    criticalFunctionRepo: {
-      listByOrg: async () => [
-        { id: 'cf1', name: 'Claims', criticality: 'critical', dependsOn: ['az', 'oa'] },
-      ],
-    },
-    providerGraphRepo: {
-      listDependencies: async () => [
-        {
-          parent: { kind: 'workspace', workspaceId: 'oa', name: 'OpenAI' },
-          child: { kind: 'external', name: 'Azure-infra' },
-          source: 'extracted',
-          confirmed: true,
-        },
-      ],
-    },
-  };
-
-  it('returns viz nodes (functions, providers, subproviders) + typed edges', async () => {
-    const g = await getGraph('org1', deps);
-    const types = g.nodes.reduce((m, n) => ((m[n.type] = (m[n.type] || 0) + 1), m), {});
-    expect(types.function).toBe(1);
-    expect(types.provider).toBe(2);
-    expect(types.subprovider).toBe(1); // Azure-infra
-    // provider carries a concentration score for UI sizing
-    const azure = g.nodes.find((n) => n.label === 'Azure');
-    expect(azure.concentrationScore).toBeGreaterThan(0);
-    // edges: CIF→provider (depends_on) + provider→sub (sub_processes_via)
-    expect(g.edges.some((e) => e.kind === 'depends_on')).toBe(true);
-    expect(g.edges.some((e) => e.kind === 'sub_processes_via')).toBe(true);
-    expect(g.summary).toBeTruthy(); // embeds the concentration analysis
-  });
-});
-
-// ── Per-entity concentration (RTV-54, Option A — the arrangement bridge) ─────────────────────────
-describe('scopeGraphToProviders (per-entity slice)', () => {
-  it('restricts providers, trims/drops CIF dependencies, and filters edges to the entity set', () => {
-    const scoped = scopeGraphToProviders({ providers, criticalFunctions, edges }, new Set(['az']));
-    expect(scoped.providers.map((p) => p.id)).toEqual(['az']); // oa + sf dropped
-    expect(scoped.criticalFunctions.map((c) => c.id).sort()).toEqual(['claims', 'pay']); // both touch az
-    expect(scoped.criticalFunctions.find((c) => c.id === 'claims').dependsOn).toEqual(['az']); // oa trimmed off
-    expect(scoped.edges).toHaveLength(1); // openai→azure-infra dropped (parent oa out of scope)
-    expect(scoped.edges[0].parent.workspaceId).toBe('az');
-  });
-
-  it('drops a CIF whose dependencies are entirely out of the entity scope', () => {
-    const scoped = scopeGraphToProviders({ providers, criticalFunctions, edges }, new Set(['sf']));
-    expect(scoped.criticalFunctions).toHaveLength(0); // neither CIF depends on sf
-    expect(scoped.providers.map((p) => p.id)).toEqual(['sf']);
-  });
-});
-
-describe('analyzeOrganization (legacy source — entity-scoped via the Option-A arrangement bridge)', () => {
-  const makeDeps = () => ({
-    concentrationSource: 'legacy',
-    workspaceRepo: {
-      findByOrganization: async () =>
-        providers.map((p) => ({ id: p.id, name: p.name, vendorTier: p.tier })),
-    },
-    criticalFunctionRepo: { listByOrg: async () => criticalFunctions },
-    providerGraphRepo: { loadConfirmedEdges: async () => edges },
-    arrangementRepo: { listProviderWorkspaceIdsByEntity: vi.fn(async () => ['az']) }, // the DE branch only uses Azure
-  });
-
-  it('group-wide (no legalEntityId) keeps every provider and never touches the bridge', async () => {
-    const deps = makeDeps();
-    const r = await analyzeOrganization('org1', deps);
-    expect(r.providerConcentration.some((p) => p.key === 'w:oa')).toBe(true); // OpenAI present
-    expect(deps.arrangementRepo.listProviderWorkspaceIdsByEntity).not.toHaveBeenCalled();
-  });
-
-  it('per-entity (legalEntityId) slices to that branch’s providers only', async () => {
-    const deps = makeDeps();
-    const r = await analyzeOrganization('org1', deps, 'entity-DE');
-    expect(deps.arrangementRepo.listProviderWorkspaceIdsByEntity).toHaveBeenCalledWith(
-      'org1',
-      'entity-DE'
-    );
-    expect(r.providerConcentration.some((p) => p.key === 'w:oa')).toBe(false); // OpenAI not in the DE branch
-    expect(r.providerConcentration.some((p) => p.key === 'w:az')).toBe(true); // Azure is
-    expect(r.singlePointsOfFailure.length).toBeGreaterThan(0); // both functions now hang off Azure alone
-  });
-});
-
-// ── Option B / Phase 1: arrangement-native concentration input (ADR-0001) ────────────────────────
+// ── Arrangement-native concentration input (ADR-0001) ────────────────────────────────────────────
 describe('buildConcentrationInputFromArrangements (business_functions → arrangements)', () => {
   const makeDeps = () => ({
     businessFunctionRepo: {
@@ -289,18 +194,17 @@ describe('buildConcentrationInputFromArrangements (business_functions → arrang
     expect(input.criticalFunctions.map((c) => c.id)).toEqual(['bf1']); // only the DE function
   });
 
-  it('analyzeOrganization routes through the builder when source=arrangements (else legacy)', async () => {
-    const deps = { ...makeDeps(), concentrationSource: 'arrangements' };
+  it('analyzeOrganization computes concentration from the arrangement builder', async () => {
+    const deps = makeDeps();
     const r = await analyzeOrganization('org1', deps);
     expect(deps.arrangementRepo.listFunctionProviderEdges).toHaveBeenCalled(); // arrangement path taken
     expect(r.providerConcentration.some((p) => p.key === 'w:az')).toBe(true);
   });
 });
 
-// ── Phase 2 cutover: getGraph + listCriticalFunctions on the arrangement-native source ───────────
-describe('arrangement-native source (ADR-0001 Phase 2 default)', () => {
+// ── getGraph + listCriticalFunctions on the arrangement-native source (ADR-0001) ─────────────────
+describe('arrangement-native concentration viz + function list', () => {
   const makeDeps = () => ({
-    concentrationSource: 'arrangements',
     businessFunctionRepo: {
       listByOrg: vi.fn(async () => [
         { id: 'bf1', name: 'Claims', legalEntityId: 'de', criticalOrImportant: true },

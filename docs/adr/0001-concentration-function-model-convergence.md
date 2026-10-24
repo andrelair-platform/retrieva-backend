@@ -1,7 +1,7 @@
 # ADR-0001 — Converge the concentration function model onto the entity-aware arrangement graph
 
-- **Status:** Accepted — Phase 1 in progress (flag-gated, additive). Decisions 1–3 OPEN.
-- **Date:** 2026-10-23
+- **Status:** Accepted — **DONE** (Phases 1–3 shipped; legacy `critical_functions` removed). Decisions 1–3 settled (see below).
+- **Date:** 2026-10-23 (Phases 2–3 completed 2026-10-24)
 - **Area:** Concentration / nth-party analysis (DORA Art. 28(4) / 29); RTV-15, RTV-54.
 - **Supersedes nothing; sets up the retirement of the legacy `critical_functions` model.**
 
@@ -31,11 +31,11 @@ The pure scorer `computeConcentration({ providers, criticalFunctions, edges })` 
 - **Phase 2 — cut over + deprecate.** Flip the default to `arrangements`. Per-entity concentration goes native (replaces the Option-A proxy). Deprecate `POST /concentration/functions`; the concentration UI drops the create-function form and reads functions from the register. Route `getGraph` (viz) through the same builder.
 - **Phase 3 — remove legacy (after bake).** Drop `critical_functions` + `critical_function_dependencies` + `CriticalFunctionRepository` + the frontend create-function UI. Data migration only **iff** Decision 1 says so.
 
-## Open decisions (owner's call; they change Phase 2/3)
+## Open decisions — SETTLED (2026-10-24)
 
-1. **Existing `critical_functions` data** — migrate, or treat as deprecated demo data? The ktayl register seed uses `business_functions`, so `critical_functions` is likely demo-only (verify dev/prod row counts before Phase 3). A real migration is **lossy**: a bare CF→workspace dependency cannot become a full arrangement, and CFs carry no entity to assign.
-2. **Manual function CRUD** — OK to retire the "create a critical function + pick its providers" authoring path, so functions flow only from the register/arrangements? (Cleaner and grounded; removes a manual path.)
-3. **Weighting** — map concentration weight to the **arrangement `tier`** (critical=2 / important=1), and/or the `critical_or_important` flag? (Recommend: the per-function criticality = the **highest arrangement tier**, falling back to `critical_or_important ? important : standard`.)
+1. **Existing `critical_functions` data** — **no migration; treated as deprecated demo data.** Verified before dropping: dev had 1 orphan row / 0 dependencies, prod had 0 rows (the ktayl register seed uses `business_functions`). A real migration would have been lossy (a bare CF→workspace dependency cannot become a full arrangement, and CFs carry no entity); there was nothing worth migrating.
+2. **Manual function CRUD** — **retired.** Concentration functions now flow only from the register's business functions + their arrangements; `POST`/`DELETE /concentration/functions` and the frontend authoring form are gone.
+3. **Weighting** — **arrangement `tier`.** Per-function criticality = the **highest arrangement tier** it carries, falling back to `critical_or_important ? important : standard`.
 
 ## Consequences
 
@@ -44,5 +44,6 @@ The pure scorer `computeConcentration({ providers, criticalFunctions, edges })` 
 - **Reversible until Phase 3:** the `CONCENTRATION_SOURCE` flag keeps both paths live through Phases 1–2; only Phase 3 is irreversible (table drop).
 
 ## References
-- Option A (the bridge/proxy, shipped): `services/concentrationService.ts#scopeGraphToProviders`, `ArrangementRepository.listProviderWorkspaceIdsByEntity` (retrieva-backend PR #145).
-- Models: `db/schema/criticalFunctions.ts`, `db/schema/businessFunctions.ts`, `db/schema/arrangements.ts`, `db/schema/providerDependencies.ts`.
+- Option A (the bridge/proxy — superseded by the native per-entity slice, then removed in Phase 3): `ArrangementRepository.listProviderWorkspaceIdsByEntity` (retrieva-backend PR #145). The `scopeGraphToProviders` helper it used was deleted with the legacy path.
+- Builder: `services/concentrationService.ts#buildConcentrationInputFromArrangements` + `ArrangementRepository.listFunctionProviderEdges`.
+- Models (post-convergence): `db/schema/businessFunctions.ts`, `db/schema/arrangements.ts`, `db/schema/providerDependencies.ts`. (`db/schema/criticalFunctions.ts` removed in Phase 3 — migration `0029_red_ronan.sql`.)

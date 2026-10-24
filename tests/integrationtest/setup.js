@@ -41,8 +41,6 @@ export const TEST_CONFIG = {
 const ALL_TABLES = [
   'provider_dependencies',
   'provider_nodes',
-  'critical_function_dependencies',
-  'critical_functions',
   'messages',
   'conversations',
   'vendor_questionnaires',
