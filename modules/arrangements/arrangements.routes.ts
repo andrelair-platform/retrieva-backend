@@ -6,6 +6,8 @@ import {
   createArrangement,
   getArrangement,
   getOnboardingDecision,
+  getContractClauses,
+  gapCheckContractClauses,
   getLifecycle,
   transitionLifecycle,
   listArrangementEvidence,
@@ -30,6 +32,13 @@ arrangementsRouter.get('/', authenticate, listArrangements);
 arrangementsRouter.post('/', authenticate, createArrangement);
 arrangementsRouter.get('/:id', authenticate, getArrangement);
 arrangementsRouter.get('/:id/onboarding-decision', authenticate, getOnboardingDecision);
+arrangementsRouter.get('/:id/contract-clauses', authenticate, getContractClauses);
+arrangementsRouter.post(
+  '/:id/contract-clauses/gap-check',
+  authenticate,
+  contractUploadMiddleware,
+  gapCheckContractClauses
+);
 arrangementsRouter.get('/:id/lifecycle', authenticate, getLifecycle);
 arrangementsRouter.patch('/:id/lifecycle', authenticate, transitionLifecycle);
 arrangementsRouter.get('/:id/evidence', authenticate, listArrangementEvidence);

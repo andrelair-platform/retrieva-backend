@@ -25,6 +25,7 @@ import {
 } from '../../repositories/index.js';
 import { analyzeOrganization } from '../../services/concentrationService.js';
 import { buildOnboardingDecision } from '../../services/onboarding/onboardingDecision.js';
+import { buildClausePack, gapCheckClausePack } from '../../services/legal/contractClausePack.js';
 
 // Arrangement-graph CRUD (RTV-36/37) — ORG-scoped. Every handler keys off req.user!.organizationId
 // (never a caller-supplied org); row-level entity isolation (RTV-54) is applied by the repos via
@@ -155,6 +156,40 @@ export const getOnboardingDecision = catchAsync(async (req: Request, res: Respon
   });
 
   sendSuccess(res, 200, 'Onboarding decision pack', { arrangementId: arrangement.id, ...decision });
+});
+
+// GET /api/v1/arrangements/:id/contract-clauses — the mandatory DORA Art. 30 clause pack for legal,
+// tiered by this arrangement's criticality (30(2) for all; 30(3) extras for CIFs). Derived from the
+// control library, so it never diverges from the compliance assessment.
+export const getContractClauses = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  const arrangement = await arrangementRepository.findByIdInOrg(organizationId, String(req.params.id));
+  if (!arrangement) return sendError(res, 404, 'Arrangement not found');
+  const pack = buildClausePack({ criticality: arrangement.criticality });
+  sendSuccess(res, 200, 'Contract clause pack (DORA Art. 30)', { arrangementId: arrangement.id, ...pack });
+});
+
+// POST /api/v1/arrangements/:id/contract-clauses/gap-check — upload a DRAFT contract (field `contract`);
+// returns a covered / weak / missing punch-list of the required Art. 30 clauses for the legal team.
+export const gapCheckContractClauses = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  if (!req.file) return sendError(res, 400, 'A draft contract file is required (field: contract)');
+  const arrangement = await arrangementRepository.findByIdInOrg(organizationId, String(req.params.id));
+  if (!arrangement) return sendError(res, 404, 'Arrangement not found');
+
+  const ext = path.extname(req.file.originalname).replace('.', '').toLowerCase();
+  const text = await parseFile(req.file.buffer, ext, req.file.originalname);
+  if (!text || text.trim().length < 20) {
+    return sendError(res, 422, 'Could not extract readable text from the draft contract');
+  }
+  const report = gapCheckClausePack({ criticality: arrangement.criticality }, text);
+  sendSuccess(res, 200, 'Contract clause gap-check (DORA Art. 30)', {
+    arrangementId: arrangement.id,
+    source: { fileName: req.file.originalname, parsedChars: text.length },
+    ...report,
+  });
 });
 
 // PATCH /api/v1/arrangements/:id/lifecycle — advance the state machine (RTV-31). Illegal transitions
