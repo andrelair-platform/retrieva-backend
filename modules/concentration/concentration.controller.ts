@@ -4,8 +4,6 @@ import {
   analyzeOrganization,
   getGraph,
   listCriticalFunctions,
-  upsertCriticalFunction,
-  deleteCriticalFunction,
   listDependencies,
   setDependencyConfirmed,
   extractSubProvidersForWorkspace,
@@ -72,26 +70,19 @@ export const getCriticalFunctions = catchAsync(async (req: Request, res: Respons
   sendSuccess(res, 200, 'Critical functions', { functions: await listCriticalFunctions(id) });
 });
 
-export const createOrUpdateCriticalFunction = catchAsync(async (req: Request, res: Response) => {
-  const id = requireOrg(req, res);
-  if (!id) return;
-  const fn = await upsertCriticalFunction(id, {
-    id: req.body.id,
-    name: req.body.name,
-    criticality: req.body.criticality,
-    description: req.body.description,
-    dependsOn: req.body.dependsOn,
-    userId: req.user!.userId,
-  });
-  sendSuccess(res, req.body.id ? 200 : 201, 'Critical function saved', { function: fn });
+// DEPRECATED (ADR-0001 Phase 2) — concentration functions now flow from the register's
+// business functions / arrangements (the single, grounded function model), so the manual
+// "create a critical function + pick its providers" authoring path is retired. Define a business
+// function + its arrangements in the register instead; concentration derives from them.
+const GONE_MESSAGE =
+  'Manual critical-function authoring is retired (ADR-0001). Concentration functions are derived from the register’s business functions and their arrangements — manage them there.';
+
+export const createOrUpdateCriticalFunction = catchAsync(async (_req: Request, res: Response) => {
+  sendError(res, 410, GONE_MESSAGE);
 });
 
-export const removeCriticalFunction = catchAsync(async (req: Request, res: Response) => {
-  const id = requireOrg(req, res);
-  if (!id) return;
-  const removed = await deleteCriticalFunction(id, String(req.params.id));
-  if (!removed) return sendError(res, 404, 'Critical function not found');
-  sendSuccess(res, 200, 'Critical function deleted', { id: String(req.params.id) });
+export const removeCriticalFunction = catchAsync(async (_req: Request, res: Response) => {
+  sendError(res, 410, GONE_MESSAGE);
 });
 
 export const getDependencies = catchAsync(async (req: Request, res: Response) => {
