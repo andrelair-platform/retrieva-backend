@@ -16,7 +16,16 @@ import { criticalFunctionRepository } from '../repositories/drizzle/CriticalFunc
 import { providerGraphRepository } from '../repositories/drizzle/ProviderGraphRepository.js';
 import { assessmentRepository } from '../repositories/drizzle/AssessmentRepository.js';
 import { arrangementRepository } from '../repositories/drizzle/ArrangementRepository.js';
+import { businessFunctionRepository } from '../repositories/drizzle/BusinessFunctionRepository.js';
 import logger from '../config/logger.js';
+
+// Concentration input source (ADR-0001): 'legacy' = the org-scoped critical_functions model;
+// 'arrangements' = the entity-aware arrangement graph (business_functions → arrangements). Default
+// legacy until Phase 2 cutover; a caller can override per-call via deps.concentrationSource.
+const TIER_RANK: Record<string, number> = { standard: 0, important: 1, critical: 2 };
+const higherTier = (a: string, b: string) => ((TIER_RANK[b] ?? 0) > (TIER_RANK[a] ?? 0) ? b : a);
+const concentrationSource = (deps: any) =>
+  deps.concentrationSource || process.env.CONCENTRATION_SOURCE || 'legacy';
 
 const CRITICALITY_WEIGHT = { critical: 2, important: 1 };
 const MAX_DEPTH = 12; // cycle/blowup guard for chain traversal
@@ -196,11 +205,88 @@ export function scopeGraphToProviders(
  * the graph is sliced to that one entity's providers (per-entity concentration) via the arrangement
  * bridge; omit it for the consolidated group-wide view.
  */
+/**
+ * Build the computeConcentration input from the entity-aware arrangement graph (ADR-0001, Phase 1):
+ * business_functions ARE the functions; each function's provider dependencies are the assessed
+ * workspaces its arrangements use (BF → arrangement → provider_node → workspace); per-function
+ * criticality is the highest arrangement tier it carries (fallback: critical_or_important ?
+ * important : standard). When `legalEntityId` is given the slice is NATIVE (business_functions + their
+ * arrangements filtered to that entity) — not the Option-A provider-derived proxy.
+ */
+export async function buildConcentrationInputFromArrangements(
+  organizationId: string,
+  deps: any = {},
+  legalEntityId?: string
+) {
+  const bfRepo = deps.businessFunctionRepo || businessFunctionRepository;
+  const wsRepo = deps.workspaceRepo || workspaceRepository;
+  const arrRepo = deps.arrangementRepo || arrangementRepository;
+  const graphRepo = deps.providerGraphRepo || providerGraphRepository;
+
+  const [businessFunctions, workspaces, fnEdges, edges] = await Promise.all([
+    legalEntityId
+      ? bfRepo.listByEntity(organizationId, legalEntityId)
+      : bfRepo.listByOrg(organizationId),
+    wsRepo.findByOrganization(organizationId),
+    arrRepo.listFunctionProviderEdges(organizationId, legalEntityId),
+    graphRepo.loadConfirmedEdges(organizationId),
+  ]);
+
+  // business function → { provider workspace ids it uses, highest arrangement tier }
+  const byBf = new Map<string, { ids: Set<string>; tier: string }>();
+  for (const e of fnEdges) {
+    const rec = byBf.get(e.businessFunctionId) || { ids: new Set<string>(), tier: 'standard' };
+    if (e.workspaceId) rec.ids.add(String(e.workspaceId));
+    rec.tier = higherTier(rec.tier, e.criticality);
+    byBf.set(e.businessFunctionId, rec);
+  }
+  const wsById = new Map<string, any>(workspaces.map((w: any) => [String(w.id), w]));
+  const usedWsIds = new Set<string>([...byBf.values()].flatMap((r) => [...r.ids]));
+
+  return {
+    providers: [...usedWsIds].map((id) => ({
+      id,
+      name: wsById.get(id)?.name || id,
+      tier: wsById.get(id)?.vendorTier,
+    })),
+    criticalFunctions: businessFunctions.map((bf: any) => {
+      const rec = byBf.get(String(bf.id)) || { ids: new Set<string>(), tier: 'standard' };
+      const criticality =
+        rec.tier !== 'standard' ? rec.tier : bf.criticalOrImportant ? 'important' : 'standard';
+      return { id: String(bf.id), name: bf.name, criticality, dependsOn: [...rec.ids] };
+    }),
+    edges: legalEntityId
+      ? edges.filter(
+          (e: any) =>
+            e.parent?.kind === 'workspace' &&
+            e.parent.workspaceId &&
+            usedWsIds.has(String(e.parent.workspaceId))
+        )
+      : edges,
+  };
+}
+
 export async function analyzeOrganization(
   organizationId: string,
   deps: any = {},
   legalEntityId?: string
 ) {
+  // ADR-0001 Phase 1: route the SUMMARY through the arrangement-native builder when enabled
+  // (flag-gated, default off). getGraph (viz) cuts over in Phase 2.
+  if (concentrationSource(deps) === 'arrangements') {
+    const input = await buildConcentrationInputFromArrangements(organizationId, deps, legalEntityId);
+    logger.info('Concentration analysis', {
+      service: 'concentration',
+      source: 'arrangements',
+      organizationId,
+      legalEntityId: legalEntityId || null,
+      providers: input.providers.length,
+      criticalFunctions: input.criticalFunctions.length,
+      edges: input.edges.length,
+    });
+    return computeConcentration(input);
+  }
+
   const wsRepo = deps.workspaceRepo || workspaceRepository;
   const cfRepo = deps.criticalFunctionRepo || criticalFunctionRepository;
   const graphRepo = deps.providerGraphRepo || providerGraphRepository;
