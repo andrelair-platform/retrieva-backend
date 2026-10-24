@@ -12,8 +12,6 @@ import {
   conversations,
   messages,
   assessments,
-  criticalFunctions,
-  criticalFunctionDependencies,
   providerNodes,
   providerDependencies,
   questionnaireTemplates,
@@ -47,12 +45,6 @@ export const messageSelectSchema = createSelectSchema(messages);
 
 export const assessmentInsertSchema = createInsertSchema(assessments);
 export const assessmentSelectSchema = createSelectSchema(assessments);
-
-export const criticalFunctionInsertSchema = createInsertSchema(criticalFunctions);
-export const criticalFunctionSelectSchema = createSelectSchema(criticalFunctions);
-export const criticalFunctionDependencyInsertSchema = createInsertSchema(
-  criticalFunctionDependencies
-);
 
 export const providerNodeInsertSchema = createInsertSchema(providerNodes);
 export const providerNodeSelectSchema = createSelectSchema(providerNodes);

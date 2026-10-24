@@ -7,7 +7,6 @@ export * from './workspaces.js';
 export * from './roleAssignments.js';
 export * from './conversations.js';
 export * from './assessments.js';
-export * from './criticalFunctions.js';
 export * from './providerDependencies.js';
 export * from './questionnaires.js';
 // Arrangement graph (RTV-36) — dimensions before the fact table so drizzle-kit orders DDL.

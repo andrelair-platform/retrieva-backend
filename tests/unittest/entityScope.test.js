@@ -23,7 +23,7 @@ import {
   legalEntityScopeCondition,
   getIsolationMode,
 } from '../../services/security/entityScope.js';
-import { criticalFunctions, arrangements } from '../../db/schema/index.js';
+import { arrangements } from '../../db/schema/index.js';
 import logger from '../../config/logger.js';
 
 const A = '11111111-1111-1111-1111-111111111111';
@@ -98,7 +98,7 @@ describe('scopeAllowsEntity', () => {
 });
 
 describe('entityScopeCondition (mode-gated)', () => {
-  const col = criticalFunctions.organizationId;
+  const col = arrangements.organizationId;
   beforeEach(() => {
     getEntityScope.mockReset();
     logger.info.mockClear();

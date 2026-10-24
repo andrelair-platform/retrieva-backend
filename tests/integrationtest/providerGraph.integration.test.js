@@ -11,20 +11,13 @@ import { runMigrations } from '../../db/migrate.js';
 import {
   users,
   organizations,
-  workspaces,
   providerNodes,
   providerDependencies,
-  criticalFunctions,
-  criticalFunctionDependencies,
 } from '../../db/schema/index.js';
-import {
-  providerSubcontractorChain,
-  functionDependencyClosure,
-} from '../../db/queries/providerGraph.js';
+import { providerSubcontractorChain } from '../../db/queries/providerGraph.js';
 
 let db;
 let orgId;
-let userId;
 
 const node = async (name, over = {}) => {
   const [n] = await db
@@ -69,7 +62,6 @@ describe('Provider-graph recursive-CTE traversal (RTV-50)', () => {
     await db.execute(sql`
       truncate table
         provider_dependencies, provider_nodes,
-        critical_function_dependencies, critical_functions,
         messages, conversations,
         vendor_questionnaires, assessments,
         workspace_members, organization_members,
@@ -81,7 +73,6 @@ describe('Provider-graph recursive-CTE traversal (RTV-50)', () => {
       .insert(users)
       .values({ email: `u-${Math.random().toString(36).slice(2)}@x.io`, password: 'h', name: 'n' })
       .returning();
-    userId = u.id;
     const [o] = await db.insert(organizations).values({ name: 'Org', ownerId: u.id }).returning();
     orgId = o.id;
   });
@@ -154,28 +145,5 @@ describe('Provider-graph recursive-CTE traversal (RTV-50)', () => {
       confirmedOnly: false,
     });
     expect(names(all)).toEqual(['B', 'Z']);
-  });
-
-  it('functionDependencyClosure: provider (workspace node) + its chain', async () => {
-    // A critical function depends on workspace W; W is a provider_node; W→X→Y.
-    const [ws] = await db.insert(workspaces).values({ name: 'W', userId }).returning();
-    const wNode = await node('W', { kind: 'workspace', workspaceId: ws.id, canonicalName: 'w' });
-    const x = await node('X');
-    const y = await node('Y');
-    await edge(wNode, x);
-    await edge(x, y);
-
-    const [cf] = await db
-      .insert(criticalFunctions)
-      .values({ organizationId: orgId, name: 'Claims', criticality: 'critical' })
-      .returning();
-    await db
-      .insert(criticalFunctionDependencies)
-      .values({ criticalFunctionId: cf.id, workspaceId: ws.id });
-
-    const rows = await functionDependencyClosure(db, { organizationId: orgId, functionId: cf.id });
-    expect(names(rows)).toEqual(['W', 'X', 'Y']);
-    const depth = Object.fromEntries(rows.map((r) => [r.displayName, r.depth]));
-    expect(depth).toEqual({ W: 0, X: 1, Y: 2 }); // provider at 0, chain below
   });
 });

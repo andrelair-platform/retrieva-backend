@@ -8,7 +8,6 @@ import { workspaces, workspaceMembers } from './workspaces.js';
 import { roleAssignments } from './roleAssignments.js';
 import { conversations, messages } from './conversations.js';
 import { assessments } from './assessments.js';
-import { criticalFunctions, criticalFunctionDependencies } from './criticalFunctions.js';
 import { providerNodes, providerDependencies } from './providerDependencies.js';
 import { questionnaireTemplates, vendorQuestionnaires } from './questionnaires.js';
 import { legalEntities } from './legalEntities.js';
@@ -48,7 +47,6 @@ export const organizationsRelations = relations(organizations, ({ one, many }) =
   }),
   members: many(organizationMembers),
   workspaces: many(workspaces),
-  criticalFunctions: many(criticalFunctions),
   providerNodes: many(providerNodes),
   providerDependencies: many(providerDependencies),
   legalEntities: many(legalEntities),
@@ -114,28 +112,6 @@ export const assessmentsRelations = relations(assessments, ({ one }) => ({
   }),
   createdByUser: one(users, { fields: [assessments.createdBy], references: [users.id] }),
 }));
-
-export const criticalFunctionsRelations = relations(criticalFunctions, ({ one, many }) => ({
-  organization: one(organizations, {
-    fields: [criticalFunctions.organizationId],
-    references: [organizations.id],
-  }),
-  dependencies: many(criticalFunctionDependencies),
-}));
-
-export const criticalFunctionDependenciesRelations = relations(
-  criticalFunctionDependencies,
-  ({ one }) => ({
-    criticalFunction: one(criticalFunctions, {
-      fields: [criticalFunctionDependencies.criticalFunctionId],
-      references: [criticalFunctions.id],
-    }),
-    workspace: one(workspaces, {
-      fields: [criticalFunctionDependencies.workspaceId],
-      references: [workspaces.id],
-    }),
-  })
-);
 
 export const providerNodesRelations = relations(providerNodes, ({ one, many }) => ({
   organization: one(organizations, {

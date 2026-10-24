@@ -8,8 +8,7 @@ import { idParam, workspaceIdParam } from '../../validators/params.js';
  * `:id` / `:workspaceId` are checked before a controller ever runs.
  */
 
-// DELETE /functions/:id, PATCH /dependencies/:id
-export const functionIdParam = idParam;
+// PATCH /dependencies/:id
 export const dependencyIdParam = idParam;
 
 // POST /extract/:workspaceId
