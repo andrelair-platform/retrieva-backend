@@ -16,6 +16,8 @@
 | [public.discovery_proposals](public.discovery_proposals.md)                       | 11      |         | BASE TABLE |
 | [public.discovery_runs](public.discovery_runs.md)                                 | 16      |         | BASE TABLE |
 | [public.dora_score_history](public.dora_score_history.md)                         | 7       |         | BASE TABLE |
+| [public.evaluation_candidates](public.evaluation_candidates.md)                   | 12      |         | BASE TABLE |
+| [public.evaluations](public.evaluations.md)                                       | 11      |         | BASE TABLE |
 | [public.evidence](public.evidence.md)                                             | 17      |         | BASE TABLE |
 | [public.evidence_collection_request](public.evidence_collection_request.md)       | 15      |         | BASE TABLE |
 | [public.exit_artefacts](public.exit_artefacts.md)                                 | 16      |         | BASE TABLE |
@@ -69,6 +71,8 @@
 | public.discovery_source               | authentik, erpnext, generic, odata, okta, rest, scim                                                                                                             |
 | public.domain_role                    | analyst, auditor, business_owner, dpo, entity_admin, group_admin, group_compliance, group_risk, ict_risk_officer, legal, vendor_contact, viewer                  |
 | public.dora_rating                    | AMBER, GREEN, RED                                                                                                                                                |
+| public.evaluation_candidate_status    | candidate, rejected, selected                                                                                                                                    |
+| public.evaluation_status              | cancelled, draft, onboarded, scoring, selected                                                                                                                   |
 | public.evidence_category              | bcp_dr_plan, dora_addendum, exit_strategy, iso27001_cert, master_service_agreement, risk_classification, soc2_report, subprocessor_list, vendor_dora_attestation |
 | public.evidence_request_status        | fulfilled, pending, revoked                                                                                                                                      |
 | public.evidence_scope                 | arrangement, provider                                                                                                                                            |
@@ -138,6 +142,12 @@ erDiagram
 "public.discovery_runs" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.dora_score_history" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.dora_score_history" }o--|| "public.workspaces" : "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
+"public.evaluation_candidates" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+"public.evaluation_candidates" }o--o| "public.arrangements" : "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE SET NULL"
+"public.evaluation_candidates" }o--|| "public.evaluations" : "FOREIGN KEY (evaluation_id) REFERENCES evaluations(id) ON DELETE CASCADE"
+"public.evaluations" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.evaluations" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+"public.evaluations" }o--o| "public.legal_entities" : "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE SET NULL"
 "public.evidence" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.evidence" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.evidence" }o--o| "public.provider_nodes" : "FOREIGN KEY (provider_id) REFERENCES provider_nodes(id) ON DELETE CASCADE"
@@ -370,6 +380,33 @@ erDiagram
   dora_rating rating
   integer score
   uuid workspace_id FK
+}
+"public.evaluation_candidates" {
+  uuid arrangement_id FK
+  jsonb auto_scores
+  timestamp_with_time_zone created_at
+  uuid evaluation_id FK
+  uuid id
+  jsonb manual_scores
+  text notes
+  uuid organization_id FK
+  jsonb proposal
+  evaluation_candidate_status status
+  timestamp_with_time_zone updated_at
+  text vendor_name
+}
+"public.evaluations" {
+  timestamp_with_time_zone created_at
+  uuid created_by FK
+  jsonb criteria
+  uuid id
+  uuid legal_entity_id FK
+  text need
+  uuid organization_id FK
+  evaluation_status status
+  text title
+  timestamp_with_time_zone updated_at
+  uuid winner_candidate_id
 }
 "public.evidence" {
   uuid arrangement_id FK

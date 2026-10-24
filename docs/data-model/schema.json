@@ -1934,6 +1934,302 @@
       ]
     },
     {
+      "name": "public.evaluation_candidates",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "arrangement_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "auto_scores",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "evaluation_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "manual_scores",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "proposal",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "status",
+          "type": "evaluation_candidate_status",
+          "nullable": false,
+          "default": "'candidate'::evaluation_candidate_status"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "vendor_name",
+          "type": "text",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "evaluation_candidates_eval_idx",
+          "def": "CREATE INDEX evaluation_candidates_eval_idx ON public.evaluation_candidates USING btree (evaluation_id)",
+          "table": "public.evaluation_candidates",
+          "columns": [
+            "evaluation_id"
+          ]
+        },
+        {
+          "name": "evaluation_candidates_org_idx",
+          "def": "CREATE INDEX evaluation_candidates_org_idx ON public.evaluation_candidates USING btree (organization_id)",
+          "table": "public.evaluation_candidates",
+          "columns": [
+            "organization_id"
+          ]
+        },
+        {
+          "name": "evaluation_candidates_pkey",
+          "def": "CREATE UNIQUE INDEX evaluation_candidates_pkey ON public.evaluation_candidates USING btree (id)",
+          "table": "public.evaluation_candidates",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "evaluation_candidates_arrangement_id_arrangements_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE SET NULL",
+          "table": "public.evaluation_candidates",
+          "referenced_table": "public.arrangements",
+          "columns": [
+            "arrangement_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evaluation_candidates_evaluation_id_evaluations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (evaluation_id) REFERENCES evaluations(id) ON DELETE CASCADE",
+          "table": "public.evaluation_candidates",
+          "referenced_table": "public.evaluations",
+          "columns": [
+            "evaluation_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evaluation_candidates_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.evaluation_candidates",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evaluation_candidates_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.evaluation_candidates",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "public.evaluations",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "criteria",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "legal_entity_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "need",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "evaluation_status",
+          "nullable": false,
+          "default": "'draft'::evaluation_status"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "winner_candidate_id",
+          "type": "uuid",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "evaluations_entity_idx",
+          "def": "CREATE INDEX evaluations_entity_idx ON public.evaluations USING btree (legal_entity_id)",
+          "table": "public.evaluations",
+          "columns": [
+            "legal_entity_id"
+          ]
+        },
+        {
+          "name": "evaluations_org_status_idx",
+          "def": "CREATE INDEX evaluations_org_status_idx ON public.evaluations USING btree (organization_id, status)",
+          "table": "public.evaluations",
+          "columns": [
+            "organization_id",
+            "status"
+          ]
+        },
+        {
+          "name": "evaluations_pkey",
+          "def": "CREATE UNIQUE INDEX evaluations_pkey ON public.evaluations USING btree (id)",
+          "table": "public.evaluations",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "evaluations_created_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.evaluations",
+          "referenced_table": "public.users",
+          "columns": [
+            "created_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evaluations_legal_entity_id_legal_entities_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE SET NULL",
+          "table": "public.evaluations",
+          "referenced_table": "public.legal_entities",
+          "columns": [
+            "legal_entity_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evaluations_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.evaluations",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "evaluations_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.evaluations",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "public.evidence",
       "type": "BASE TABLE",
       "columns": [
@@ -6173,6 +6469,84 @@
       "def": "FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE"
     },
     {
+      "table": "public.evaluation_candidates",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.evaluation_candidates",
+      "columns": [
+        "arrangement_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.arrangements",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.evaluation_candidates",
+      "columns": [
+        "evaluation_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.evaluations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (evaluation_id) REFERENCES evaluations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.evaluations",
+      "columns": [
+        "created_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.evaluations",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.evaluations",
+      "columns": [
+        "legal_entity_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.legal_entities",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE SET NULL"
+    },
+    {
       "table": "public.evidence",
       "columns": [
         "created_by"
@@ -7113,6 +7487,24 @@
         "AMBER",
         "GREEN",
         "RED"
+      ]
+    },
+    {
+      "name": "public.evaluation_candidate_status",
+      "values": [
+        "candidate",
+        "rejected",
+        "selected"
+      ]
+    },
+    {
+      "name": "public.evaluation_status",
+      "values": [
+        "cancelled",
+        "draft",
+        "onboarded",
+        "scoring",
+        "selected"
       ]
     },
     {

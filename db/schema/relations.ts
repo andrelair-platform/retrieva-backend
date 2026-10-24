@@ -18,6 +18,7 @@ import { evidence } from './evidence.js';
 import { auditLog } from './auditLog.js';
 import { findings } from './findings.js';
 import { risks } from './risks.js';
+import { evaluations, evaluationCandidates } from './evaluations.js';
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   // user.organizationId → organizations (the org the user belongs to)
@@ -307,5 +308,28 @@ export const auditLogRelations = relations(auditLog, ({ one }) => ({
   actorUser: one(users, {
     fields: [auditLog.actor],
     references: [users.id],
+  }),
+}));
+
+export const evaluationsRelations = relations(evaluations, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [evaluations.organizationId],
+    references: [organizations.id],
+  }),
+  legalEntity: one(legalEntities, {
+    fields: [evaluations.legalEntityId],
+    references: [legalEntities.id],
+  }),
+  candidates: many(evaluationCandidates),
+}));
+
+export const evaluationCandidatesRelations = relations(evaluationCandidates, ({ one }) => ({
+  evaluation: one(evaluations, {
+    fields: [evaluationCandidates.evaluationId],
+    references: [evaluations.id],
+  }),
+  arrangement: one(arrangements, {
+    fields: [evaluationCandidates.arrangementId],
+    references: [arrangements.id],
   }),
 }));

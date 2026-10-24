@@ -29,6 +29,7 @@ import {
   arrangementGraphRouter,
 } from './modules/arrangements/arrangements.routes.js';
 import intakeRoutes from './modules/intake/intake.routes.js';
+import evaluationRoutes from './modules/evaluations/evaluations.routes.js';
 import discoveryRoutes from './modules/discovery/discovery.routes.js';
 import completenessRoutes from './modules/completeness/completeness.routes.js';
 import surveillanceRoutes from './modules/surveillance/surveillance.routes.js';
@@ -370,6 +371,15 @@ app.use(
   requireActivePlan,
   setEntityContext,
   intakeRoutes
+);
+// Tool-onboarding evaluation (ADR-0002) — compare candidate vendors → select → promote to an
+// arrangement; org+entity-scoped via setEntityContext (RTV-54).
+app.use(
+  '/api/v1/evaluations',
+  optionalAuth,
+  requireActivePlan,
+  setEntityContext,
+  evaluationRoutes
 );
 // Evidence Library (RTV-64 / #226) — before the CRUD router so literal `/:id/evidence` wins over `/:id`.
 app.use(

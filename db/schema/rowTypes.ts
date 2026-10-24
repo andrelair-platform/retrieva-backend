@@ -30,6 +30,8 @@ import type {
   auditLog,
   findings,
   risks,
+  evaluations,
+  evaluationCandidates,
 } from './index.js';
 
 // ── core identity / tenancy ─────────────────────────────────────────────────
@@ -79,3 +81,9 @@ export type FindingRow = typeof findings.$inferSelect;
 export type FindingInsert = typeof findings.$inferInsert;
 export type RiskRow = typeof risks.$inferSelect;
 export type RiskInsert = typeof risks.$inferInsert;
+
+// ── tool-onboarding evaluation (ADR-0002) ───────────────────────────────────
+export type EvaluationRow = typeof evaluations.$inferSelect;
+export type EvaluationInsert = typeof evaluations.$inferInsert;
+export type EvaluationCandidateRow = typeof evaluationCandidates.$inferSelect;
+export type EvaluationCandidateInsert = typeof evaluationCandidates.$inferInsert;
