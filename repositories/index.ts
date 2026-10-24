@@ -41,6 +41,12 @@ export {
   vendorQuestionnaireRepository,
 } from './drizzle/VendorQuestionnaireRepository.js';
 export {
+  EvaluationRepository,
+  evaluationRepository,
+  EvaluationCandidateRepository,
+  evaluationCandidateRepository,
+} from './drizzle/EvaluationRepository.js';
+export {
   ProviderGraphRepository,
   providerGraphRepository,
 } from './drizzle/ProviderGraphRepository.js';

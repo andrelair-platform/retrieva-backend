@@ -294,3 +294,22 @@ export const exitArtefactTypeEnum = pgEnum('exit_artefact_type', [
   'reintegration_model', // RTV-102 — bring-in-house / switch effort estimate
 ]);
 export const exitArtefactStatusEnum = pgEnum('exit_artefact_status', ['draft', 'approved', 'rejected']);
+
+// Tool-onboarding evaluation (ADR-0002) — the pre-selection parent that compares candidate vendors
+// before one is promoted to an arrangement. `scoring` = candidates being scored; `selected` = a
+// winner chosen; `onboarded` = the winner promoted to an arrangement (→ its lifecycle takes over).
+export const evaluationStatusEnum = pgEnum('evaluation_status', [
+  'draft',
+  'scoring',
+  'selected',
+  'onboarded',
+  'cancelled',
+]);
+
+// A candidate vendor on an evaluation. `selected` = the winner (promoted to an arrangement);
+// `rejected` = not chosen (kept for the audit trail of why-not, never promoted).
+export const evaluationCandidateStatusEnum = pgEnum('evaluation_candidate_status', [
+  'candidate',
+  'selected',
+  'rejected',
+]);

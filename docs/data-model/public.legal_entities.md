@@ -2,17 +2,17 @@
 
 ## Columns
 
-| Name             | Type                     | Default           | Nullable | Children                                                                                                                                                  | Parents                                           | Comment |
-| ---------------- | ------------------------ | ----------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------- |
-| country          | text                     | ''::text          | false    |                                                                                                                                                           |                                                   |         |
-| created_at       | timestamp with time zone | now()             | false    |                                                                                                                                                           |                                                   |         |
-| id               | uuid                     | gen_random_uuid() | false    | [public.arrangements](public.arrangements.md) [public.business_functions](public.business_functions.md) [public.legal_entities](public.legal_entities.md) |                                                   |         |
-| is_group_entity  | boolean                  | false             | false    |                                                                                                                                                           |                                                   |         |
-| lei              | text                     |                   | true     |                                                                                                                                                           |                                                   |         |
-| name             | text                     |                   | false    |                                                                                                                                                           |                                                   |         |
-| organization_id  | uuid                     |                   | false    |                                                                                                                                                           | [public.organizations](public.organizations.md)   |         |
-| parent_entity_id | uuid                     |                   | true     |                                                                                                                                                           | [public.legal_entities](public.legal_entities.md) |         |
-| updated_at       | timestamp with time zone | now()             | false    |                                                                                                                                                           |                                                   |         |
+| Name             | Type                     | Default           | Nullable | Children                                                                                                                                                                                              | Parents                                           | Comment |
+| ---------------- | ------------------------ | ----------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------- |
+| country          | text                     | ''::text          | false    |                                                                                                                                                                                                       |                                                   |         |
+| created_at       | timestamp with time zone | now()             | false    |                                                                                                                                                                                                       |                                                   |         |
+| id               | uuid                     | gen_random_uuid() | false    | [public.arrangements](public.arrangements.md) [public.business_functions](public.business_functions.md) [public.evaluations](public.evaluations.md) [public.legal_entities](public.legal_entities.md) |                                                   |         |
+| is_group_entity  | boolean                  | false             | false    |                                                                                                                                                                                                       |                                                   |         |
+| lei              | text                     |                   | true     |                                                                                                                                                                                                       |                                                   |         |
+| name             | text                     |                   | false    |                                                                                                                                                                                                       |                                                   |         |
+| organization_id  | uuid                     |                   | false    |                                                                                                                                                                                                       | [public.organizations](public.organizations.md)   |         |
+| parent_entity_id | uuid                     |                   | true     |                                                                                                                                                                                                       | [public.legal_entities](public.legal_entities.md) |         |
+| updated_at       | timestamp with time zone | now()             | false    |                                                                                                                                                                                                       |                                                   |         |
 
 ## Constraints
 
@@ -38,6 +38,7 @@ erDiagram
 
 "public.arrangements" }o--|| "public.legal_entities" : "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE CASCADE"
 "public.business_functions" }o--|| "public.legal_entities" : "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE CASCADE"
+"public.evaluations" }o--o| "public.legal_entities" : "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE SET NULL"
 "public.legal_entities" }o--o| "public.legal_entities" : "FOREIGN KEY (parent_entity_id) REFERENCES legal_entities(id) ON DELETE SET NULL"
 "public.legal_entities" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 
@@ -79,6 +80,19 @@ erDiagram
   text name
   uuid organization_id FK
   timestamp_with_time_zone updated_at
+}
+"public.evaluations" {
+  timestamp_with_time_zone created_at
+  uuid created_by FK
+  jsonb criteria
+  uuid id
+  uuid legal_entity_id FK
+  text need
+  uuid organization_id FK
+  evaluation_status status
+  text title
+  timestamp_with_time_zone updated_at
+  uuid winner_candidate_id
 }
 "public.organizations" {
   text country
