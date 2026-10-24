@@ -15,6 +15,7 @@ const {
   getGraph,
   scopeGraphToProviders,
   analyzeOrganization,
+  buildConcentrationInputFromArrangements,
 } = await import('../../services/concentrationService.js');
 
 // Scenario: two functions, three providers, a shared Azure substrate.
@@ -222,5 +223,72 @@ describe('analyzeOrganization (entity-scoped via the arrangement bridge)', () =>
     expect(r.providerConcentration.some((p) => p.key === 'w:oa')).toBe(false); // OpenAI not in the DE branch
     expect(r.providerConcentration.some((p) => p.key === 'w:az')).toBe(true); // Azure is
     expect(r.singlePointsOfFailure.length).toBeGreaterThan(0); // both functions now hang off Azure alone
+  });
+});
+
+// ── Option B / Phase 1: arrangement-native concentration input (ADR-0001) ────────────────────────
+describe('buildConcentrationInputFromArrangements (business_functions → arrangements)', () => {
+  const makeDeps = () => ({
+    businessFunctionRepo: {
+      listByOrg: vi.fn(async () => [
+        { id: 'bf1', name: 'Claims', legalEntityId: 'de', criticalOrImportant: true },
+        { id: 'bf2', name: 'Payments', legalEntityId: 'be', criticalOrImportant: false },
+      ]),
+      listByEntity: vi.fn(async (_org, le) =>
+        le === 'de'
+          ? [{ id: 'bf1', name: 'Claims', legalEntityId: 'de', criticalOrImportant: true }]
+          : []
+      ),
+    },
+    workspaceRepo: {
+      findByOrganization: async () => [
+        { id: 'az', name: 'Azure', vendorTier: 'critical' },
+        { id: 'oa', name: 'OpenAI', vendorTier: 'important' },
+      ],
+    },
+    arrangementRepo: {
+      listFunctionProviderEdges: vi.fn(async (_org, le) => {
+        const all = [
+          { businessFunctionId: 'bf1', workspaceId: 'az', criticality: 'critical' },
+          { businessFunctionId: 'bf1', workspaceId: 'oa', criticality: 'important' },
+          { businessFunctionId: 'bf2', workspaceId: 'az', criticality: 'standard' },
+        ];
+        return le ? all.filter((e) => e.businessFunctionId === 'bf1') : all; // 'de' owns bf1
+      }),
+    },
+    providerGraphRepo: {
+      loadConfirmedEdges: async () => [
+        {
+          parent: { kind: 'workspace', workspaceId: 'oa', name: 'OpenAI' },
+          child: { kind: 'external', name: 'infra' },
+        },
+      ],
+    },
+  });
+
+  it('derives providers, per-function provider deps, and the highest-tier criticality', async () => {
+    const input = await buildConcentrationInputFromArrangements('org1', makeDeps());
+    expect(input.providers.map((p) => p.id).sort()).toEqual(['az', 'oa']);
+    const bf1 = input.criticalFunctions.find((c) => c.id === 'bf1');
+    expect(bf1.criticality).toBe('critical'); // highest of {critical, important}
+    expect(bf1.dependsOn.sort()).toEqual(['az', 'oa']);
+    const bf2 = input.criticalFunctions.find((c) => c.id === 'bf2');
+    expect(bf2.criticality).toBe('standard'); // no critical/important arrangement + not CIF
+  });
+
+  it('slices NATIVELY by legalEntityId (business_functions + arrangements of that entity only)', async () => {
+    const deps = makeDeps();
+    const input = await buildConcentrationInputFromArrangements('org1', deps, 'de');
+    expect(deps.businessFunctionRepo.listByEntity).toHaveBeenCalledWith('org1', 'de');
+    expect(deps.arrangementRepo.listFunctionProviderEdges).toHaveBeenCalledWith('org1', 'de');
+    expect(deps.businessFunctionRepo.listByOrg).not.toHaveBeenCalled();
+    expect(input.criticalFunctions.map((c) => c.id)).toEqual(['bf1']); // only the DE function
+  });
+
+  it('analyzeOrganization routes through the builder when source=arrangements (else legacy)', async () => {
+    const deps = { ...makeDeps(), concentrationSource: 'arrangements' };
+    const r = await analyzeOrganization('org1', deps);
+    expect(deps.arrangementRepo.listFunctionProviderEdges).toHaveBeenCalled(); // arrangement path taken
+    expect(r.providerConcentration.some((p) => p.key === 'w:az')).toBe(true);
   });
 });

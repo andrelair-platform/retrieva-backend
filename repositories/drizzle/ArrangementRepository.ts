@@ -121,6 +121,40 @@ export class ArrangementRepository extends BaseDrizzleRepository {
   }
 
   /**
+   * Function→provider edges for the arrangement-native concentration model (ADR-0001, Phase 1):
+   * one row per (business function, assessed provider workspace) with the arrangement's criticality
+   * tier — the grounded replacement for the hand-maintained `critical_function_dependencies`.
+   * Optionally sliced to one legal entity (native per-entity concentration). External provider nodes
+   * (no workspace) are excluded — concentration keys on workspaces.
+   */
+  async listFunctionProviderEdges(
+    organizationId: string,
+    legalEntityId?: string
+  ): Promise<Array<{ businessFunctionId: string; workspaceId: string; criticality: string }>> {
+    const conds = [
+      eq(arrangements.organizationId, organizationId),
+      isNotNull(providerNodes.workspaceId),
+      entityScopeCondition(arrangements.organizationId, { action: 'arrangement:read' }),
+      legalEntityScopeCondition(arrangements.legalEntityId, { action: 'arrangement:read' }),
+    ];
+    if (legalEntityId) conds.push(eq(arrangements.legalEntityId, legalEntityId));
+    const rows = await this.db
+      .select({
+        businessFunctionId: arrangements.businessFunctionId,
+        workspaceId: providerNodes.workspaceId,
+        criticality: arrangements.criticality,
+      })
+      .from(arrangements)
+      .innerJoin(providerNodes, eq(arrangements.providerId, providerNodes.id))
+      .where(and(...conds));
+    return rows.map((r: { businessFunctionId: unknown; workspaceId: unknown; criticality: unknown }) => ({
+      businessFunctionId: String(r.businessFunctionId),
+      workspaceId: String(r.workspaceId),
+      criticality: String(r.criticality || 'standard'),
+    }));
+  }
+
+  /**
    * SYSTEM (cross-org, UNSCOPED) read for the periodic re-assessment scheduler (RTV-31 tail).
    * Returns `active` arrangements whose LAST assessment (the newest finding, or — if never
    * assessed — the arrangement's own creation time) is older than the applicable threshold: CIF
