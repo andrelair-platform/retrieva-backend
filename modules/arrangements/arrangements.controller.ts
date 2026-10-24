@@ -21,7 +21,10 @@ import {
   ictServiceRepository,
   providerGraphRepository,
   evidenceRepository,
+  findingRepository,
 } from '../../repositories/index.js';
+import { analyzeOrganization } from '../../services/concentrationService.js';
+import { buildOnboardingDecision } from '../../services/onboarding/onboardingDecision.js';
 
 // Arrangement-graph CRUD (RTV-36/37) — ORG-scoped. Every handler keys off req.user!.organizationId
 // (never a caller-supplied org); row-level entity isolation (RTV-54) is applied by the repos via
@@ -120,6 +123,38 @@ export const getLifecycle = catchAsync(async (req: Request, res: Response) => {
     status: arrangement.lifecycleStatus,
     transitions: allowedTransitions(arrangement.lifecycleStatus),
   });
+});
+
+// GET /api/v1/arrangements/:id/onboarding-decision — the pre-contract decision pack (DORA Art. 28(4)).
+// Assembles this arrangement's assessment verdicts + the entity's concentration signal + exit posture
+// + the lifecycle gate into one advisory view for the ICT-risk officer who approves/rejects onboarding.
+// Read-only; the human holds the approve_onboarding/reject gate (SoD).
+export const getOnboardingDecision = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  const arrangement = await arrangementRepository.findByIdInOrg(organizationId, String(req.params.id));
+  if (!arrangement) return sendError(res, 404, 'Arrangement not found');
+
+  const [findings, concentration] = await Promise.all([
+    findingRepository.listByArrangement(organizationId, String(arrangement.id)),
+    // concentration scoped to this arrangement's legal entity (native per-entity, ADR-0001)
+    analyzeOrganization(organizationId, {}, arrangement.legalEntityId ?? undefined),
+  ]);
+
+  const decision = buildOnboardingDecision({
+    arrangement: {
+      lifecycleStatus: arrangement.lifecycleStatus,
+      exitDifficulty: arrangement.exitDifficulty,
+      businessFunctionId: arrangement.businessFunctionId,
+    },
+    findings,
+    concentration,
+    transitions: allowedTransitions(arrangement.lifecycleStatus),
+    // sub-processor overlap lights up once the provider's nth-party edges exist (extraction / Phase 2).
+    subcontractors: [],
+  });
+
+  sendSuccess(res, 200, 'Onboarding decision pack', { arrangementId: arrangement.id, ...decision });
 });
 
 // PATCH /api/v1/arrangements/:id/lifecycle — advance the state machine (RTV-31). Illegal transitions
