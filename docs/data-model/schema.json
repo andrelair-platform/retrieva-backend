@@ -2,6 +2,222 @@
   "name": "retrieva",
   "tables": [
     {
+      "name": "public.arrangement_proposals",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "approval_justification",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "approved_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "approved_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "arrangement_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "check_justification",
+          "type": "text",
+          "nullable": false,
+          "default": "''::text"
+        },
+        {
+          "name": "checked_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "checked_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "prepared_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "proposal",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "provenance",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        },
+        {
+          "name": "row_version",
+          "type": "integer",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "source_file_name",
+          "type": "text",
+          "nullable": false,
+          "default": "'Ingested contract'::text"
+        },
+        {
+          "name": "status",
+          "type": "arrangement_proposal_status",
+          "nullable": false,
+          "default": "'submitted'::arrangement_proposal_status"
+        },
+        {
+          "name": "submitted_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "trigger",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "arrangement_proposals_org_status_idx",
+          "def": "CREATE INDEX arrangement_proposals_org_status_idx ON public.arrangement_proposals USING btree (organization_id, status)",
+          "table": "public.arrangement_proposals",
+          "columns": [
+            "organization_id",
+            "status"
+          ]
+        },
+        {
+          "name": "arrangement_proposals_pkey",
+          "def": "CREATE UNIQUE INDEX arrangement_proposals_pkey ON public.arrangement_proposals USING btree (id)",
+          "table": "public.arrangement_proposals",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "arrangement_proposals_prepared_by_idx",
+          "def": "CREATE INDEX arrangement_proposals_prepared_by_idx ON public.arrangement_proposals USING btree (prepared_by)",
+          "table": "public.arrangement_proposals",
+          "columns": [
+            "prepared_by"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "arrangement_proposals_approved_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.arrangement_proposals",
+          "referenced_table": "public.users",
+          "columns": [
+            "approved_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "arrangement_proposals_arrangement_id_arrangements_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE SET NULL",
+          "table": "public.arrangement_proposals",
+          "referenced_table": "public.arrangements",
+          "columns": [
+            "arrangement_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "arrangement_proposals_checked_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (checked_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.arrangement_proposals",
+          "referenced_table": "public.users",
+          "columns": [
+            "checked_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "arrangement_proposals_organization_id_organizations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE",
+          "table": "public.arrangement_proposals",
+          "referenced_table": "public.organizations",
+          "columns": [
+            "organization_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "arrangement_proposals_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.arrangement_proposals",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "arrangement_proposals_prepared_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (prepared_by) REFERENCES users(id) ON DELETE RESTRICT",
+          "table": "public.arrangement_proposals",
+          "referenced_table": "public.users",
+          "columns": [
+            "prepared_by"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "public.arrangements",
       "type": "BASE TABLE",
       "columns": [
@@ -6001,6 +6217,71 @@
   ],
   "relations": [
     {
+      "table": "public.arrangement_proposals",
+      "columns": [
+        "approved_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.arrangement_proposals",
+      "columns": [
+        "checked_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (checked_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.arrangement_proposals",
+      "columns": [
+        "prepared_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (prepared_by) REFERENCES users(id) ON DELETE RESTRICT"
+    },
+    {
+      "table": "public.arrangement_proposals",
+      "columns": [
+        "organization_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.organizations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "public.arrangement_proposals",
+      "columns": [
+        "arrangement_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.arrangements",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE SET NULL"
+    },
+    {
       "table": "public.arrangements",
       "columns": [
         "created_by"
@@ -7331,6 +7612,16 @@
       ]
     },
     {
+      "name": "public.arrangement_proposal_status",
+      "values": [
+        "approved",
+        "changes_requested",
+        "checked",
+        "rejected",
+        "submitted"
+      ]
+    },
+    {
       "name": "public.arrangement_type",
       "values": [
         "external",
@@ -7741,7 +8032,7 @@
   ],
   "driver": {
     "name": "postgres",
-    "database_version": "PostgreSQL 17.4 (Debian 17.4-1.pgdg120+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14) 12.2.0, 64-bit",
+    "database_version": "PostgreSQL 17.4 (Debian 17.4-1.pgdg120+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 12.2.0-14) 12.2.0, 64-bit",
     "meta": {
       "current_schema": "public",
       "search_paths": [
