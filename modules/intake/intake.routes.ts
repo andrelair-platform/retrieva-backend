@@ -4,6 +4,7 @@ import { contractUploadMiddleware, estateUploadMiddleware } from '../../middlewa
 import {
   proposeFromContract,
   proposeAdoption,
+  researchVendor,
   confirmIntake,
   importEstateFromFile,
 } from './intake.controller.js';
@@ -18,6 +19,10 @@ router.post('/', authenticate, contractUploadMiddleware, proposeFromContract);
 // POST /api/v1/arrangements/intake/adoption-request — NEED-FIRST (pre-contract, DORA Art. 28(4)):
 // vendor name + business need (+ optional vendor doc, field `contract`) → AI drafts a proposal.
 router.post('/adoption-request', authenticate, contractUploadMiddleware, proposeAdoption);
+
+// POST /api/v1/arrangements/intake/research — ENRICHMENT (E5, egress-gated + default-OFF): fetch a
+// vendor's public trust-centre page (allow-listed + SSRF-guarded) → provenanced, unconfirmed facts.
+router.post('/research', authenticate, researchVendor);
 
 // POST /api/v1/arrangements/intake/confirm — the human-validated proposal becomes an arrangement
 router.post('/confirm', authenticate, confirmIntake);

@@ -4,6 +4,11 @@ import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import { parseFile } from '../../services/fileIngestionService.js';
 import { extractArrangementProposal } from '../../services/intake/contractExtractionService.js';
 import { proposeFromAdoptionRequest } from '../../services/intake/adoptionRequestService.js';
+import {
+  researchVendorFacts,
+  ResearchDisabledError,
+  ResearchUrlRejectedError,
+} from '../../services/research/vendorResearch.js';
 import { confirmProposal } from '../../services/intake/arrangementIntakeService.js';
 import { summarizeControlTouchpoints } from '../../services/intake/controlTouchpoints.js';
 import { parseEstateSheet, importEstate } from '../../services/intake/estateImport.js';
@@ -119,6 +124,32 @@ export const proposeAdoption = catchAsync(async (req: Request, res: Response) =>
     grounded: docText.trim().length > 0,
     source: sourceFile ? { fileName: sourceFile, parsedChars: docText.length } : null,
   });
+});
+
+// POST /api/v1/arrangements/intake/research — ENRICHMENT (ADR-0003, E5, egress-gated + default-OFF).
+// Fetch a vendor's own public trust-centre/sub-processor page (allow-listed + SSRF-guarded) and draft
+// provenanced, UNCONFIRMED vendor facts for the human to merge into a proposal. Returns 403 when the
+// feature is off, 400 when the URL is rejected by the guard.
+export const researchVendor = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  const vendorName = String(req.body?.vendorName || '').trim();
+  const sourceUrl = String(req.body?.sourceUrl || '').trim();
+  if (!vendorName) return sendError(res, 400, 'vendorName is required');
+  if (!sourceUrl) return sendError(res, 400, 'sourceUrl is required');
+
+  try {
+    const result = await researchVendorFacts({ vendorName, need: String(req.body?.need || ''), sourceUrl });
+    const matches = await matchDimensions(organizationId, result.proposal);
+    sendSuccess(res, 200, 'Vendor research (unconfirmed — review the provenance before merging)', {
+      ...result,
+      matches,
+    });
+  } catch (e) {
+    if (e instanceof ResearchDisabledError) return sendError(res, 403, e.message);
+    if (e instanceof ResearchUrlRejectedError) return sendError(res, 400, e.message);
+    throw e;
+  }
 });
 
 // POST /api/v1/arrangements/intake/confirm — the human-validated proposal becomes an arrangement.
