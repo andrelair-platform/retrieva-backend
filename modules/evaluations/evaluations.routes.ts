@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticate } from '../../middleware/auth.js';
+import { requirePrincipal } from '../../middleware/principal.js';
 import { contractUploadMiddleware } from '../../middleware/fileUpload.js';
 import {
   postEvaluation,
@@ -10,17 +10,18 @@ import {
   postSelectWinner,
 } from './evaluations.controller.js';
 
-// Tool-onboarding evaluation (ADR-0002) — mounted at /api/v1/evaluations with setEntityContext (app.ts)
-// for RTV-54 isolation. Compare candidate vendors → score → select → promote the winner to an arrangement.
+// Tool-onboarding evaluation (ADR-0002/ADR-0004) — mounted at /api/v1/evaluations with
+// optionalPrincipal → setEntityContext (app.ts). requirePrincipal ENFORCES a resolved principal
+// (staff OR service); per-action capability + the select hard-guard are in the controller.
 const router = Router();
 
-router.get('/', authenticate, listEvaluations);
-router.post('/', authenticate, postEvaluation);
-router.get('/:id', authenticate, getEvaluation);
+router.get('/', requirePrincipal, listEvaluations);
+router.post('/', requirePrincipal, postEvaluation);
+router.get('/:id', requirePrincipal, getEvaluation);
 // add a candidate vendor; optional grounding doc on field `contract`
-router.post('/:id/candidates', authenticate, contractUploadMiddleware, postCandidate);
-router.patch('/:id/candidates/:candidateId', authenticate, patchCandidateScores);
-// select the winner → promote to an arrangement (prospect) for due diligence
-router.post('/:id/select', authenticate, postSelectWinner);
+router.post('/:id/candidates', requirePrincipal, contractUploadMiddleware, postCandidate);
+router.patch('/:id/candidates/:candidateId', requirePrincipal, patchCandidateScores);
+// select the winner → promote to an arrangement (prospect) for due diligence (HUMAN-only, controller)
+router.post('/:id/select', requirePrincipal, postSelectWinner);
 
 export default router;

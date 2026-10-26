@@ -16,7 +16,14 @@
 
 // 1.1.0 (RTV-43): added the `risk:manage` verb — remediation-loop progress (open → mitigating →
 // mitigated → closed), kept distinct from `risk:accept` (the formal management-body acceptance).
-export const CAPABILITY_MAP_VERSION = '1.2.0';
+// 1.3.0 (ADR-0004): added the `evaluation` resource (read/write/select) + the `service_evaluator`
+// M2M role. BACK-COMPAT: evaluation routes previously had NO can() gate (any authenticated org user
+// could do everything, incl. select). They are now capability-gated — write is entity_admin/
+// group_admin/analyst (+ service_evaluator); `select` (promote-to-arrangement) is entity_admin/
+// group_admin ONLY (provisional — see the `evaluation_decision_maker` follow-up in ADR-0004).
+// Roles not listed are correctly denied; the service role is read/write only, NEVER select (also
+// hard-guarded by principal-type in the controller so inherited/wildcard grants can't bypass it).
+export const CAPABILITY_MAP_VERSION = '1.3.0';
 
 // Convenience: every resource, read-only (auditor / read roles).
 const READ_ALL = {
@@ -44,6 +51,7 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
     evidence: ['read', 'upload', 'classify', 'delete'],
     arrangement: ['read', 'create', 'edit'],
     register: ['read', 'export'],
+    evaluation: ['read', 'write', 'select'], // ADR-0004 (provisional business selector)
   },
   group_risk: {
     ...READ_ALL,
@@ -69,6 +77,7 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
     evidence: ['read', 'upload', 'classify', 'delete'],
     arrangement: ['read', 'create', 'edit'],
     register: ['read', 'export'],
+    evaluation: ['read', 'write', 'select'], // ADR-0004 (provisional business selector)
   },
   analyst: {
     // the "maker": drafts assessments + collects evidence + works the remediation loop (but the
@@ -80,6 +89,7 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
     arrangement: ['read', 'create', 'edit'],
     register: ['read'],
     workspace: ['read'],
+    evaluation: ['read', 'write'], // ADR-0004: maker — evaluate/add/score; NOT select (SoD)
   },
   ict_risk_officer: {
     // the "checker": signs off findings / risk acceptance (management-body delegate)
@@ -88,27 +98,32 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
     risk: ['read', 'accept', 'manage'],
     register: ['read', 'export', 'attest'],
     arrangement: ['read', 'check'],
+    evaluation: ['read'], // ADR-0004: checker — read only
   },
   legal: {
     ...READ_ALL,
     clause: ['read', 'signoff'],
+    evaluation: ['read'], // ADR-0004
   },
   dpo: {
     ...READ_ALL,
     privacy: ['read', 'signoff'],
+    evaluation: ['read'], // ADR-0004
   },
   business_owner: {
     // attests usage/criticality for OWN functions only (row-scoping enforced in RTV-54)
     arrangement: ['read', 'approve'],
     register: ['read', 'attest'],
     finding: ['read'],
+    evaluation: ['read'], // ADR-0004
   },
-  auditor: { ...READ_ALL, privacy: ['read'] }, // read-only across everything
+  auditor: { ...READ_ALL, privacy: ['read'], evaluation: ['read'] }, // read-only across everything
   viewer: {
     assessment: ['read'],
     finding: ['read'],
     arrangement: ['read'],
     workspace: ['read'],
+    evaluation: ['read'], // ADR-0004
   },
 
   // ── external ─────────────────────────────────────────────────────────────────
@@ -116,6 +131,12 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
     // single-arrangement vendor portal (RTV-56 — own arrangement only)
     evidence: ['upload'],
     questionnaire: ['read', 'answer'],
+  },
+  // service principal (ADR-0004) — a governed M2M identity. evaluation READ/WRITE ONLY; it has NO
+  // `evaluation:select` (that + risk/sign-off/approval are human decisions), and the controller adds
+  // a hard principal-type guard so even an inherited/wildcard grant can never let it select.
+  service_evaluator: {
+    evaluation: ['read', 'write'],
   },
 };
 
