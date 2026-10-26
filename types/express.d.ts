@@ -1,5 +1,6 @@
 import type { AuthenticatedUser } from './auth.js';
 import type { VendorPrincipal } from '../services/security/vendorPrincipal.js';
+import type { ServicePrincipal } from '../services/security/servicePrincipal.js';
 
 // Loose workspace shape the Express layer reads off req.workspace. The full
 // record is a Drizzle row returned by the (.js) workspace repository; the index
@@ -21,6 +22,9 @@ declare global {
       // The external vendor_contact principal resolved from a questionnaire token (RTV-56) —
       // set by requireVendorPrincipal on the public portal routes. NEVER a staff user.
       vendor?: VendorPrincipal;
+      // The M2M SERVICE principal resolved from an Authentik client-credentials token (ADR-0004) —
+      // set by requireServicePrincipal on the service surface. NEVER a staff user (separate chain).
+      service?: ServicePrincipal;
       workspace?: WorkspaceContext;
       workspaceMembership?: unknown;
       membership?: unknown;

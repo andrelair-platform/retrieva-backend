@@ -5550,6 +5550,11 @@
           "nullable": true
         },
         {
+          "name": "external_client_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
           "name": "id",
           "type": "uuid",
           "nullable": false,
@@ -5683,6 +5688,14 @@
           ]
         },
         {
+          "name": "users_external_client_id_uniq",
+          "def": "CREATE UNIQUE INDEX users_external_client_id_uniq ON public.users USING btree (external_client_id) WHERE (external_client_id IS NOT NULL)",
+          "table": "public.users",
+          "columns": [
+            "external_client_id"
+          ]
+        },
+        {
           "name": "users_organization_id_idx",
           "def": "CREATE INDEX users_organization_id_idx ON public.users USING btree (organization_id)",
           "table": "public.users",
@@ -5708,6 +5721,17 @@
           "referenced_table": "",
           "columns": [
             "email"
+          ]
+        },
+        {
+          "name": "users_external_client_id_service_only",
+          "type": "CHECK",
+          "def": "CHECK (((external_client_id IS NULL) OR (principal_type = 'SERVICE'::principal_type)))",
+          "table": "public.users",
+          "referenced_table": "",
+          "columns": [
+            "external_client_id",
+            "principal_type"
           ]
         },
         {

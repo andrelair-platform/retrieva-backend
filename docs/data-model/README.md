@@ -39,7 +39,7 @@
 | [public.substitute_providers](public.substitute_providers.md)                     | 10      |         | BASE TABLE |
 | [public.surveillance_events](public.surveillance_events.md)                       | 18      |         | BASE TABLE |
 | [public.surveillance_runs](public.surveillance_runs.md)                           | 15      |         | BASE TABLE |
-| [public.users](public.users.md)                                                   | 27      |         | BASE TABLE |
+| [public.users](public.users.md)                                                   | 28      |         | BASE TABLE |
 | [public.vendor_questionnaires](public.vendor_questionnaires.md)                   | 20      |         | BASE TABLE |
 | [public.workspace_members](public.workspace_members.md)                           | 10      |         | BASE TABLE |
 | [public.workspaces](public.workspaces.md)                                         | 26      |         | BASE TABLE |
@@ -734,6 +734,7 @@ erDiagram
   timestamp_with_time_zone email_verification_expires
   timestamp_with_time_zone email_verification_last_sent_at
   text email_verification_token
+  text external_client_id
   uuid id
   boolean is_active
   boolean is_email_verified

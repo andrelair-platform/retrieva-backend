@@ -1,0 +1,3 @@
+ALTER TABLE "users" ADD COLUMN "external_client_id" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "users_external_client_id_uniq" ON "users" USING btree ("external_client_id") WHERE "users"."external_client_id" is not null;--> statement-breakpoint
+ALTER TABLE "users" ADD CONSTRAINT "users_external_client_id_service_only" CHECK ("users"."external_client_id" is null or "users"."principal_type" = 'SERVICE');
