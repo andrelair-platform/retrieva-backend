@@ -9,7 +9,13 @@ import {
   ResearchDisabledError,
   ResearchUrlRejectedError,
 } from '../../services/research/vendorResearch.js';
-import { confirmProposal } from '../../services/intake/arrangementIntakeService.js';
+import {
+  approveArrangementProposal,
+  checkArrangementProposal,
+  ProposalWorkflowError,
+  resubmitArrangementProposal,
+  submitArrangementProposal,
+} from '../../services/intake/arrangementProposalWorkflow.js';
 import { summarizeControlTouchpoints } from '../../services/intake/controlTouchpoints.js';
 import { parseEstateSheet, importEstate } from '../../services/intake/estateImport.js';
 import {
@@ -17,10 +23,12 @@ import {
   businessFunctionRepository,
   ictServiceRepository,
   providerGraphRepository,
+  arrangementProposalRepository,
 } from '../../repositories/index.js';
+import { can } from '../../services/security/can.js';
 
-// AI-assisted intake (RTV-34) — ORG-scoped. Upload a contract → AI proposes an arrangement → the
-// human confirms (nothing is authoritative until confirm). Keys off req.user!.organizationId.
+// AI-assisted intake (RTV-34) — ORG-scoped. Upload a contract → AI drafts → maker submits → an
+// independent checker and approver decide. Nothing is authoritative before final approval.
 const orgId = (req: Request) => req.user?.organizationId as string;
 const requireOrg = (req: Request, res: Response) => {
   const id = orgId(req);
@@ -152,7 +160,7 @@ export const researchVendor = catchAsync(async (req: Request, res: Response) => 
   }
 });
 
-// POST /api/v1/arrangements/intake/confirm — the human-validated proposal becomes an arrangement.
+// POST /api/v1/arrangements/intake/confirm — the maker submits the AI-assisted draft for checking.
 export const confirmIntake = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
@@ -161,15 +169,125 @@ export const confirmIntake = catchAsync(async (req: Request, res: Response) => {
     return sendError(res, 400, 'providerName, legalEntityName and businessFunctionName are required');
   }
 
-  const arrangement = await confirmProposal({
+  if (!(await can(req.user, 'arrangement:create', { organizationId }))) {
+    return sendError(res, 403, 'You do not have permission to submit arrangement proposals');
+  }
+  const proposal = await submitArrangementProposal({
     organizationId,
     userId: req.user!.userId,
     proposal: p,
     sourceFileName: req.body?.sourceFileName || 'Ingested contract',
     trigger: req.body?.trigger,
+    provenance: req.body?.provenance ?? {},
   });
 
-  sendSuccess(res, 201, 'Arrangement created from contract', { arrangement });
+  sendSuccess(res, 202, 'Arrangement proposal submitted for independent checking', { proposal });
+});
+
+const parseVersion = (value: unknown) => {
+  const version = Number(value);
+  return Number.isInteger(version) && version > 0 ? version : null;
+};
+const parseDecision = (value: unknown) => {
+  const decision = String(value ?? '');
+  return ['approve', 'reject', 'request_changes'].includes(decision)
+    ? (decision as 'approve' | 'reject' | 'request_changes')
+    : null;
+};
+const workflowError = (res: Response, error: unknown) => {
+  if (error instanceof ProposalWorkflowError) return sendError(res, error.statusCode, error.message);
+  throw error;
+};
+
+export const listIntakeProposals = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  if (!(await can(req.user, 'arrangement:read', { organizationId }))) return sendError(res, 403, 'Forbidden');
+  const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+  const allowed = ['submitted', 'checked', 'approved', 'rejected', 'changes_requested'];
+  if (status && !allowed.includes(status)) return sendError(res, 400, 'Invalid proposal status');
+  const proposals = await arrangementProposalRepository.list(organizationId, status as any);
+  sendSuccess(res, 200, 'Arrangement proposals', { proposals });
+});
+
+export const getIntakeProposal = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  if (!(await can(req.user, 'arrangement:read', { organizationId }))) return sendError(res, 403, 'Forbidden');
+  const proposal = await arrangementProposalRepository.get(organizationId, String(req.params.id));
+  if (!proposal) return sendError(res, 404, 'Arrangement proposal not found');
+  sendSuccess(res, 200, 'Arrangement proposal', { proposal });
+});
+
+export const checkIntakeProposal = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  if (!(await can(req.user, 'arrangement:check', { organizationId }))) {
+    return sendError(res, 403, 'An independent checker role is required');
+  }
+  const expectedVersion = parseVersion(req.body?.expectedVersion);
+  const decision = parseDecision(req.body?.decision);
+  if (!expectedVersion || !decision) return sendError(res, 400, 'expectedVersion and a valid decision are required');
+  try {
+    const proposal = await checkArrangementProposal({
+      organizationId,
+      proposalId: String(req.params.id),
+      userId: req.user!.userId,
+      expectedVersion,
+      decision,
+      justification: req.body?.justification,
+    });
+    sendSuccess(res, 200, 'Checker decision recorded', { proposal });
+  } catch (error) {
+    return workflowError(res, error);
+  }
+});
+
+export const approveIntakeProposal = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  if (!(await can(req.user, 'arrangement:approve', { organizationId }))) {
+    return sendError(res, 403, 'An accountable business approver role is required');
+  }
+  const expectedVersion = parseVersion(req.body?.expectedVersion);
+  const decision = parseDecision(req.body?.decision);
+  if (!expectedVersion || !decision) return sendError(res, 400, 'expectedVersion and a valid decision are required');
+  try {
+    const result = await approveArrangementProposal({
+      organizationId,
+      proposalId: String(req.params.id),
+      userId: req.user!.userId,
+      expectedVersion,
+      decision,
+      justification: req.body?.justification,
+    });
+    sendSuccess(res, 200, decision === 'approve' ? 'Proposal approved and materialized' : 'Approver decision recorded', result);
+  } catch (error) {
+    return workflowError(res, error);
+  }
+});
+
+export const resubmitIntakeProposal = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  const expectedVersion = parseVersion(req.body?.expectedVersion);
+  const proposalBody = req.body?.proposal;
+  if (!expectedVersion || !proposalBody) return sendError(res, 400, 'expectedVersion and proposal are required');
+  if (!proposalBody.providerName || !proposalBody.legalEntityName || !proposalBody.businessFunctionName) {
+    return sendError(res, 400, 'providerName, legalEntityName and businessFunctionName are required');
+  }
+  try {
+    const proposal = await resubmitArrangementProposal({
+      organizationId,
+      proposalId: String(req.params.id),
+      userId: req.user!.userId,
+      expectedVersion,
+      proposal: proposalBody,
+    });
+    sendSuccess(res, 200, 'Arrangement proposal resubmitted', { proposal });
+  } catch (error) {
+    return workflowError(res, error);
+  }
 });
 
 // POST /api/v1/arrangements/intake/import[?dryRun=true] — bulk import an estate from CSV/XLSX (RTV-69).

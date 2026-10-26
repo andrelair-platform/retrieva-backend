@@ -26,6 +26,7 @@ import type {
   businessFunctions,
   ictServices,
   arrangements,
+  arrangementProposals,
   evidence,
   auditLog,
   findings,
@@ -73,6 +74,8 @@ export type ProviderDependencyRow = typeof providerDependencies.$inferSelect;
 export type ProviderDependencyInsert = typeof providerDependencies.$inferInsert;
 export type ArrangementRow = typeof arrangements.$inferSelect;
 export type ArrangementInsert = typeof arrangements.$inferInsert;
+export type ArrangementProposalRow = typeof arrangementProposals.$inferSelect;
+export type ArrangementProposalInsert = typeof arrangementProposals.$inferInsert;
 export type EvidenceRow = typeof evidence.$inferSelect;
 export type EvidenceInsert = typeof evidence.$inferInsert;
 export type AuditLogRow = typeof auditLog.$inferSelect;

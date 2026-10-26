@@ -7,6 +7,11 @@ import {
   researchVendor,
   confirmIntake,
   importEstateFromFile,
+  listIntakeProposals,
+  getIntakeProposal,
+  checkIntakeProposal,
+  approveIntakeProposal,
+  resubmitIntakeProposal,
 } from './intake.controller.js';
 
 // AI-assisted intake (RTV-34) — mounted at /api/v1/arrangements/intake with setEntityContext.
@@ -24,8 +29,14 @@ router.post('/adoption-request', authenticate, contractUploadMiddleware, propose
 // vendor's public trust-centre page (allow-listed + SSRF-guarded) → provenanced, unconfirmed facts.
 router.post('/research', authenticate, researchVendor);
 
-// POST /api/v1/arrangements/intake/confirm — the human-validated proposal becomes an arrangement
+// POST /api/v1/arrangements/intake/confirm — maker submits a durable proposal; no arrangement yet.
 router.post('/confirm', authenticate, confirmIntake);
+
+router.get('/proposals', authenticate, listIntakeProposals);
+router.get('/proposals/:id', authenticate, getIntakeProposal);
+router.post('/proposals/:id/check', authenticate, checkIntakeProposal);
+router.post('/proposals/:id/approve', authenticate, approveIntakeProposal);
+router.post('/proposals/:id/resubmit', authenticate, resubmitIntakeProposal);
 
 // POST /api/v1/arrangements/intake/import[?dryRun=true] — bulk estate import from CSV/XLSX (RTV-69)
 router.post('/import', authenticate, estateUploadMiddleware, importEstateFromFile);

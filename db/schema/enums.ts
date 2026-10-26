@@ -146,6 +146,16 @@ export const verdictEnum = pgEnum('verdict', [
 ]);
 export const findingStatusEnum = pgEnum('finding_status', ['draft', 'approved', 'rejected']);
 
+// Governed AI-assisted intake. The AI only drafts data; accountable humans move the proposal
+// through maker submission, independent checking, and approval before it is materialised.
+export const arrangementProposalStatusEnum = pgEnum('arrangement_proposal_status', [
+  'submitted',
+  'checked',
+  'approved',
+  'rejected',
+  'changes_requested',
+]);
+
 // Risk register + remediation loop (RTV-43, ADR §5). An APPROVED gap-finding routes into a Risk the
 // human owns (management-body accountability). severity is derived from the finding verdict; status
 // is the remediation state machine (open → mitigating → mitigated → closed), with `accepted` as the

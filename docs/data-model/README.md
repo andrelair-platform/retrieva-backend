@@ -4,6 +4,7 @@
 
 | Name                                                                              | Columns | Comment | Type       |
 | --------------------------------------------------------------------------------- | ------- | ------- | ---------- |
+| [public.arrangement_proposals](public.arrangement_proposals.md)                   | 19      |         | BASE TABLE |
 | [public.arrangements](public.arrangements.md)                                     | 16      |         | BASE TABLE |
 | [public.assessment_run_approvals](public.assessment_run_approvals.md)             | 13      |         | BASE TABLE |
 | [public.assessment_runs](public.assessment_runs.md)                               | 11      |         | BASE TABLE |
@@ -54,6 +55,7 @@
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | public.amendment_status               | accepted, pending, rejected                                                                                                                                      |
 | public.arrangement_lifecycle          | active, due_diligence, exited, exiting, prospect, remediation, under_review                                                                                      |
+| public.arrangement_proposal_status    | approved, changes_requested, checked, rejected, submitted                                                                                                        |
 | public.arrangement_type               | external, intra_group                                                                                                                                            |
 | public.assessment_framework           | CONTRACT_A30, DORA                                                                                                                                               |
 | public.assessment_run_approval_status | approved, edited, expired, pending, rejected, superseded                                                                                                         |
@@ -106,6 +108,11 @@
 ```mermaid
 erDiagram
 
+"public.arrangement_proposals" }o--o| "public.users" : "FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.arrangement_proposals" }o--o| "public.users" : "FOREIGN KEY (checked_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.arrangement_proposals" }o--|| "public.users" : "FOREIGN KEY (prepared_by) REFERENCES users(id) ON DELETE RESTRICT"
+"public.arrangement_proposals" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+"public.arrangement_proposals" }o--o| "public.arrangements" : "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE SET NULL"
 "public.arrangements" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.arrangements" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.arrangements" }o--|| "public.provider_nodes" : "FOREIGN KEY (provider_id) REFERENCES provider_nodes(id) ON DELETE CASCADE"
@@ -207,6 +214,27 @@ erDiagram
 "public.workspaces" }o--|| "public.users" : "FOREIGN KEY (user_id) REFERENCES users(id)"
 "public.workspaces" }o--o| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE SET NULL"
 
+"public.arrangement_proposals" {
+  text approval_justification
+  timestamp_with_time_zone approved_at
+  uuid approved_by FK
+  uuid arrangement_id FK
+  text check_justification
+  timestamp_with_time_zone checked_at
+  uuid checked_by FK
+  timestamp_with_time_zone created_at
+  uuid id
+  uuid organization_id FK
+  uuid prepared_by FK
+  jsonb proposal
+  jsonb provenance
+  integer row_version
+  text source_file_name
+  arrangement_proposal_status status
+  timestamp_with_time_zone submitted_at
+  text trigger
+  timestamp_with_time_zone updated_at
+}
 "public.arrangements" {
   arrangement_type arrangement_type
   uuid business_function_id FK

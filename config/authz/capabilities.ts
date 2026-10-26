@@ -16,7 +16,7 @@
 
 // 1.1.0 (RTV-43): added the `risk:manage` verb — remediation-loop progress (open → mitigating →
 // mitigated → closed), kept distinct from `risk:accept` (the formal management-body acceptance).
-export const CAPABILITY_MAP_VERSION = '1.1.0';
+export const CAPABILITY_MAP_VERSION = '1.2.0';
 
 // Convenience: every resource, read-only (auditor / read roles).
 const READ_ALL = {
@@ -87,6 +87,7 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
     finding: ['read', 'approve'],
     risk: ['read', 'accept', 'manage'],
     register: ['read', 'export', 'attest'],
+    arrangement: ['read', 'check'],
   },
   legal: {
     ...READ_ALL,
@@ -98,7 +99,7 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
   },
   business_owner: {
     // attests usage/criticality for OWN functions only (row-scoping enforced in RTV-54)
-    arrangement: ['read'],
+    arrangement: ['read', 'approve'],
     register: ['read', 'attest'],
     finding: ['read'],
   },
