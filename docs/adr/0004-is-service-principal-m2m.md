@@ -3,6 +3,9 @@
 - **Status:** **Proposed — pending architecture + security review (Phase 0).** No code, no credentials,
   no infrastructure change has been made. Build (Phase 1+) is gated on approval of this ADR **and** on
   the Phase-3 security tests passing before any dogfood evaluation runs.
+- **Updated 2026-10-26:** blockers 1–3 **VERIFIED** in code; design revised (service-typed `users` row,
+  `principalType=SERVICE`, + an isolated RS256/JWKS verifier). Owner-approved (a+b) with controls; still
+  **pending architecture + security sign-off** before Phase 1. No code/credentials/infra yet.
 - **Date:** 2026-10-26
 - **Area:** Machine-to-machine identity / authorization, multi-tenant isolation, DORA attributability.
   **Dev-only** in this ADR; production or privileged principals are explicitly out of scope here.
@@ -47,13 +50,29 @@ reliance on token expiry.
 | Authentik integration | **outbound discovery only** (`config/authentik.ts`, `services/discovery/authentikClient.ts` use `AUTHENTIK_API_TOKEN` to list apps) — Authentik is **not** an IdP for Retrieva's own auth | read/grep |
 | role model | `role: 'user' \| 'admin'`; no service-principal type exists yet | grep |
 
-**ASSUMPTION** (must be verified during Phase 1 — these are security-review inputs, not facts):
-1. **JWT algorithm** — `utils/security/jwt.js` was **not** read; whether a second **RS256/JWKS** verifier slots in cleanly (vs an HS256-only setup) is **unverified**.
-2. **Non-user scope resolution** — `resolveEntityScope` reads `req.user.userId`; whether it can resolve a **non-user service principal** to the IS entity scope is **unverified** (likely needs a code path).
-3. **Audit/model fields** — whether `createdBy` / the evaluation + audit schema **assume a human user** is **unverified** (the schema was not read); may need a principal-type field.
-4. **Authentik capability** — client-credentials grant + JWKS + `aud`/scope claims being available/configurable for Retrieva is **pattern-backed** (works for other platform services, `[[feedback_crossservice_m2m_auth_wiring]]`) but **not verified** for this app.
-5. **NetworkPolicy** — IS-workload→Retrieva and Retrieva→Authentik-JWKS egress on the default-deny cluster is **unverified**.
-6. **Entitlement** — `requireActivePlan` has **no `internal` status today**; adding it is new. The **null/undefined fail-open exists** — relying on it would be the "generic subscription bypass" risk this ADR forbids.
+**VERIFICATION RESULTS (2026-10-26) — blockers 1–3 cleared by reading the code; 4–6 remain:**
+1. **JWT = HS256 symmetric** (`utils/security/jwt.ts`: `jwt.sign/verify` with `JWT_ACCESS_SECRET`, rotation-aware; **no asymmetric/JWKS path**). → The service path adds an **ISOLATED RS256/JWKS verifier** (`jose`/`jwks-rsa`); the **HS256 staff verifier is NOT modified** and the two never cross.
+2. **`resolveEntityScope(user)` keys on `user.userId`** + `roleAssignmentRepository.findByUser(userId)`, and is **fail-closed when there is no `userId`**. → The service principal is backed by a **service-typed `users` row** (so it has a `userId` + the IS `organizationId`) with a **dedicated service role**; it must **not inherit staff/admin roles**.
+3. **`evaluations.created_by` is a FK → `users.id`** (nullable, `ON DELETE SET NULL`); `authAuditService` logs **auth events only**. → Attribution reuses the service `users` row **plus** a new **append-only action-audit** carrying the immutable principal id; **disable-not-delete** preserves the link.
+4. **Authentik capability** — client-credentials + JWKS + `aud`/scope: **pattern-backed** (`[[feedback_crossservice_m2m_auth_wiring]]`), confirm the exact provider config in Phase 1.
+5. **NetworkPolicy** — a **separate, owner-reviewed gitops PR** (IS→Retrieva, Retrieva→Authentik-JWKS), like ADR-0003's egress.
+6. **Entitlement** — add an explicit **`internal`** entitlement, **fail-closed for this tenant**; the global null fail-open is **NOT** touched here → tracked separately (see §6).
+
+## Revised design — service-typed service principal (post-verification, APPROVED)
+- A provisioned **service-typed `users` row**: **`principalType = SERVICE`** enforced at **DB + app** layers; **no password**, no MFA enrollment, no retail registration, no password reset, and it is **never issued a staff JWT**. *(A governed service identity — defined by its lifecycle/auth/authz boundaries, not by the table it sits in. It is NOT a retail account.)*
+- **Auth = a separate `requireServicePrincipal` middleware** that verifies the **Authentik RS256 token via JWKS** (a NEW, isolated verifier). The **HS256 staff verifier is untouched**; a service token can never be minted or accepted by the staff path, and a staff token can never act as the service principal.
+- **Exact 1:1 Authentik-client → service-principal** mapping, resolved **server-side** (never from a request/claim).
+- A **dedicated least-privilege service role** (evaluation read/write only). Scope resolution recognizes **this role specifically** and **cannot inherit** staff/admin roles.
+- `created_by` references the **service user's id** → FK integrity preserved.
+- **Disable-not-delete** + an **immutable append-only action-audit** → attribution survives even when the principal is disabled.
+- **Staff-guard exclusion:** every staff auth/authz entry point rejects a `SERVICE` row (it cannot obtain a staff JWT or pass staff authz merely by having a `users.id`); excluded from staff directory / normal user-lifecycle views.
+
+## Migration design (schema — DESIGN ONLY, not applied until after sign-off)
+- **`users.principal_type`** — enum `HUMAN`|`SERVICE`, `NOT NULL DEFAULT 'HUMAN'` (forward-only; existing rows → HUMAN). App + DB guard: a `SERVICE` row has **no `password_hash` and no MFA secret**.
+- **Service role** — a dedicated `service.evaluator` role in the role-assignment model granting **only** `retrieva.evaluations:read|write` (never staff/admin); the IS principal is assigned **only** this.
+- **`action_audit`** — a new **append-only** table for evaluation operations (immutable `principalId` + `actorType` + `tenantId` + `operation` + `authorizationDecision` + `result`), distinct from `authAuditService` (auth events). No UPDATE/DELETE.
+- **IS org entitlement** — an explicit **`internal`** entitlement, **fail-closed** for this tenant (missing/malformed → deny, not allow); provisioned **idempotently** (get-or-create); **not assignable via public registration / customer APIs**.
+- **Rollback** — feature-flag OFF reverts behaviour; the column/role/table are additive (default HUMAN) → no data loss; dropping them is a clean down-migration.
 
 ## (1) JWT validation requirements + server-side client→tenant binding
 The `requireServicePrincipal` middleware MUST enforce, and reject on any failure:
@@ -145,8 +164,11 @@ not the request body).
 ## (6) Internal entitlement semantics (no generic subscription bypass)
 - Add an **explicit** `planStatus: 'internal'` (an entitlement, not a Stripe state) that **only the
   provisioner** sets, on **internal** orgs only, and `requireActivePlan` passes it **deliberately**.
-- **Do not** rely on the existing null/undefined **fail-open** — that is a generic bypass. This ADR
-  flags hardening it (fail-open → require an explicit entitlement) as part of the work.
+- **Fail-closed for this tenant:** a missing/malformed entitlement record → **deny**, never allow.
+  `internal` is set **only** by the provisioner and is **not** assignable via public registration / customer APIs.
+- **Do not** touch the **global** null/undefined fail-open here — that needs a dependency/impact analysis
+  first. It is **separately tracked** (issue **#156**) — dependency analysis + migration + regression
+  tests — a controlled migration, **not** permanent acceptance of the fail-open.
 - `internal` grants access to the **evaluation scope only** (combined with §2), not blanket paid features.
 
 ## (7) Governance (dev lightweight / prod dual-approval)
@@ -187,16 +209,21 @@ Dev-only; no prod surface.
 - **Emergency revoke:** disable the principal record (immediate, §3).
 
 ## (8d) Acceptance criteria (the Phase-3 gate — must be green before any dogfood)
-**Positive:** a valid short-lived token → create/read/score an evaluation **and** select a winner, **scoped
-to the IS org**, **attributed** as a service principal in the audit.
-**Negative (corrected):**
+**Positive:** a valid short-lived **service** token → create/read/score an evaluation + add candidates,
+**scoped to the IS org**, **attributed** as a `service_principal` in the action-audit. **A human account**
+(not the service principal) performs **select-winner / risk-decision / sign-off / approval** (SoD, §1b).
+**Negative:**
 1. **Expired** token → denied (401).
 2. **Client disabled** → new token issuance fails; a still-valid issued token behaves per §3 (document the TTL window).
 3. **Emergency revoke** (principal record disabled) → **immediate** denial even with a still-valid token.
-4. **Insufficient scope** → denied (e.g. no `:select` → 403; `delete` not granted → denied).
+4. **Insufficient scope** → denied (e.g. `select`/`risk-decision`/`sign-off`/`approval` are human-only → service denied; `delete` not granted → denied).
 5. **Cross-tenant** → IS principal requests another org's evaluation → `entityScope` denies (not-found/forbidden).
 6. **Staff-route reach** → service JWT on a staff route → **denied + no escalation** (401 or 403 acceptable).
 7. **Reverse** → a user/staff JWT is **not** accepted as the service principal.
+8. **No staff JWT from a service row** — a `SERVICE` `users` row can **not** obtain a staff JWT nor pass any staff auth/authz entry point (asserted at **every** staff guard).
+9. **No staff-role inheritance** — the service role resolves to evaluation scopes **only**; it cannot inherit a staff/admin role despite being a `users` row.
+10. **Entitlement fail-closed** — the IS tenant with a missing/malformed entitlement → **denied**; `internal` cannot be set via public registration.
+11. **Attribution survives disable** — disabling (not deleting) the principal preserves `created_by` + the append-only action-audit's immutable principal id.
 
 ## Consequences
 - **Positive:** governed, auditable, tenant-isolated, reuses platform identity (no parallel auth system);
@@ -204,13 +231,18 @@ to the IS org**, **attributed** as a service principal in the audit.
 - **Cost / negative:** a new auth path to maintain; dev issuance depends on Authentik availability; the
   pre-existing `requireActivePlan` null fail-open should be hardened as part of this.
 
-## Open security-review blockers (SA/SEC must resolve before Phase 1)
-1. Confirm the **JWT alg / JWKS** feasibility (ASSUMPTION 1) — read `utils/security/jwt.js`.
-2. Confirm **`entityScope` can resolve a non-user principal** (ASSUMPTION 2).
-3. Confirm the **audit/evaluation model** can carry a principal type (ASSUMPTION 3).
-4. Decide the **null fail-open hardening** in `requireActivePlan` (§6).
-5. Confirm the **NetworkPolicy** openings (ASSUMPTION 5) — a separate, deliberate gitops change (like ADR-0003's egress).
-6. Approve the **dev-lightweight governance** (§7) for this principal.
+## Security-review status (the SA/SEC sign-off on this updated ADR is the remaining gate)
+1. **RESOLVED** — JWT is HS256 symmetric; add an **isolated** RS256/JWKS verifier (staff HS256 untouched).
+2. **RESOLVED** — `entityScope` keys on `userId` + role assignments (fail-closed); the principal = a
+   service-typed `users` row with a **dedicated** service role, **no staff-role inheritance**.
+3. **RESOLVED** — `created_by` FK→`users` (nullable) + a new **append-only action-audit**; disable-not-delete.
+4. **DECIDED** — explicit **`internal`** entitlement (fail-closed for the tenant); global null-hardening =
+   a **separately tracked** issue.
+5. **Prepared separately** — the NetworkPolicy openings = an **owner-reviewed gitops PR** (not in this repo).
+6. **Approved** — dev-lightweight governance (named owner + security review + recorded approval).
+
+**Remaining gate:** architecture + security **sign-off on this updated ADR**, then the §8d test matrix
+green **before** any dogfood. No Phase-1 code/credentials/infra until sign-off.
 
 Related: `minicloud-gitops/.claude/rules/software-evaluation.md`, ADR-0002, ADR-0003,
 `[[feedback_crossservice_m2m_auth_wiring]]`, `[[project_iam_custom_access_governance]]`,
