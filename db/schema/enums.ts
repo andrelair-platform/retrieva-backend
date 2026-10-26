@@ -6,6 +6,10 @@ import { pgEnum } from 'drizzle-orm/pg-core';
 
 export const userRoleEnum = pgEnum('user_role', ['user', 'admin']);
 
+// Principal type (ADR-0004). A SERVICE row in `users` is a governed M2M identity (passwordless,
+// no MFA, Authentik client-credentials auth) — NOT a retail/human account. HUMAN is the default.
+export const principalTypeEnum = pgEnum('principal_type', ['HUMAN', 'SERVICE']);
+
 // NOTE: org_industry, org_plan, service_type are NOT pgEnums — they are growable
 // business taxonomies modelled as text + CHECK (see organizations.js / workspaces.js)
 // so new industries/plans/service-types don't need an ALTER TYPE migration. The
@@ -20,6 +24,10 @@ export const orgPlanStatusEnum = pgEnum('org_plan_status', [
   'past_due',
   'canceled',
   'paused',
+  // Internal (ADR-0004) — a provisioned, non-Stripe entitlement for an internal tenant (e.g. the
+  // ktayl-solution IS). `requireActivePlan` passes it like 'active'; set ONLY by the provisioner,
+  // never via public registration / customer APIs.
+  'internal',
 ]);
 export const orgMemberRoleEnum = pgEnum('org_member_role', ['org_admin', 'analyst', 'viewer']);
 
@@ -65,6 +73,9 @@ export const domainRoleEnum = pgEnum('domain_role', [
   'viewer', // limited read-only
   // external
   'vendor_contact', // single-arrangement vendor portal (RTV-56)
+  // service principal (ADR-0004) — a governed M2M identity. LEAST-PRIVILEGE: the capability layer
+  // (can(), RTV-53) maps this to evaluation read/write ONLY; it must NEVER inherit staff/admin.
+  'service_evaluator',
 ]);
 
 export const assessmentFrameworkEnum = pgEnum('assessment_framework', ['DORA', 'CONTRACT_A30']);

@@ -11,9 +11,11 @@ import {
   timestamp,
   jsonb,
   index,
+  check,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
-import { userRoleEnum } from './enums.js';
+import { sql } from 'drizzle-orm';
+import { userRoleEnum, principalTypeEnum } from './enums.js';
 import { organizations } from './organizations.js';
 
 // Mongoose defaults, preserved verbatim so behaviour is identical post-cutover.
@@ -55,9 +57,11 @@ export const users = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     email: text('email').notNull().unique(),
-    password: text('password').notNull(), // bcrypt; select:false enforced in the repo layer
+    password: text('password'), // bcrypt; NULL for SERVICE principals (ADR-0004); select:false in the repo layer
     name: text('name').notNull(), // encrypted at rest
     role: userRoleEnum('role').notNull().default('user'), // legacy global role — kept until the RTV-54+ cutover
+    // Principal type (ADR-0004): HUMAN (default) or a governed M2M SERVICE identity (passwordless).
+    principalType: principalTypeEnum('principal_type').notNull().default('HUMAN'),
     // Authorization redesign (RTV-52): the SaaS-operator flag. Replaces role==='admin'
     // for platform-admin gating (grants allow-all in can()). Domain roles live in role_assignments.
     platformAdmin: boolean('platform_admin').notNull().default(false),
@@ -95,5 +99,14 @@ export const users = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date()),
   },
-  (t) => [index('users_organization_id_idx').on(t.organizationId)]
+  (t) => [
+    index('users_organization_id_idx').on(t.organizationId),
+    // ADR-0004: a HUMAN must have a password; a SERVICE principal must NOT (M2M via Authentik only).
+    // Enforces "no password / no retail credential for service identities" at the DB layer.
+    check(
+      'users_principal_password_check',
+      sql`(${t.principalType} = 'HUMAN' and ${t.password} is not null)
+          or (${t.principalType} = 'SERVICE' and ${t.password} is null)`
+    ),
+  ]
 );

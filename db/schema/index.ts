@@ -19,6 +19,8 @@ export * from './arrangementProposals.js';
 export * from './evidence.js';
 export * from './evidenceRequests.js';
 export * from './auditLog.js';
+// Service-principal action attribution (ADR-0004) — append-only, immutable actor + authz decision.
+export * from './actionAudit.js';
 // Assessment findings (RTV-41)
 export * from './findings.js';
 // Risk register + remediation loop (RTV-43)
