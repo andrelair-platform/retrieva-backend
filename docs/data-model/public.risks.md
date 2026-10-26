@@ -132,6 +132,7 @@ erDiagram
   timestamp_with_time_zone password_reset_expires
   text password_reset_token
   boolean platform_admin
+  principal_type principal_type
   jsonb refresh_tokens
   user_role role
   timestamp_with_time_zone updated_at

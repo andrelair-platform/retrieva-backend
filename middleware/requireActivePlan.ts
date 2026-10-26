@@ -2,14 +2,15 @@ import type { Request, Response, NextFunction } from "express";
 /**
  * requireActivePlan middleware
  *
- * Guards paid API routes. Reads the organization's billing state from MongoDB
- * and returns HTTP 402 when the plan is not active/trialing.
+ * Guards paid API routes. Reads the organization's billing/entitlement state (Postgres, via the
+ * Drizzle OrganizationRepository) and returns HTTP 402 when the plan is not active/trialing/internal.
  *
  * Pass-through rules:
  *  - No req.user          → next() (public routes, e.g. questionnaire respond)
- *  - planStatus null/undef → next() (Stripe not yet provisioned — fail-open)
- *  - planStatus 'trialing' + trialEndsAt > now → next()
+ *  - org not found / no planStatus → next() (fail-open — tracked for hardening in #156)
  *  - planStatus 'active'   → next()
+ *  - planStatus 'internal' → next() (ADR-0004: a provisioned internal tenant, e.g. ktayl-solution IS)
+ *  - planStatus 'trialing' + trialEndsAt > now → next()
  *  - anything else         → 402 with { planStatus }
  */
 
@@ -35,7 +36,11 @@ export async function requireActivePlan(req: Request, res: Response, next: NextF
 
     const { planStatus, trialEndsAt } = org;
 
-    if (planStatus === 'active') {
+    // 'internal' (ADR-0004) = a provisioned internal tenant (e.g. ktayl-solution IS); passes like
+    // 'active'. It is set ONLY by the provisioner on an internal org, never via public registration,
+    // and the org's plan_status is NOT NULL, so this tenant is effectively fail-closed (it always has
+    // an explicit entitlement — it never relies on the org-not-found fail-open above; see #156).
+    if (planStatus === 'active' || planStatus === 'internal') {
       return next();
     }
 

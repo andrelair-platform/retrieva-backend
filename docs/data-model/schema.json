@@ -2,6 +2,105 @@
   "name": "retrieva",
   "tables": [
     {
+      "name": "public.action_audit",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "actor_type",
+          "type": "principal_type",
+          "nullable": false
+        },
+        {
+          "name": "authorization_decision",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "detail",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "operation",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "principal_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "result",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "tenant_id",
+          "type": "uuid",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "action_audit_created_idx",
+          "def": "CREATE INDEX action_audit_created_idx ON public.action_audit USING btree (created_at)",
+          "table": "public.action_audit",
+          "columns": [
+            "created_at"
+          ]
+        },
+        {
+          "name": "action_audit_pkey",
+          "def": "CREATE UNIQUE INDEX action_audit_pkey ON public.action_audit USING btree (id)",
+          "table": "public.action_audit",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "action_audit_principal_idx",
+          "def": "CREATE INDEX action_audit_principal_idx ON public.action_audit USING btree (principal_id)",
+          "table": "public.action_audit",
+          "columns": [
+            "principal_id"
+          ]
+        },
+        {
+          "name": "action_audit_tenant_idx",
+          "def": "CREATE INDEX action_audit_tenant_idx ON public.action_audit USING btree (tenant_id)",
+          "table": "public.action_audit",
+          "columns": [
+            "tenant_id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "action_audit_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.action_audit",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "public.arrangement_proposals",
       "type": "BASE TABLE",
       "columns": [
@@ -5531,7 +5630,7 @@
         {
           "name": "password",
           "type": "text",
-          "nullable": false
+          "nullable": true
         },
         {
           "name": "password_reset_expires",
@@ -5548,6 +5647,12 @@
           "type": "boolean",
           "nullable": false,
           "default": "false"
+        },
+        {
+          "name": "principal_type",
+          "type": "principal_type",
+          "nullable": false,
+          "default": "'HUMAN'::principal_type"
         },
         {
           "name": "refresh_tokens",
@@ -5626,6 +5731,17 @@
           "referenced_table": "",
           "columns": [
             "id"
+          ]
+        },
+        {
+          "name": "users_principal_password_check",
+          "type": "CHECK",
+          "def": "CHECK ((((principal_type = 'HUMAN'::principal_type) AND (password IS NOT NULL)) OR ((principal_type = 'SERVICE'::principal_type) AND (password IS NULL))))",
+          "table": "public.users",
+          "referenced_table": "",
+          "columns": [
+            "principal_type",
+            "password"
           ]
         }
       ]
@@ -7768,6 +7884,7 @@
         "group_risk",
         "ict_risk_officer",
         "legal",
+        "service_evaluator",
         "vendor_contact",
         "viewer"
       ]
@@ -7887,9 +8004,17 @@
       "values": [
         "active",
         "canceled",
+        "internal",
         "past_due",
         "paused",
         "trialing"
+      ]
+    },
+    {
+      "name": "public.principal_type",
+      "values": [
+        "HUMAN",
+        "SERVICE"
       ]
     },
     {

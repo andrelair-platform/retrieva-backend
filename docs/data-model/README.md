@@ -4,6 +4,7 @@
 
 | Name                                                                              | Columns | Comment | Type       |
 | --------------------------------------------------------------------------------- | ------- | ------- | ---------- |
+| [public.action_audit](public.action_audit.md)                                     | 9       |         | BASE TABLE |
 | [public.arrangement_proposals](public.arrangement_proposals.md)                   | 19      |         | BASE TABLE |
 | [public.arrangements](public.arrangements.md)                                     | 16      |         | BASE TABLE |
 | [public.assessment_run_approvals](public.assessment_run_approvals.md)             | 13      |         | BASE TABLE |
@@ -38,7 +39,7 @@
 | [public.substitute_providers](public.substitute_providers.md)                     | 10      |         | BASE TABLE |
 | [public.surveillance_events](public.surveillance_events.md)                       | 18      |         | BASE TABLE |
 | [public.surveillance_runs](public.surveillance_runs.md)                           | 15      |         | BASE TABLE |
-| [public.users](public.users.md)                                                   | 26      |         | BASE TABLE |
+| [public.users](public.users.md)                                                   | 27      |         | BASE TABLE |
 | [public.vendor_questionnaires](public.vendor_questionnaires.md)                   | 20      |         | BASE TABLE |
 | [public.workspace_members](public.workspace_members.md)                           | 10      |         | BASE TABLE |
 | [public.workspaces](public.workspaces.md)                                         | 26      |         | BASE TABLE |
@@ -51,57 +52,58 @@
 
 ## Enums
 
-| Name                                  | Values                                                                                                                                                           |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| public.amendment_status               | accepted, pending, rejected                                                                                                                                      |
-| public.arrangement_lifecycle          | active, due_diligence, exited, exiting, prospect, remediation, under_review                                                                                      |
-| public.arrangement_proposal_status    | approved, changes_requested, checked, rejected, submitted                                                                                                        |
-| public.arrangement_type               | external, intra_group                                                                                                                                            |
-| public.assessment_framework           | CONTRACT_A30, DORA                                                                                                                                               |
-| public.assessment_run_approval_status | approved, edited, expired, pending, rejected, superseded                                                                                                         |
-| public.assessment_run_status          | blocked, cancelled, done, failed, queued, resuming, running, waiting_human                                                                                       |
-| public.assessment_status              | analyzing, complete, failed, indexing, pending                                                                                                                   |
-| public.completeness_finding_status    | acknowledged, open, resolved                                                                                                                                     |
-| public.completeness_run_status        | failed, queued, running, succeeded                                                                                                                               |
-| public.completeness_severity          | high, low, medium                                                                                                                                                |
-| public.criticality                    | critical, important                                                                                                                                              |
-| public.ddq_contradiction_severity     | high, low, medium                                                                                                                                                |
-| public.ddq_contradiction_status       | acknowledged, dismissed, open, resolved                                                                                                                          |
-| public.dependency_level               | high, low, medium                                                                                                                                                |
-| public.discovery_proposal_status      | confirmed, dismissed, pending                                                                                                                                    |
-| public.discovery_run_status           | failed, queued, running, succeeded                                                                                                                               |
-| public.discovery_source               | authentik, erpnext, generic, odata, okta, rest, scim                                                                                                             |
-| public.domain_role                    | analyst, auditor, business_owner, dpo, entity_admin, group_admin, group_compliance, group_risk, ict_risk_officer, legal, vendor_contact, viewer                  |
-| public.dora_rating                    | AMBER, GREEN, RED                                                                                                                                                |
-| public.evaluation_candidate_status    | candidate, rejected, selected                                                                                                                                    |
-| public.evaluation_status              | cancelled, draft, onboarded, scoring, selected                                                                                                                   |
-| public.evidence_category              | bcp_dr_plan, dora_addendum, exit_strategy, iso27001_cert, master_service_agreement, risk_classification, soc2_report, subprocessor_list, vendor_dora_attestation |
-| public.evidence_request_status        | fulfilled, pending, revoked                                                                                                                                      |
-| public.evidence_scope                 | arrangement, provider                                                                                                                                            |
-| public.exit_artefact_status           | approved, draft, rejected                                                                                                                                        |
-| public.exit_artefact_type             | exit_blueprint, provider_match, reintegration_model                                                                                                              |
-| public.exit_difficulty                | high, low, medium                                                                                                                                                |
-| public.finding_status                 | approved, draft, rejected                                                                                                                                        |
-| public.member_status                  | active, pending, revoked                                                                                                                                         |
-| public.message_role                   | assistant, user                                                                                                                                                  |
-| public.org_member_role                | analyst, org_admin, viewer                                                                                                                                       |
-| public.org_plan_status                | active, canceled, past_due, paused, trialing                                                                                                                     |
-| public.provider_node_kind             | external, workspace                                                                                                                                              |
-| public.provider_source                | extracted, manual                                                                                                                                                |
-| public.questionnaire_status           | complete, draft, expired, failed, partial, sent                                                                                                                  |
-| public.risk_severity                  | critical, high, low, medium                                                                                                                                      |
-| public.risk_status                    | accepted, closed, mitigated, mitigating, open                                                                                                                    |
-| public.scope_type                     | entity, group, legal_entity                                                                                                                                      |
-| public.surveillance_event_status      | acknowledged, open, resolved                                                                                                                                     |
-| public.surveillance_run_status        | failed, queued, running, succeeded                                                                                                                               |
-| public.surveillance_severity          | critical, high, low, medium                                                                                                                                      |
-| public.surveillance_source            | breach, cve, other, statuspage                                                                                                                                   |
-| public.tier                           | critical, important, standard                                                                                                                                    |
-| public.user_role                      | admin, user                                                                                                                                                      |
-| public.vendor_status                  | active, exited, under-review                                                                                                                                     |
-| public.verdict                        | compliant, insufficient_evidence, non_compliant, not_applicable, partial                                                                                         |
-| public.workspace_member_role          | member, owner, viewer                                                                                                                                            |
-| public.workspace_sync_status          | error, idle, synced, syncing                                                                                                                                     |
+| Name                                  | Values                                                                                                                                                             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| public.amendment_status               | accepted, pending, rejected                                                                                                                                        |
+| public.arrangement_lifecycle          | active, due_diligence, exited, exiting, prospect, remediation, under_review                                                                                        |
+| public.arrangement_proposal_status    | approved, changes_requested, checked, rejected, submitted                                                                                                          |
+| public.arrangement_type               | external, intra_group                                                                                                                                              |
+| public.assessment_framework           | CONTRACT_A30, DORA                                                                                                                                                 |
+| public.assessment_run_approval_status | approved, edited, expired, pending, rejected, superseded                                                                                                           |
+| public.assessment_run_status          | blocked, cancelled, done, failed, queued, resuming, running, waiting_human                                                                                         |
+| public.assessment_status              | analyzing, complete, failed, indexing, pending                                                                                                                     |
+| public.completeness_finding_status    | acknowledged, open, resolved                                                                                                                                       |
+| public.completeness_run_status        | failed, queued, running, succeeded                                                                                                                                 |
+| public.completeness_severity          | high, low, medium                                                                                                                                                  |
+| public.criticality                    | critical, important                                                                                                                                                |
+| public.ddq_contradiction_severity     | high, low, medium                                                                                                                                                  |
+| public.ddq_contradiction_status       | acknowledged, dismissed, open, resolved                                                                                                                            |
+| public.dependency_level               | high, low, medium                                                                                                                                                  |
+| public.discovery_proposal_status      | confirmed, dismissed, pending                                                                                                                                      |
+| public.discovery_run_status           | failed, queued, running, succeeded                                                                                                                                 |
+| public.discovery_source               | authentik, erpnext, generic, odata, okta, rest, scim                                                                                                               |
+| public.domain_role                    | analyst, auditor, business_owner, dpo, entity_admin, group_admin, group_compliance, group_risk, ict_risk_officer, legal, service_evaluator, vendor_contact, viewer |
+| public.dora_rating                    | AMBER, GREEN, RED                                                                                                                                                  |
+| public.evaluation_candidate_status    | candidate, rejected, selected                                                                                                                                      |
+| public.evaluation_status              | cancelled, draft, onboarded, scoring, selected                                                                                                                     |
+| public.evidence_category              | bcp_dr_plan, dora_addendum, exit_strategy, iso27001_cert, master_service_agreement, risk_classification, soc2_report, subprocessor_list, vendor_dora_attestation   |
+| public.evidence_request_status        | fulfilled, pending, revoked                                                                                                                                        |
+| public.evidence_scope                 | arrangement, provider                                                                                                                                              |
+| public.exit_artefact_status           | approved, draft, rejected                                                                                                                                          |
+| public.exit_artefact_type             | exit_blueprint, provider_match, reintegration_model                                                                                                                |
+| public.exit_difficulty                | high, low, medium                                                                                                                                                  |
+| public.finding_status                 | approved, draft, rejected                                                                                                                                          |
+| public.member_status                  | active, pending, revoked                                                                                                                                           |
+| public.message_role                   | assistant, user                                                                                                                                                    |
+| public.org_member_role                | analyst, org_admin, viewer                                                                                                                                         |
+| public.org_plan_status                | active, canceled, internal, past_due, paused, trialing                                                                                                             |
+| public.principal_type                 | HUMAN, SERVICE                                                                                                                                                     |
+| public.provider_node_kind             | external, workspace                                                                                                                                                |
+| public.provider_source                | extracted, manual                                                                                                                                                  |
+| public.questionnaire_status           | complete, draft, expired, failed, partial, sent                                                                                                                    |
+| public.risk_severity                  | critical, high, low, medium                                                                                                                                        |
+| public.risk_status                    | accepted, closed, mitigated, mitigating, open                                                                                                                      |
+| public.scope_type                     | entity, group, legal_entity                                                                                                                                        |
+| public.surveillance_event_status      | acknowledged, open, resolved                                                                                                                                       |
+| public.surveillance_run_status        | failed, queued, running, succeeded                                                                                                                                 |
+| public.surveillance_severity          | critical, high, low, medium                                                                                                                                        |
+| public.surveillance_source            | breach, cve, other, statuspage                                                                                                                                     |
+| public.tier                           | critical, important, standard                                                                                                                                      |
+| public.user_role                      | admin, user                                                                                                                                                        |
+| public.vendor_status                  | active, exited, under-review                                                                                                                                       |
+| public.verdict                        | compliant, insufficient_evidence, non_compliant, not_applicable, partial                                                                                           |
+| public.workspace_member_role          | member, owner, viewer                                                                                                                                              |
+| public.workspace_sync_status          | error, idle, synced, syncing                                                                                                                                       |
 
 ## Relations
 
@@ -214,6 +216,17 @@ erDiagram
 "public.workspaces" }o--|| "public.users" : "FOREIGN KEY (user_id) REFERENCES users(id)"
 "public.workspaces" }o--o| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE SET NULL"
 
+"public.action_audit" {
+  principal_type actor_type
+  text authorization_decision
+  timestamp_with_time_zone created_at
+  text detail
+  uuid id
+  text operation
+  uuid principal_id
+  text result
+  uuid tenant_id
+}
 "public.arrangement_proposals" {
   text approval_justification
   timestamp_with_time_zone approved_at
@@ -739,6 +752,7 @@ erDiagram
   timestamp_with_time_zone password_reset_expires
   text password_reset_token
   boolean platform_admin
+  principal_type principal_type
   jsonb refresh_tokens
   user_role role
   timestamp_with_time_zone updated_at
