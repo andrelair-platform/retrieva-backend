@@ -11,6 +11,7 @@ import {
 } from '../../services/evaluation/evaluationService.js';
 import { evaluationRepository } from '../../repositories/index.js';
 import { can } from '../../services/security/can.js';
+import { recordAction } from '../../services/security/actionAudit.js';
 
 // Tool-onboarding evaluation (ADR-0002/ADR-0004) — ORG-scoped; PRINCIPAL-agnostic (staff OR the M2M
 // service principal, set by optionalPrincipal). setEntityContext (app.ts) applies RTV-54 row-level
@@ -29,11 +30,30 @@ const requireOrg = (req: Request, res: Response) => {
   if (!id) sendError(res, 400, 'No organization context for this principal');
   return id;
 };
-// Capability gate (default-deny) — true if allowed; else writes 403 and returns false. The OAuth
-// token's scopes are NOT consulted here: can() resolves the principal's role_assignment, so a token
-// scope can never bypass the capability check.
+// ADR-0004 append-only attribution — record the acting principal (type + id), the tenant, the authz
+// decision and the outcome. Side-effect-safe (recordAction never throws into the request path).
+const audit = (
+  req: Request,
+  operation: string,
+  decision: 'allow' | 'deny',
+  result: 'success' | 'failure',
+  detail?: string
+) =>
+  recordAction({
+    principalId: req.principal?.principalId ?? 'unknown',
+    actorType: req.principal?.type === 'service' ? 'SERVICE' : 'HUMAN',
+    tenantId: req.principal?.organizationId ?? '',
+    operation,
+    authorizationDecision: decision,
+    result,
+    detail: detail ?? null,
+  });
+// Capability gate (default-deny) — true if allowed; else audits the denial, writes 403, returns false.
+// The OAuth token's scopes are NOT consulted: can() resolves the principal's role_assignment, so a
+// token scope can never bypass the capability check.
 const requireCap = async (req: Request, res: Response, action: string, organizationId: string) => {
   if (await can(canUser(req), action, { organizationId })) return true;
+  await audit(req, action, 'deny', 'failure');
   sendError(res, 403, 'Forbidden');
   return false;
 };
@@ -53,6 +73,7 @@ export const postEvaluation = catchAsync(async (req: Request, res: Response) => 
     legalEntityId: req.body?.legalEntityId || null,
     criteria: Array.isArray(req.body?.criteria) ? req.body.criteria : undefined,
   });
+  await audit(req, 'evaluation.create', 'allow', 'success', evaluation?.id);
   sendSuccess(res, 201, 'Evaluation created', { evaluation });
 });
 
@@ -103,6 +124,7 @@ export const postCandidate = catchAsync(async (req: Request, res: Response) => {
     need: evaluation.need || '',
     docText,
   });
+  await audit(req, 'evaluation.candidate.add', 'allow', 'success', candidate?.id);
   sendSuccess(res, 201, 'Candidate added', { candidate });
 });
 
@@ -121,6 +143,7 @@ export const patchCandidateScores = catchAsync(async (req: Request, res: Respons
       candidateId: String(req.params.candidateId),
       manualScores,
     });
+    await audit(req, 'evaluation.candidate.score', 'allow', 'success', String(req.params.candidateId));
     sendSuccess(res, 200, 'Scores updated', { candidate });
   } catch (e: any) {
     if (e?.statusCode === 404) return sendError(res, 404, 'Candidate not found');
@@ -137,6 +160,7 @@ export const postSelectWinner = catchAsync(async (req: Request, res: Response) =
   // capability map (service_evaluator has no evaluation:select), so an inherited/wildcard grant can
   // never let a machine select. Then the normal capability gate (entity_admin/group_admin only).
   if (req.principal?.type === 'service') {
+    await audit(req, 'evaluation.select', 'deny', 'failure', 'service-principal-blocked');
     return sendError(res, 403, 'Selection is a human-only decision; service principals may not select');
   }
   if (!(await requireCap(req, res, 'evaluation:select', organizationId))) return;
@@ -149,6 +173,7 @@ export const postSelectWinner = catchAsync(async (req: Request, res: Response) =
       evaluationId: String(req.params.id),
       candidateId,
     });
+    await audit(req, 'evaluation.select', 'allow', 'success', candidateId);
     sendSuccess(res, 200, 'Winner selected and promoted to an arrangement', result);
   } catch (e: any) {
     if (e?.statusCode) return sendError(res, e.statusCode, e.message);

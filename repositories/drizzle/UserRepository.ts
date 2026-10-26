@@ -118,6 +118,18 @@ export class UserRepository extends BaseDrizzleRepository {
     return row ?? null;
   }
 
+  /**
+   * ADR-0004 revocation — DISABLE (never delete) a SERVICE principal. Immediate: requireServicePrincipal
+   * then rejects it ('disabled') on the very next request, regardless of a still-valid short-lived token.
+   * Disable-not-delete preserves `created_by` + the append-only action_audit attribution. Only acts on a
+   * SERVICE row (a HUMAN row is never touched by this path).
+   */
+  async disableServicePrincipal(principalId: string) {
+    const row = await this._rawById(principalId);
+    if (!row || row.principalType !== 'SERVICE') return null;
+    return this._sanitize(await super.updateById(principalId, { isActive: false }));
+  }
+
   async setOrganization(userId: string, organizationId: string) {
     return this._sanitize(await super.updateById(userId, { organizationId }));
   }

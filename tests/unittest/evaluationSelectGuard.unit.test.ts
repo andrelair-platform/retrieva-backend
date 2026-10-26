@@ -22,19 +22,32 @@ import { can } from '../../services/security/can.js';
 
 function fakeRes() {
   const res: Record<string, unknown> = { statusCode: 0, body: null };
+  res._done = new Promise<void>((r) => {
+    res._settle = r;
+  });
   res.status = (c: number) => {
     res.statusCode = c;
     return res;
   };
   res.json = (b: unknown) => {
     res.body = b;
+    (res._settle as () => void)();
     return res;
   };
-  return res as { statusCode: number; body: unknown; status: (c: number) => unknown; json: (b: unknown) => unknown };
+  return res as Record<string, unknown> & { statusCode: number; body: unknown; _done: Promise<void> };
 }
 
-const run = (req: unknown, res: unknown) =>
-  (postSelectWinner as unknown as (q: unknown, s: unknown, n: () => void) => Promise<void>)(req, res, () => {});
+// catchAsync does not return the handler promise, so await the terminal response (res.json via
+// sendSuccess/sendError, or next) before asserting — the audit + guard have all run by then.
+const run = async (req: unknown, res: ReturnType<typeof fakeRes>) => {
+  (postSelectWinner as unknown as (q: unknown, s: unknown, n: () => void) => void)(
+    req,
+    res,
+    () => (res._settle as () => void)()
+  );
+  await res._done;
+  await Promise.resolve();
+};
 
 beforeEach(() => vi.clearAllMocks());
 
