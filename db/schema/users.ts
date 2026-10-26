@@ -11,6 +11,7 @@ import {
   timestamp,
   jsonb,
   index,
+  uniqueIndex,
   check,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
@@ -62,6 +63,9 @@ export const users = pgTable(
     role: userRoleEnum('role').notNull().default('user'), // legacy global role — kept until the RTV-54+ cutover
     // Principal type (ADR-0004): HUMAN (default) or a governed M2M SERVICE identity (passwordless).
     principalType: principalTypeEnum('principal_type').notNull().default('HUMAN'),
+    // ADR-0004: the Authentik OAuth client_id bound to this SERVICE principal — the governed,
+    // server-side client→principal mapping used by requireServicePrincipal. NULL for HUMAN rows.
+    externalClientId: text('external_client_id'),
     // Authorization redesign (RTV-52): the SaaS-operator flag. Replaces role==='admin'
     // for platform-admin gating (grants allow-all in can()). Domain roles live in role_assignments.
     platformAdmin: boolean('platform_admin').notNull().default(false),
@@ -107,6 +111,14 @@ export const users = pgTable(
       'users_principal_password_check',
       sql`(${t.principalType} = 'HUMAN' and ${t.password} is not null)
           or (${t.principalType} = 'SERVICE' and ${t.password} is null)`
+    ),
+    // ADR-0004: the client_id→principal mapping is unique and SERVICE-only.
+    uniqueIndex('users_external_client_id_uniq')
+      .on(t.externalClientId)
+      .where(sql`${t.externalClientId} is not null`),
+    check(
+      'users_external_client_id_service_only',
+      sql`${t.externalClientId} is null or ${t.principalType} = 'SERVICE'`
     ),
   ]
 );

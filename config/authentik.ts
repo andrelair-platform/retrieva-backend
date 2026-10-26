@@ -23,3 +23,26 @@ export function getAuthentikConfig(): AuthentikConfig | null {
 export function isAuthentikConfigured(): boolean {
   return getAuthentikConfig() !== null;
 }
+
+/**
+ * Authentik M2M (client-credentials) verification config (ADR-0004) — SEPARATE from the discovery
+ * config above. Used by services/security/servicePrincipal to verify an Authentik-issued RS256 token
+ * against its JWKS. OPTIONAL — degrades to null (the service-principal feature is simply off) when any
+ * of the three env values is missing, so the staff/vendor auth paths are unaffected.
+ *   AUTHENTIK_M2M_ISSUER   — the exact `iss` claim Authentik stamps (the provider's issuer URL)
+ *   AUTHENTIK_M2M_JWKS_URL — the provider's JWKS (public keys) endpoint
+ *   AUTHENTIK_M2M_AUDIENCE — the exact `aud` this API expects
+ */
+export interface AuthentikM2mConfig {
+  issuer: string;
+  jwksUrl: string;
+  audience: string;
+}
+
+export function getAuthentikM2mConfig(): AuthentikM2mConfig | null {
+  const issuer = (process.env.AUTHENTIK_M2M_ISSUER || '').trim().replace(/\/+$/, '');
+  const jwksUrl = (process.env.AUTHENTIK_M2M_JWKS_URL || '').trim();
+  const audience = (process.env.AUTHENTIK_M2M_AUDIENCE || '').trim();
+  if (!issuer || !jwksUrl || !audience) return null;
+  return { issuer, jwksUrl, audience };
+}

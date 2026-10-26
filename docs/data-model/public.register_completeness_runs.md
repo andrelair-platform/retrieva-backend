@@ -66,6 +66,7 @@ erDiagram
   timestamp_with_time_zone email_verification_expires
   timestamp_with_time_zone email_verification_last_sent_at
   text email_verification_token
+  text external_client_id
   uuid id
   boolean is_active
   boolean is_email_verified

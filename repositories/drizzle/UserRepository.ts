@@ -98,6 +98,26 @@ export class UserRepository extends BaseDrizzleRepository {
     return this._sanitize(await this._rawByEmail(email));
   }
 
+  /**
+   * ADR-0004: resolve a SERVICE principal by its Authentik client_id (users.external_client_id).
+   * Returns only the fields the M2M verifier needs, and ONLY for a SERVICE row (defense in depth —
+   * the external_client_id CHECK is already SERVICE-only). Never returns a HUMAN row or secrets.
+   */
+  async findServicePrincipalByClientId(clientId: string) {
+    if (!clientId) return null;
+    const [row] = await this.db
+      .select({
+        id: users.id,
+        organizationId: users.organizationId,
+        isActive: users.isActive,
+        principalType: users.principalType,
+      })
+      .from(users)
+      .where(and(eq(users.externalClientId, clientId), eq(users.principalType, 'SERVICE')))
+      .limit(1);
+    return row ?? null;
+  }
+
   async setOrganization(userId: string, organizationId: string) {
     return this._sanitize(await super.updateById(userId, { organizationId }));
   }
