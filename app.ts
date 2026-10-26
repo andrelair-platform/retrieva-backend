@@ -45,6 +45,7 @@ import { mountApiDocs } from './openapi/index.js';
 import { handleStripeWebhook } from './controllers/billingController.js';
 import { requireActivePlan } from './middleware/requireActivePlan.js';
 import { optionalAuth } from './middleware/auth.js';
+import { optionalPrincipal } from './middleware/principal.js';
 import { setTenantContext } from './db/tenantContext.js';
 import { setEntityContext } from './middleware/setEntityContext.js';
 import logger from './config/logger.js';
@@ -376,7 +377,7 @@ app.use(
 // arrangement; org+entity-scoped via setEntityContext (RTV-54).
 app.use(
   '/api/v1/evaluations',
-  optionalAuth,
+  optionalPrincipal, // ADR-0004: resolves staff OR the M2M service principal → req.principal
   requireActivePlan,
   setEntityContext,
   evaluationRoutes

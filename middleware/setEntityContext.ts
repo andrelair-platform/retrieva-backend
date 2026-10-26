@@ -21,14 +21,25 @@ const DENY_ALL = {
 };
 
 export const setEntityContext = async (req: Request, _res: Response, next: NextFunction) => {
-  if (!req.user?.userId) return next(); // unauthenticated: route guards still apply
+  // ADR-0004: resolve from req.principal when present (a service principal has no req.user) — else
+  // fall back to req.user so every other route is unchanged. A SERVICE principal is NEVER promoted to
+  // req.user; its org scope comes from its own role_assignment (service_evaluator @ its org), so
+  // entity isolation applies to M2M evaluation ops exactly as it does to staff.
+  const canUser = req.principal
+    ? {
+        userId: req.principal.principalId,
+        organizationId: req.principal.organizationId,
+        platformAdmin: req.principal.platformAdmin,
+      }
+    : req.user;
+  if (!canUser?.userId) return next(); // unauthenticated: route guards still apply
   try {
-    const scope = await resolveEntityScope(req.user);
+    const scope = await resolveEntityScope(canUser);
     return runWithEntityScope(scope, () => next());
   } catch (err) {
     logger.error('setEntityContext: scope resolution failed (failing closed)', {
       service: 'entity-isolation',
-      userId: req.user.userId,
+      userId: canUser.userId,
       error: (err as Error).message,
     });
     return runWithEntityScope(DENY_ALL, () => next());
