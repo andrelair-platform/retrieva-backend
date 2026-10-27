@@ -264,8 +264,18 @@ runtime is provisioned on **dev only** (prod renders none of it). What is live:
   scope. Org ownership confers **no** evaluation capability — SoD stays with the capability map (§2) + the
   principal-type guard (§5).
 
+**Dogfood — DONE + verified via the dev INGRESS (2026-10-27).** A verifier bug was fixed first: the M2M
+config stripped the issuer trailing slash while Authentik stamps `iss` WITH it → every token was rejected
+`401 "unexpected iss"` (caught by the live gate, not CI — a mock-vs-reality gap; fixed in `7bc6643`, the
+verifier now accepts both slash forms). The dogfood then ran as the IS SERVICE principal against the REAL
+path `https://retrieva-dev.10.0.0.200.nip.io/api/v1` (ingress → nginx → TLS → netpol → backend → M2M
+verify — NOT localhost): create evaluation **201** → add candidate **201** → set scores **200** → rank/read
+**200** → **select 403** (SoD: a SERVICE principal cannot select — human-only). `action_audit` shows all
+four operations attributed `actor_type=SERVICE`, `tenant_id`=the IS org, with the select as `deny/failure`.
+The evaluation is org-scoped to the IS tenant, and **0 arrangements** exist in the IS org (select denied →
+nothing promoted to the RoI — the ADR-0005/0006 discipline, demonstrated live).
+
 **Still pending (deliberate):**
-- **Dogfood (§8d) NOT run** — awaiting the security sign-off + the §8d acceptance matrix green.
 - **Vault storage of the IS caller credential** — `secret/platform/*` writes need the **break-glass root
   token** (the scoped ops token is expired; recover per `ops-runbooks`, root never to automation). A human
   step; not required for the dev proof (the caller mints its token directly from the client credentials).
