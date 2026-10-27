@@ -23,7 +23,9 @@ const lookup = userRepository.findServicePrincipalByClientId as unknown as Retur
 
 beforeEach(() => {
   vi.clearAllMocks();
-  cfg.mockReturnValue({ issuer: 'https://auth/app', jwksUrl: 'https://auth/jwks', audience: 'retrieva' });
+  // Authentik stamps iss WITH a trailing slash — use that here so the issuer-match regression
+  // (ADR-0004 dogfood 401) stays caught.
+  cfg.mockReturnValue({ issuer: 'https://auth/app/', jwksUrl: 'https://auth/jwks', audience: 'retrieva' });
 });
 
 describe('resolveServicePrincipal (ADR-0004 M2M verifier) — fail-closed', () => {
@@ -89,7 +91,8 @@ describe('resolveServicePrincipal (ADR-0004 M2M verifier) — fail-closed', () =
     const opts = verify.mock.calls[0][2];
     expect(opts.algorithms).toEqual(['RS256']);
     expect(opts.clockTolerance).toBe(60);
-    expect(opts.issuer).toBe('https://auth/app');
+    // both slash forms accepted (Authentik stamps WITH the slash; config may hold either)
+    expect(opts.issuer).toEqual(['https://auth/app/', 'https://auth/app']);
     expect(opts.audience).toBe('retrieva');
   });
 });
