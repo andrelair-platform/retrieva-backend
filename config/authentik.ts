@@ -40,7 +40,10 @@ export interface AuthentikM2mConfig {
 }
 
 export function getAuthentikM2mConfig(): AuthentikM2mConfig | null {
-  const issuer = (process.env.AUTHENTIK_M2M_ISSUER || '').trim().replace(/\/+$/, '');
+  // The EXACT `iss` Authentik stamps — do NOT strip a trailing slash: Authentik's OAuth2 issuer
+  // includes it (e.g. .../application/o/<slug>/) and jose does an exact issuer match, so stripping it
+  // caused "unexpected iss claim value" 401s against the live IdP (ADR-0004 dogfood, 2026-10-27).
+  const issuer = (process.env.AUTHENTIK_M2M_ISSUER || '').trim();
   const jwksUrl = (process.env.AUTHENTIK_M2M_JWKS_URL || '').trim();
   const audience = (process.env.AUTHENTIK_M2M_AUDIENCE || '').trim();
   if (!issuer || !jwksUrl || !audience) return null;

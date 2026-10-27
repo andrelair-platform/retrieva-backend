@@ -62,10 +62,17 @@ export async function resolveServicePrincipal(
   if (!cfg) return { ok: false, reason: 'not_configured' };
   if (!token) return { ok: false, reason: 'no_token' };
 
+  // Accept the issuer with OR without a trailing slash: Authentik stamps `iss` WITH the slash, but
+  // config drift can set it either way — jose does an exact match, so offer both (defensive; the
+  // trailing-slash mismatch was a live 401 in the ADR-0004 dogfood).
+  const issuers = cfg.issuer.endsWith('/')
+    ? [cfg.issuer, cfg.issuer.replace(/\/+$/, '')]
+    : [cfg.issuer, `${cfg.issuer}/`];
+
   let payload: JWTPayload;
   try {
     ({ payload } = await jwtVerify(token, getJwks(cfg.jwksUrl), {
-      issuer: cfg.issuer, // exact trusted issuer
+      issuer: issuers, // exact trusted issuer(s) — both slash forms
       audience: cfg.audience, // exact intended audience
       algorithms: ['RS256'], // alg allow-list — reject 'none' / alg-confusion
       clockTolerance: 60, // bounded skew (seconds); exp + nbf validated by jose
