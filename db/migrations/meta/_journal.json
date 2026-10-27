@@ -239,6 +239,13 @@
       "when": 1793024198646,
       "tag": "0033_clear_ulik",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793132929171,
+      "tag": "0034_curly_maestro",
+      "breakpoints": true
     }
   ]
 }

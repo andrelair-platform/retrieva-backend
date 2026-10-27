@@ -33,6 +33,8 @@ import type {
   risks,
   evaluations,
   evaluationCandidates,
+  reportabilityDeterminations,
+  cmdbAssetRefs,
 } from './index.js';
 
 // ── core identity / tenancy ─────────────────────────────────────────────────
@@ -90,3 +92,9 @@ export type EvaluationRow = typeof evaluations.$inferSelect;
 export type EvaluationInsert = typeof evaluations.$inferInsert;
 export type EvaluationCandidateRow = typeof evaluationCandidates.$inferSelect;
 export type EvaluationCandidateInsert = typeof evaluationCandidates.$inferInsert;
+
+// ── DORA RoI reportability (ADR-0005, A1) ───────────────────────────────────
+export type ReportabilityDeterminationRow = typeof reportabilityDeterminations.$inferSelect;
+export type ReportabilityDeterminationInsert = typeof reportabilityDeterminations.$inferInsert;
+export type CmdbAssetRefRow = typeof cmdbAssetRefs.$inferSelect;
+export type CmdbAssetRefInsert = typeof cmdbAssetRefs.$inferInsert;
