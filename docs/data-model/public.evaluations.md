@@ -2,19 +2,19 @@
 
 ## Columns
 
-| Name                | Type                     | Default                    | Nullable | Children                                                        | Parents                                           | Comment |
-| ------------------- | ------------------------ | -------------------------- | -------- | --------------------------------------------------------------- | ------------------------------------------------- | ------- |
-| created_at          | timestamp with time zone | now()                      | false    |                                                                 |                                                   |         |
-| created_by          | uuid                     |                            | true     |                                                                 | [public.users](public.users.md)                   |         |
-| criteria            | jsonb                    | '[]'::jsonb                | false    |                                                                 |                                                   |         |
-| id                  | uuid                     | gen_random_uuid()          | false    | [public.evaluation_candidates](public.evaluation_candidates.md) |                                                   |         |
-| legal_entity_id     | uuid                     |                            | true     |                                                                 | [public.legal_entities](public.legal_entities.md) |         |
-| need                | text                     | ''::text                   | false    |                                                                 |                                                   |         |
-| organization_id     | uuid                     |                            | false    |                                                                 | [public.organizations](public.organizations.md)   |         |
-| status              | evaluation_status        | 'draft'::evaluation_status | false    |                                                                 |                                                   |         |
-| title               | text                     |                            | false    |                                                                 |                                                   |         |
-| updated_at          | timestamp with time zone | now()                      | false    |                                                                 |                                                   |         |
-| winner_candidate_id | uuid                     |                            | true     |                                                                 |                                                   |         |
+| Name                | Type                     | Default                    | Nullable | Children                                                                                                            | Parents                                           | Comment |
+| ------------------- | ------------------------ | -------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------- |
+| created_at          | timestamp with time zone | now()                      | false    |                                                                                                                     |                                                   |         |
+| created_by          | uuid                     |                            | true     |                                                                                                                     | [public.users](public.users.md)                   |         |
+| criteria            | jsonb                    | '[]'::jsonb                | false    |                                                                                                                     |                                                   |         |
+| id                  | uuid                     | gen_random_uuid()          | false    | [public.cmdb_asset_refs](public.cmdb_asset_refs.md) [public.evaluation_candidates](public.evaluation_candidates.md) |                                                   |         |
+| legal_entity_id     | uuid                     |                            | true     |                                                                                                                     | [public.legal_entities](public.legal_entities.md) |         |
+| need                | text                     | ''::text                   | false    |                                                                                                                     |                                                   |         |
+| organization_id     | uuid                     |                            | false    |                                                                                                                     | [public.organizations](public.organizations.md)   |         |
+| status              | evaluation_status        | 'draft'::evaluation_status | false    |                                                                                                                     |                                                   |         |
+| title               | text                     |                            | false    |                                                                                                                     |                                                   |         |
+| updated_at          | timestamp with time zone | now()                      | false    |                                                                                                                     |                                                   |         |
+| winner_candidate_id | uuid                     |                            | true     |                                                                                                                     |                                                   |         |
 
 ## Constraints
 
@@ -39,6 +39,7 @@
 erDiagram
 
 "public.evaluations" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.cmdb_asset_refs" }o--o| "public.evaluations" : "FOREIGN KEY (evaluation_id) REFERENCES evaluations(id) ON DELETE SET NULL"
 "public.evaluation_candidates" }o--|| "public.evaluations" : "FOREIGN KEY (evaluation_id) REFERENCES evaluations(id) ON DELETE CASCADE"
 "public.evaluations" }o--o| "public.legal_entities" : "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE SET NULL"
 "public.evaluations" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
@@ -84,6 +85,18 @@ erDiagram
   principal_type principal_type
   jsonb refresh_tokens
   user_role role
+  timestamp_with_time_zone updated_at
+}
+"public.cmdb_asset_refs" {
+  text asset_type
+  text cmdb_id
+  text cmdb_url
+  timestamp_with_time_zone created_at
+  uuid evaluation_id FK
+  uuid id
+  text name
+  uuid organization_id
+  text owner
   timestamp_with_time_zone updated_at
 }
 "public.evaluation_candidates" {

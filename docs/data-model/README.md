@@ -12,6 +12,7 @@
 | [public.assessments](public.assessments.md)                                       | 15      |         | BASE TABLE |
 | [public.audit_log](public.audit_log.md)                                           | 9       |         | BASE TABLE |
 | [public.business_functions](public.business_functions.md)                         | 8       |         | BASE TABLE |
+| [public.cmdb_asset_refs](public.cmdb_asset_refs.md)                               | 10      |         | BASE TABLE |
 | [public.contract_amendments](public.contract_amendments.md)                       | 17      |         | BASE TABLE |
 | [public.conversations](public.conversations.md)                                   | 9       |         | BASE TABLE |
 | [public.ddq_contradictions](public.ddq_contradictions.md)                         | 18      |         | BASE TABLE |
@@ -34,6 +35,7 @@
 | [public.questionnaire_templates](public.questionnaire_templates.md)               | 7       |         | BASE TABLE |
 | [public.register_completeness_findings](public.register_completeness_findings.md) | 13      |         | BASE TABLE |
 | [public.register_completeness_runs](public.register_completeness_runs.md)         | 14      |         | BASE TABLE |
+| [public.reportability_determinations](public.reportability_determinations.md)     | 11      |         | BASE TABLE |
 | [public.risks](public.risks.md)                                                   | 16      |         | BASE TABLE |
 | [public.role_assignments](public.role_assignments.md)                             | 7       |         | BASE TABLE |
 | [public.substitute_providers](public.substitute_providers.md)                     | 10      |         | BASE TABLE |
@@ -83,6 +85,7 @@
 | public.exit_artefact_type             | exit_blueprint, provider_match, reintegration_model                                                                                                                |
 | public.exit_difficulty                | high, low, medium                                                                                                                                                  |
 | public.finding_status                 | approved, draft, rejected                                                                                                                                          |
+| public.ict_service_relationship       | licence_only, managed_service, none, saas, support_maintenance                                                                                                     |
 | public.member_status                  | active, pending, revoked                                                                                                                                           |
 | public.message_role                   | assistant, user                                                                                                                                                    |
 | public.org_member_role                | analyst, org_admin, viewer                                                                                                                                         |
@@ -91,6 +94,7 @@
 | public.provider_node_kind             | external, workspace                                                                                                                                                |
 | public.provider_source                | extracted, manual                                                                                                                                                  |
 | public.questionnaire_status           | complete, draft, expired, failed, partial, sent                                                                                                                    |
+| public.reportability_status           | legacy_assumed_reportable, not_reportable, pending_review, reportable                                                                                              |
 | public.risk_severity                  | critical, high, low, medium                                                                                                                                        |
 | public.risk_status                    | accepted, closed, mitigated, mitigating, open                                                                                                                      |
 | public.scope_type                     | entity, group, legal_entity                                                                                                                                        |
@@ -134,6 +138,7 @@ erDiagram
 "public.audit_log" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.business_functions" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.business_functions" }o--|| "public.legal_entities" : "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE CASCADE"
+"public.cmdb_asset_refs" }o--o| "public.evaluations" : "FOREIGN KEY (evaluation_id) REFERENCES evaluations(id) ON DELETE SET NULL"
 "public.contract_amendments" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.contract_amendments" }o--o| "public.users" : "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.contract_amendments" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
@@ -192,6 +197,7 @@ erDiagram
 "public.register_completeness_findings" }o--|| "public.register_completeness_runs" : "FOREIGN KEY (run_id) REFERENCES register_completeness_runs(id) ON DELETE CASCADE"
 "public.register_completeness_runs" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.register_completeness_runs" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+"public.reportability_determinations" }o--|| "public.arrangements" : "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE"
 "public.risks" }o--o| "public.users" : "FOREIGN KEY (opened_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.risks" }o--o| "public.users" : "FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL"
 "public.risks" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
@@ -330,6 +336,18 @@ erDiagram
   uuid legal_entity_id FK
   text name
   uuid organization_id FK
+  timestamp_with_time_zone updated_at
+}
+"public.cmdb_asset_refs" {
+  text asset_type
+  text cmdb_id
+  text cmdb_url
+  timestamp_with_time_zone created_at
+  uuid evaluation_id FK
+  uuid id
+  text name
+  uuid organization_id
+  text owner
   timestamp_with_time_zone updated_at
 }
 "public.contract_amendments" {
@@ -651,6 +669,19 @@ erDiagram
   timestamp_with_time_zone started_at
   completeness_run_status status
   timestamp_with_time_zone updated_at
+}
+"public.reportability_determinations" {
+  uuid arrangement_id FK
+  real confidence
+  timestamp_with_time_zone created_at
+  uuid determined_by
+  jsonb evidence_refs
+  uuid id
+  uuid organization_id
+  text proposed_by
+  text rationale
+  ict_service_relationship service_relationship
+  reportability_status status
 }
 "public.risks" {
   uuid arrangement_id FK

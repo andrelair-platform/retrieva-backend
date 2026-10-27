@@ -1296,6 +1296,116 @@
       ]
     },
     {
+      "name": "public.cmdb_asset_refs",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "asset_type",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "cmdb_id",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "cmdb_url",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "evaluation_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "owner",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "cmdb_asset_refs_evaluation_idx",
+          "def": "CREATE INDEX cmdb_asset_refs_evaluation_idx ON public.cmdb_asset_refs USING btree (evaluation_id)",
+          "table": "public.cmdb_asset_refs",
+          "columns": [
+            "evaluation_id"
+          ]
+        },
+        {
+          "name": "cmdb_asset_refs_org_idx",
+          "def": "CREATE INDEX cmdb_asset_refs_org_idx ON public.cmdb_asset_refs USING btree (organization_id)",
+          "table": "public.cmdb_asset_refs",
+          "columns": [
+            "organization_id"
+          ]
+        },
+        {
+          "name": "cmdb_asset_refs_pkey",
+          "def": "CREATE UNIQUE INDEX cmdb_asset_refs_pkey ON public.cmdb_asset_refs USING btree (id)",
+          "table": "public.cmdb_asset_refs",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "cmdb_asset_refs_evaluation_id_evaluations_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (evaluation_id) REFERENCES evaluations(id) ON DELETE SET NULL",
+          "table": "public.cmdb_asset_refs",
+          "referenced_table": "public.evaluations",
+          "columns": [
+            "evaluation_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "cmdb_asset_refs_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.cmdb_asset_refs",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "public.contract_amendments",
       "type": "BASE TABLE",
       "columns": [
@@ -4702,6 +4812,129 @@
       ]
     },
     {
+      "name": "public.reportability_determinations",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "arrangement_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "confidence",
+          "type": "real",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "determined_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "evidence_refs",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "organization_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "proposed_by",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "rationale",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "service_relationship",
+          "type": "ict_service_relationship",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "reportability_status",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "reportability_determinations_arrangement_idx",
+          "def": "CREATE INDEX reportability_determinations_arrangement_idx ON public.reportability_determinations USING btree (arrangement_id)",
+          "table": "public.reportability_determinations",
+          "columns": [
+            "arrangement_id"
+          ]
+        },
+        {
+          "name": "reportability_determinations_created_idx",
+          "def": "CREATE INDEX reportability_determinations_created_idx ON public.reportability_determinations USING btree (created_at)",
+          "table": "public.reportability_determinations",
+          "columns": [
+            "created_at"
+          ]
+        },
+        {
+          "name": "reportability_determinations_org_idx",
+          "def": "CREATE INDEX reportability_determinations_org_idx ON public.reportability_determinations USING btree (organization_id)",
+          "table": "public.reportability_determinations",
+          "columns": [
+            "organization_id"
+          ]
+        },
+        {
+          "name": "reportability_determinations_pkey",
+          "def": "CREATE UNIQUE INDEX reportability_determinations_pkey ON public.reportability_determinations USING btree (id)",
+          "table": "public.reportability_determinations",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "reportability_determinations_arrangement_id_arrangements_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE",
+          "table": "public.reportability_determinations",
+          "referenced_table": "public.arrangements",
+          "columns": [
+            "arrangement_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "reportability_determinations_pkey",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "public.reportability_determinations",
+          "referenced_table": "",
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
       "name": "public.risks",
       "type": "BASE TABLE",
       "columns": [
@@ -6669,6 +6902,19 @@
       "def": "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE CASCADE"
     },
     {
+      "table": "public.cmdb_asset_refs",
+      "columns": [
+        "evaluation_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.evaluations",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (evaluation_id) REFERENCES evaluations(id) ON DELETE SET NULL"
+    },
+    {
       "table": "public.contract_amendments",
       "columns": [
         "created_by"
@@ -7423,6 +7669,19 @@
       "def": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
     },
     {
+      "table": "public.reportability_determinations",
+      "columns": [
+        "arrangement_id"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.arrangements",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE CASCADE"
+    },
+    {
       "table": "public.risks",
       "columns": [
         "opened_by"
@@ -8001,6 +8260,16 @@
       ]
     },
     {
+      "name": "public.ict_service_relationship",
+      "values": [
+        "licence_only",
+        "managed_service",
+        "none",
+        "saas",
+        "support_maintenance"
+      ]
+    },
+    {
       "name": "public.member_status",
       "values": [
         "active",
@@ -8064,6 +8333,15 @@
         "failed",
         "partial",
         "sent"
+      ]
+    },
+    {
+      "name": "public.reportability_status",
+      "values": [
+        "legacy_assumed_reportable",
+        "not_reportable",
+        "pending_review",
+        "reportable"
       ]
     },
     {

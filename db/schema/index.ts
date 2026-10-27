@@ -50,6 +50,9 @@ export * from './doraScoreHistory.js';
 export * from './substituteProviders.js';
 // Tool-onboarding evaluation (ADR-0002) — compare candidate vendors → promote the winner.
 export * from './evaluations.js';
+// DORA RoI reportability (ADR-0005, A1) — append-only determinations + external CMDB asset references.
+export * from './reportabilityDeterminations.js';
+export * from './cmdbAssetRefs.js';
 export * from './relations.js';
 // Canonical row types inferred from the tables above (RTV-22) — XRow / XInsert.
 export * from './rowTypes.js';

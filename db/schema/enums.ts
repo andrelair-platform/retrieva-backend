@@ -334,3 +334,25 @@ export const evaluationCandidateStatusEnum = pgEnum('evaluation_candidate_status
   'selected',
   'rejected',
 ]);
+
+// DORA RoI reportability (ADR-0005, A1) — the REVIEWED regulatory determination for an arrangement.
+// `legacy_assumed_reportable` is the migration bootstrap for pre-existing rows and is DISTINCT from a
+// human-confirmed `reportable` (no silent conversion); `pending_review` is the AI-proposed / unreviewed
+// state; a human sets `reportable`/`not_reportable` (ADR-0005 §D1, A3). Additive — nothing is dropped.
+export const reportabilityStatusEnum = pgEnum('reportability_status', [
+  'legacy_assumed_reportable',
+  'pending_review',
+  'reportable',
+  'not_reportable',
+]);
+
+// The nature of the third-party ICT service relationship (ADR-0005 §D2). It may INFORM a reportability
+// proposal but never DETERMINES it (hosting/type alone are not the regulatory test — an authorized human
+// decides). `none` = an internal ICT asset with no qualifying external service (→ not auto-reportable).
+export const ictServiceRelationshipEnum = pgEnum('ict_service_relationship', [
+  'none',
+  'licence_only',
+  'support_maintenance',
+  'managed_service',
+  'saas',
+]);
