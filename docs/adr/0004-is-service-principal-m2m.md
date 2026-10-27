@@ -244,6 +244,32 @@ Dev-only; no prod surface.
 **Remaining gate:** architecture + security **sign-off on this updated ADR**, then the §8d test matrix
 green **before** any dogfood. No Phase-1 code/credentials/infra until sign-off.
 
+## Deployment status — DEV (as-built, 2026-10-27)
+All five build increments (#158–#162) are merged to `main` and **live on the dev environment**; the
+runtime is provisioned on **dev only** (prod renders none of it). What is live:
+- **Authentik** — OAuth2/OIDC M2M client `retrieva-is-evaluator` (app slug `retrieva-is-evaluator`),
+  `grant_types: [client_credentials]`, created via `ak-shell` (mirrored ktayl-policy-service). The
+  `client_id` is the token `aud`/`azp`; `client_secret` held by the IS caller (see Vault note below).
+- **Verifier config (dev)** — `AUTHENTIK_M2M_{ISSUER,JWKS_URL,AUDIENCE}` added to
+  `minicloud-gitops/services/retrieva/helm/values-dev.yaml` (gitops PR #1983, merged + live). JWKS is
+  fetched in-cluster over the existing `authentik:9000` egress the RTV-91 discovery connector opens — **no
+  new NetworkPolicy** (the §proposal-5 opening was unnecessary; verified against the live netpol).
+- **Image** — dev runs `retrieva-backend:70eb730` (main HEAD = all 5 increments), promoted by **Kargo**
+  (Freight `7fba666`, auto-merged dev PR #1987). Migration **0032+0033 applied** on boot
+  (`drizzle.__drizzle_migrations` = 34; `users.external_client_id` present).
+- **Dev tenant seeded** — via the committed reusable seed `scripts/seedIsEvaluator.ts`
+  (`npm run seed:is-evaluator`, #163): a SERVICE principal (`principal_type=SERVICE`,
+  `platform_admin=false`, passwordless, `external_client_id` = the client_id), a **self-owned internal
+  org** `ktayl-solution IS` (`plan_status=internal`), and the single `service_evaluator` grant @ entity
+  scope. Org ownership confers **no** evaluation capability — SoD stays with the capability map (§2) + the
+  principal-type guard (§5).
+
+**Still pending (deliberate):**
+- **Dogfood (§8d) NOT run** — awaiting the security sign-off + the §8d acceptance matrix green.
+- **Vault storage of the IS caller credential** — `secret/platform/*` writes need the **break-glass root
+  token** (the scoped ops token is expired; recover per `ops-runbooks`, root never to automation). A human
+  step; not required for the dev proof (the caller mints its token directly from the client credentials).
+
 Related: `minicloud-gitops/.claude/rules/software-evaluation.md`, ADR-0002, ADR-0003,
 `[[feedback_crossservice_m2m_auth_wiring]]`, `[[project_iam_custom_access_governance]]`,
 `[[reference_bff_auth_shared_lib]]`, `platform-guardrails:authentik-app-onboarding` (the M2M wiring skill).
