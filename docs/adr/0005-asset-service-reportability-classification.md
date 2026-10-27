@@ -1,7 +1,9 @@
 # ADR-0005 — ICT Asset vs Third-Party ICT Service Relationship classification & DORA RoI reportability
 
-- **Status:** **Proposed — DOCUMENT ONLY.** No schema change, no migration, no runtime/deploy change has
-  been made. Build is gated on approval of this ADR **and** an architecture + security + compliance review.
+- **Status:** **Accepted — DECISIONS RESOLVED 2026-10-27 (owner-delegated review); DOCUMENT ONLY, build
+  not yet started.** The five open decisions are resolved below. The data-model build itself (schema +
+  migration + code) remains a **separate Path-C effort** gated on its own architecture + security +
+  compliance review; this ADR is the agreed design, amendable.
 - **Date:** 2026-10-27
 - **Area:** Domain model (third-party ICT register), DORA Art. 28–30 Register of Information (RT.02.01)
   reportability, evaluation→promotion lifecycle, CMDB integration boundary. **Dev-first.**
@@ -145,14 +147,26 @@ Split the two reader needs explicitly:
 - **Migration regression** — silently changing the export. Mitigation: `legacy_assumed_reportable` + explicit cutover gate.
 - **Scope creep** — Retrieva drifting into CMDB. Mitigation: asset = external GLPI reference only.
 
-## Unresolved decisions (for review)
-1. **Model shape:** Alt-1 (service-relationship entity) vs Alt-2 (columns on arrangements)?
-2. **`prospect` in the formal RoI:** exclude pre-contract prospects from RT.02.01 (proposed: yes) — a
-   separately governed decision (§D4).
-3. **Classification → proposed reportability:** may classification *auto-propose* a value (reviewer confirms),
-   or must every determination start blank `pending_review`?
-4. **Asset-reference depth:** a bare CMDB id/URL vs a minimal cached descriptor — without rebuilding CMDB.
-5. **Legacy cutover trigger:** time-boxed review window, or block formal export changes until 100% reconciled?
+## Resolved decisions (2026-10-27, owner-delegated review)
+1. **Model shape → Alt-1 (separate service-relationship entity).** Keep the `arrangements` fact clean; a
+   distinct relationship carries the service classification + the tri-state determination, and an
+   `arrangement` is created only for a *qualifying* relationship. Faithful to DORA's separation + enables
+   the non-exclusive asset+service case; the extra normalization cost is accepted over re-overloading the
+   arrangement (Alt-2). Asset identity stays a **CMDB reference** (not a Retrieva entity).
+2. **`prospect` in the formal RoI → EXCLUDE.** RT.02.01 is a submission of *contractual* arrangements, so
+   pre-contract `prospect`/`due_diligence` are excluded from the **formal export** but remain in the
+   **internal working register** (the §D4 working-vs-formal split). Governed separately, as agreed.
+3. **Classification → PROPOSE, land as `pending_review`.** The AI/classification *auto-proposes* a
+   reportability value **with rationale + confidence** (don't waste the AI signal), but it is applied only
+   as **`pending_review`** awaiting an authorized human confirm — never auto-`reportable`. Exactly the
+   ADR-0006 copilot-first / human-gated pattern; the proposer ≠ the approver (ADR-0004 SoD).
+4. **Asset-reference depth → CMDB id/URL + a MINIMAL cached descriptor** (name, type, owner) for display +
+   reasoning, refreshed from GLPI. Not a rebuilt inventory; GLPI/CMDB remains the asset system of record.
+5. **Legacy cutover → time-boxed reconciliation window, export unchanged until an explicit owner cutover.**
+   Do NOT block on 100% reconciliation (too rigid); `legacy_assumed_reportable` keeps exporting as today,
+   the unreconciled count is a completeness metric, and the owner triggers the cutover when comfortable.
+
+(These are the agreed design; ADR-0006 governs the orchestration/HITL that *drives* determination #3.)
 
 ## Consequences
 Retrieva gains the **reviewed reportability determination** DORA actually requires, stops auto-registering
