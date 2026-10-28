@@ -30,6 +30,7 @@ import {
 } from './modules/arrangements/arrangements.routes.js';
 import intakeRoutes from './modules/intake/intake.routes.js';
 import evaluationRoutes from './modules/evaluations/evaluations.routes.js';
+import reportabilityRoutes from './modules/reportability/reportability.routes.js';
 import discoveryRoutes from './modules/discovery/discovery.routes.js';
 import completenessRoutes from './modules/completeness/completeness.routes.js';
 import surveillanceRoutes from './modules/surveillance/surveillance.routes.js';
@@ -381,6 +382,15 @@ app.use(
   requireActivePlan,
   setEntityContext,
   evaluationRoutes
+);
+// Reportability determination API (ADR-0005 A3) — human-only decision (SERVICE hard-guarded in the
+// controller); org+entity-scoped via setEntityContext; append-only + attributable.
+app.use(
+  '/api/v1/reportability',
+  optionalPrincipal,
+  requireActivePlan,
+  setEntityContext,
+  reportabilityRoutes
 );
 // Evidence Library (RTV-64 / #226) — before the CRUD router so literal `/:id/evidence` wins over `/:id`.
 app.use(

@@ -7,12 +7,24 @@
  * SYSTEM-proposed `pending_review` state (determinedBy NULL) — the human-only WRITE authz (capability
  * `reportability:determine`, SoD, proposer != approver) is A3 (RTV-111), not this.
  */
+import { and, eq, desc } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
 import { reportabilityDeterminations, cmdbAssetRefs } from '../../db/schema/index.js';
 
 export class ReportabilityDeterminationRepository extends BaseDrizzleRepository {
   constructor(opts: { db?: unknown } = {}) {
     super(reportabilityDeterminations, opts);
+  }
+
+  /** Append-only history for an arrangement, newest first — org-scoped (tenant isolation). */
+  async listByArrangement(organizationId: string, arrangementId: string) {
+    return this.find(
+      and(
+        eq(reportabilityDeterminations.organizationId, organizationId),
+        eq(reportabilityDeterminations.arrangementId, arrangementId)
+      ),
+      { orderBy: [desc(reportabilityDeterminations.createdAt)] }
+    );
   }
 }
 

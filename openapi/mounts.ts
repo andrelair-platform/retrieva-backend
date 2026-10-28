@@ -27,6 +27,7 @@ import arrangementAssessmentRoutes from '../modules/arrangementAssessment/arrang
 import { arrangementsRouter, arrangementGraphRouter } from '../modules/arrangements/arrangements.routes.js';
 import intakeRoutes from '../modules/intake/intake.routes.js';
 import evaluationRoutes from '../modules/evaluations/evaluations.routes.js';
+import reportabilityRoutes from '../modules/reportability/reportability.routes.js';
 import discoveryRoutes from '../modules/discovery/discovery.routes.js';
 import completenessRoutes from '../modules/completeness/completeness.routes.js';
 import surveillanceRoutes from '../modules/surveillance/surveillance.routes.js';
@@ -73,6 +74,7 @@ export const API_MOUNTS: ApiMount[] = [
   { prefix: '/api/v1/decision-queue', router: decisionQueueRoutes, tag: 'decision-queue' },
   { prefix: '/api/v1/arrangements/intake', router: intakeRoutes, tag: 'intake' },
   { prefix: '/api/v1/evaluations', router: evaluationRoutes, tag: 'evaluations' },
+  { prefix: '/api/v1/reportability', router: reportabilityRoutes, tag: 'reportability' },
   { prefix: '/api/v1/arrangements', router: evidenceRoutes, tag: 'evidence' },
   { prefix: '/api/v1/arrangements', router: arrangementsRouter, tag: 'arrangements' },
   { prefix: '/api/v1/arrangements', router: arrangementAssessmentRoutes, tag: 'arrangement-assessment' },
