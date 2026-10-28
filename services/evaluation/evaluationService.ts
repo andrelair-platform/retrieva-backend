@@ -11,6 +11,7 @@ import {
   evaluationRepository,
   evaluationCandidateRepository,
   legalEntityRepository,
+  cmdbAssetRefRepository,
 } from '../../repositories/index.js';
 import { proposeFromAdoptionRequest } from '../intake/adoptionRequestService.js';
 import { confirmProposal } from '../intake/arrangementIntakeService.js';
@@ -21,6 +22,7 @@ const deps = () => ({
   evalRepo: evaluationRepository,
   candidateRepo: evaluationCandidateRepository,
   entityRepo: legalEntityRepository,
+  assetRefRepo: cmdbAssetRefRepository,
 });
 
 export async function createEvaluation(
@@ -133,7 +135,7 @@ export async function selectWinner(
   }: { organizationId: string; userId?: string; evaluationId: string; candidateId: string },
   injected: Partial<ReturnType<typeof deps>> & { confirm?: typeof confirmProposal } = {}
 ) {
-  const { evalRepo, candidateRepo, entityRepo } = { ...deps(), ...injected };
+  const { evalRepo, candidateRepo, entityRepo, assetRefRepo } = { ...deps(), ...injected };
   const confirm = injected.confirm || confirmProposal;
 
   const evaluation = await evalRepo.findByIdInOrg(organizationId, evaluationId);
@@ -143,37 +145,72 @@ export async function selectWinner(
     throw Object.assign(new Error('Candidate not found on this evaluation'), { statusCode: 404 });
   }
 
-  // resolve the financial entity (the arrangement needs a legalEntityName to find/create the dimension)
-  let legalEntityName: string | null = null;
-  if (evaluation.legalEntityId) {
-    const entity = await entityRepo.findById(evaluation.legalEntityId);
-    legalEntityName = entity?.name ?? null;
-  }
-  if (!legalEntityName) {
-    throw Object.assign(
-      new Error('Set the evaluation’s legal entity before selecting a winner'),
-      { statusCode: 400 }
-    );
-  }
+  // ADR-0005 A2 — branch on whether an ongoing third-party ICT SERVICE exists, or it's an INTERNAL ICT
+  // asset. `none` (no external relationship) and `licence_only` (a licence WITHOUT ongoing ICT services —
+  // per ESMA, NOT a third-party ICT service provider) ⇒ internal-only ⇒ record a CMDB asset reference,
+  // create NO arrangement and NO fabricated provider. An ongoing-service type (support_maintenance /
+  // managed_service / saas) — or unspecified, for backward compatibility — ⇒ promote to an arrangement
+  // (which seeds a `pending_review` determination; a human confirms RoI reportability in A3). Non-exclusive:
+  // a service that the firm ALSO self-hosts carries a CMDB asset ref too. The promotion makes only the
+  // coarse asset-vs-service call; the regulatory reportability decision stays a human determination (A3).
+  const wp = (winner.proposal as any) || {};
+  const internalOnly = wp.serviceRelationship === 'none' || wp.serviceRelationship === 'licence_only';
+  const assetSpec = wp.cmdbAssetRef || null;
+  let arrangement: any = null;
+  let assetRef: any = null;
 
-  const proposal = {
-    ...(winner.proposal as any),
-    legalEntityName,
-    // the need maps to a business function when the draft didn't name one (confirm requires it).
-    businessFunctionName: (winner.proposal as any)?.businessFunctionName || evaluation.title,
-  };
-
-  const arrangement = await confirm({
-    organizationId,
-    userId,
-    proposal,
-    sourceFileName: `Evaluation: ${evaluation.title}`,
-    trigger: 'new', // 🟢 new provider → lands in `prospect` for pre-contract due diligence
-  });
+  if (internalOnly) {
+    assetRef = await assetRefRepo.create({
+      organizationId,
+      evaluationId,
+      cmdbId: assetSpec?.cmdbId || `pending:${evaluationId}`,
+      cmdbUrl: assetSpec?.cmdbUrl ?? null,
+      name: assetSpec?.name || winner.vendorName || evaluation.title,
+      assetType: assetSpec?.assetType ?? null,
+      owner: assetSpec?.owner ?? null,
+    });
+  } else {
+    // A third-party ICT service arrangement needs a legal entity (the arrangement dimension).
+    let legalEntityName: string | null = null;
+    if (evaluation.legalEntityId) {
+      const entity = await entityRepo.findById(evaluation.legalEntityId);
+      legalEntityName = entity?.name ?? null;
+    }
+    if (!legalEntityName) {
+      throw Object.assign(new Error('Set the evaluation’s legal entity before selecting a winner'), {
+        statusCode: 400,
+      });
+    }
+    const proposal = {
+      ...wp,
+      legalEntityName,
+      // the need maps to a business function when the draft didn't name one (confirm requires it).
+      businessFunctionName: wp.businessFunctionName || evaluation.title,
+    };
+    arrangement = await confirm({
+      organizationId,
+      userId,
+      proposal,
+      sourceFileName: `Evaluation: ${evaluation.title}`,
+      trigger: 'new', // 🟢 new provider → lands in `prospect` for pre-contract due diligence
+    });
+    // Non-exclusive: a third-party service that the firm ALSO self-hosts gets a CMDB asset ref too.
+    if (assetSpec?.cmdbId) {
+      assetRef = await assetRefRepo.create({
+        organizationId,
+        evaluationId,
+        cmdbId: assetSpec.cmdbId,
+        cmdbUrl: assetSpec.cmdbUrl ?? null,
+        name: assetSpec.name || winner.vendorName || evaluation.title,
+        assetType: assetSpec.assetType ?? null,
+        owner: assetSpec.owner ?? null,
+      });
+    }
+  }
 
   await candidateRepo.updateById(candidateId, {
     status: 'selected',
-    arrangementId: arrangement.id,
+    arrangementId: arrangement?.id ?? null,
   });
   // record the others as rejected (kept for the why-not audit trail; never promoted)
   const others = await candidateRepo.listByEvaluation(organizationId, evaluationId);
@@ -191,7 +228,9 @@ export async function selectWinner(
     service: 'evaluation',
     evaluationId,
     candidateId,
-    arrangementId: arrangement.id,
+    outcome: internalOnly ? 'internal-asset' : 'third-party-arrangement',
+    arrangementId: arrangement?.id ?? null,
+    assetRefId: assetRef?.id ?? null,
   });
-  return { evaluation: updatedEval, winner: candidateId, arrangement };
+  return { evaluation: updatedEval, winner: candidateId, arrangement, assetRef };
 }

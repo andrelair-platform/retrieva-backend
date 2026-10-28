@@ -110,3 +110,11 @@ export {
   SubstituteProviderRepository,
   substituteProviderRepository,
 } from './drizzle/SubstituteProviderRepository.js';
+
+// DORA RoI reportability (ADR-0005) — append-only determinations + external CMDB asset references.
+export {
+  ReportabilityDeterminationRepository,
+  reportabilityDeterminationRepository,
+  CmdbAssetRefRepository,
+  cmdbAssetRefRepository,
+} from './drizzle/ReportabilityRepository.js';

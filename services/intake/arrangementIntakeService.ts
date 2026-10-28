@@ -14,6 +14,7 @@ import {
   providerGraphRepository,
   arrangementRepository,
   evidenceRepository,
+  reportabilityDeterminationRepository,
 } from '../../repositories/index.js';
 
 const norm = (s: unknown) =>
@@ -51,6 +52,7 @@ export async function confirmProposal({
   const providerGraph = repos.providerGraphRepository || providerGraphRepository;
   const arrangements = repos.arrangementRepository || arrangementRepository;
   const evidence = repos.evidenceRepository || evidenceRepository;
+  const reportability = repos.reportabilityDeterminationRepository || reportabilityDeterminationRepository;
   const audit = repos.recordAudit || recordAudit;
 
   const entities = await legalEntities.listByOrg(organizationId);
@@ -121,6 +123,24 @@ export async function confirmProposal({
       : null,
     lifecycleStatus: initialStatusForTrigger(trigger), // RTV-31 (🟢 new → prospect; else active)
     createdBy: userId,
+  });
+
+  // ADR-0005 A2: a promoted arrangement is a third-party ICT service → seed ONE system-proposed
+  // `pending_review` reportability determination (determinedBy NULL — NOT a human decision, and NOT
+  // auto-`reportable`). A human confirms it later (A3, capability `reportability:determine`). The
+  // service-relationship classification (if the proposal carried one) informs, never determines.
+  const serviceRelationship = ['licence_only', 'support_maintenance', 'managed_service', 'saas'].includes(
+    p.serviceRelationship
+  )
+    ? p.serviceRelationship
+    : null;
+  await reportability.create({
+    arrangementId: arrangement.id,
+    organizationId,
+    status: 'pending_review',
+    serviceRelationship,
+    rationale: 'Promoted as a third-party ICT service arrangement — awaiting human RoI reportability review (ADR-0005 A2).',
+    proposedBy: 'system:promotion',
   });
 
   await evidence.createDeduped({
