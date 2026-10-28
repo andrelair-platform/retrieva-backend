@@ -4,8 +4,8 @@ import { describe, it, expect } from 'vitest';
 import { roleGrants, CAPABILITY_MAP_VERSION } from '../../config/authz/capabilities.js';
 
 describe('ADR-0004 evaluation capability matrix', () => {
-  it('bumped CAPABILITY_MAP_VERSION to 1.3.0', () => {
-    expect(CAPABILITY_MAP_VERSION).toBe('1.3.0');
+  it('CAPABILITY_MAP_VERSION is at least 1.3.0 (bumped to 1.4.0 by ADR-0005 A3 reportability)', () => {
+    expect(CAPABILITY_MAP_VERSION).toBe('1.4.0');
   });
 
   it('service_evaluator: read + write, NEVER select — and no staff capabilities leaked', () => {

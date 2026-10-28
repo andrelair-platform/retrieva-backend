@@ -23,7 +23,12 @@
 // group_admin ONLY (provisional — see the `evaluation_decision_maker` follow-up in ADR-0004).
 // Roles not listed are correctly denied; the service role is read/write only, NEVER select (also
 // hard-guarded by principal-type in the controller so inherited/wildcard grants can't bypass it).
-export const CAPABILITY_MAP_VERSION = '1.3.0';
+// 1.4.0 (ADR-0005 A3): added the `reportability` resource (`read` broadly; `determine` = the human
+// regulatory decision, a CHECKER action like `risk:accept`). `determine` is granted ONLY to the
+// checker/admin roles (group_admin, entity_admin, group_risk, group_compliance, ict_risk_officer) —
+// NEVER to `analyst` (the maker, SoD) and NEVER to `service_evaluator` (the controller also hard-guards
+// by principal-type so an inherited/wildcard grant can't let a SERVICE identity determine).
+export const CAPABILITY_MAP_VERSION = '1.4.0';
 
 // Convenience: every resource, read-only (auditor / read roles).
 const READ_ALL = {
@@ -33,6 +38,7 @@ const READ_ALL = {
   evidence: ['read'],
   register: ['read'],
   arrangement: ['read'],
+  reportability: ['read'],
   clause: ['read'],
   provider: ['read'],
   workspace: ['read'],
@@ -52,17 +58,20 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
     arrangement: ['read', 'create', 'edit'],
     register: ['read', 'export'],
     evaluation: ['read', 'write', 'select'], // ADR-0004 (provisional business selector)
+    reportability: ['read', 'determine'], // ADR-0005 A3 (human checker decision)
   },
   group_risk: {
     ...READ_ALL,
     finding: ['read', 'approve'],
     risk: ['read', 'accept', 'manage'],
     register: ['read', 'export', 'attest'],
+    reportability: ['read', 'determine'], // ADR-0005 A3 (risk checker)
   },
   group_compliance: {
     ...READ_ALL,
     register: ['read', 'export', 'attest'],
     clause: ['read'],
+    reportability: ['read', 'determine'], // ADR-0005 A3 (compliance checker)
   },
 
   // ── entity scope — working roles ─────────────────────────────────────────────
@@ -78,6 +87,7 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
     arrangement: ['read', 'create', 'edit'],
     register: ['read', 'export'],
     evaluation: ['read', 'write', 'select'], // ADR-0004 (provisional business selector)
+    reportability: ['read', 'determine'], // ADR-0005 A3 (human checker decision)
   },
   analyst: {
     // the "maker": drafts assessments + collects evidence + works the remediation loop (but the
@@ -99,6 +109,7 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
     register: ['read', 'export', 'attest'],
     arrangement: ['read', 'check'],
     evaluation: ['read'], // ADR-0004: checker — read only
+    reportability: ['read', 'determine'], // ADR-0005 A3 (ICT risk checker — management-body delegate)
   },
   legal: {
     ...READ_ALL,
