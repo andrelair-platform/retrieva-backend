@@ -37,7 +37,3 @@ export function getErpnextConfig(): ErpnextConfig | null {
   const hostHeader = (process.env.ERPNEXT_HOST_HEADER || '').trim();
   return { baseUrl, apiKey, apiSecret, lookbackDays, hostHeader };
 }
-
-export function isErpnextConfigured(): boolean {
-  return getErpnextConfig() !== null;
-}
