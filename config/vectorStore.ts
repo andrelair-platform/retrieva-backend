@@ -136,7 +136,8 @@ export const getVectorStore = async (
  * @param {Object} options.workspace - Workspace for hybrid embedding routing
  * @returns {Promise<Object>} Indexing results
  */
-export async function indexDocumentsBatched(
+// Internal (de-exported, AUD-P1): called only by indexDocuments in this module.
+async function indexDocumentsBatched(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- LangChain documents
   docs: any[],
   options: IndexOptions = {}

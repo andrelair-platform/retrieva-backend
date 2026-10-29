@@ -83,7 +83,8 @@ interface ResolveManagedPromptArgs {
   fallbackConfig?: ModelParams | null;
 }
 
-export async function resolveManagedPrompt({
+// Internal (de-exported, AUD-P1): resolved only by the per-prompt helpers in this module.
+async function resolveManagedPrompt({
   name,
   fallbackTemplate,
   vars = {},
