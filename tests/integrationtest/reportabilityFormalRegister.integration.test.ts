@@ -14,7 +14,9 @@ import { users, organizations, roleAssignments } from '../../db/schema/index.js'
 import { confirmProposal } from '../../services/intake/arrangementIntakeService.js';
 import { recordDetermination } from '../../services/reportability/reportabilityService.js';
 import { buildReportabilityReconciliation } from '../../services/reportability/reconciliationService.js';
+import { cutoverEnabled } from '../../services/reportability/formalRegister.js';
 import { buildRegister } from '../../services/registerProjectionService.js';
+import { reportabilityDeterminationRepository } from '../../repositories/index.js';
 import { resolveEntityScope } from '../../services/security/entityScope.js';
 import { runWithEntityScope } from '../../db/entityContext.js';
 
@@ -95,5 +97,51 @@ describe('ADR-0005 A4/A5 — formal register split + dry-run (real pg)', () => {
     expect(r.proposedCount).toBe(1); // only a
     expect(r.removedCount).toBe(2); // c (not_reportable) + GCP (pending)
     expect(r.reviewBacklog.length).toBe(1); // GCP pending_review
+  });
+
+  // AUD-P0-05 — ROLLBACK: the cutover flag is the ONLY lever and it is fully reversible. Turning it ON
+  // filters the formal export; turning it back OFF restores the byte-identical working register (parity).
+  it('ROLLBACK ⇒ ON filters, then OFF restores byte-identical parity (flag is the only lever)', async () => {
+    const a = await seedArr('Microsoft', 'existing'); // active + reportable → kept when ON
+    await seedArr('AWS', 'new'); // prospect → dropped when ON
+    await runWithEntityScope(scope, () =>
+      recordDetermination({ organizationId: org.id, arrangementId: a.id, determinedBy: user.id, status: 'reportable', rationale: 'qualifying' })
+    );
+    const working = await runWithEntityScope(scope, () => buildRegister(org.id));
+
+    process.env.REPORTABILITY_FORMAL_CUTOVER = 'true';
+    const formalOn = await runWithEntityScope(scope, () => buildRegister(org.id, { formal: true }));
+    expect(b02(formalOn)).toEqual([a.id]); // filtered while ON
+    expect(JSON.stringify(formalOn)).not.toBe(JSON.stringify(working)); // it really diverged
+
+    process.env.REPORTABILITY_FORMAL_CUTOVER = 'false'; // roll the cutover back
+    const formalOff = await runWithEntityScope(scope, () => buildRegister(org.id, { formal: true }));
+    expect(JSON.stringify(formalOff)).toBe(JSON.stringify(working)); // parity restored — reversible
+  });
+
+  // AUD-P0-05 — the A5 dry-run must be READ-ONLY: it must never append a determination, never flip the
+  // cutover flag, and never change the register output (running it is safe to do any number of times).
+  it('dry-run is SIDE-EFFECT-FREE ⇒ no determination written, flag not flipped, register unchanged', async () => {
+    const a = await seedArr('Microsoft', 'existing');
+    await seedArr('GCP', 'existing'); // left pending_review
+    await runWithEntityScope(scope, () =>
+      recordDetermination({ organizationId: org.id, arrangementId: a.id, determinedBy: user.id, status: 'reportable', rationale: 'ok' })
+    );
+    delete process.env.REPORTABILITY_FORMAL_CUTOVER; // OFF (default)
+
+    const detBefore = await runWithEntityScope(scope, () => reportabilityDeterminationRepository.listByOrg(org.id));
+    const workingBefore = await runWithEntityScope(scope, () => buildRegister(org.id));
+
+    await buildReportabilityReconciliation(org.id);
+    await buildReportabilityReconciliation(org.id); // twice — still pure
+
+    const detAfter = await runWithEntityScope(scope, () => reportabilityDeterminationRepository.listByOrg(org.id));
+    const workingAfter = await runWithEntityScope(scope, () => buildRegister(org.id));
+    const formalAfter = await runWithEntityScope(scope, () => buildRegister(org.id, { formal: true }));
+
+    expect(detAfter.length).toBe(detBefore.length); // append-only table NOT appended by a read-only dry-run
+    expect(cutoverEnabled()).toBe(false); // the dry-run did NOT enable the cutover
+    expect(JSON.stringify(workingAfter)).toBe(JSON.stringify(workingBefore)); // working register unchanged
+    expect(JSON.stringify(formalAfter)).toBe(JSON.stringify(workingAfter)); // still parity (flag OFF)
   });
 });
