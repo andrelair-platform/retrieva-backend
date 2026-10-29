@@ -21,7 +21,3 @@ export function getOktaConfig(): OktaConfig | null {
   if (!orgUrl || !token) return null;
   return { orgUrl, token };
 }
-
-export function isOktaConfigured(): boolean {
-  return getOktaConfig() !== null;
-}

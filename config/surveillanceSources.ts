@@ -64,10 +64,6 @@ export function statuspageForProvider(canonicalName: string): string | null {
   return null;
 }
 
-export function isSurveillanceConfigured(): boolean {
-  return process.env.SURVEILLANCE_ENABLED === 'true' && getStatuspageSources().length > 0;
-}
-
 // ── CVE source (RTV-94 follow-on) — OSV.dev package → advisory map ───────────────────────────────────
 // OSV is package-centric, so a CTPP is tracked by the OSS packages / SDKs it (or we, depending on it)
 // rely on — a critical CVE in e.g. the Stripe lib or the AWS SDK is a real supply-chain signal. Curated

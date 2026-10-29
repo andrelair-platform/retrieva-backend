@@ -57,10 +57,6 @@ if (langfuseEnabled) {
   }
 }
 
-export function isLangfuseEnabled() {
-  return !!langfuse;
-}
-
 // Null-object so callers write trace.span(...) / gen.end(...) unconditionally.
 // Self-nesting: span()/generation() return NULL_OBS too, so child observations
 // (e.g. retrieval sub-steps) stay no-ops when Langfuse is disabled.

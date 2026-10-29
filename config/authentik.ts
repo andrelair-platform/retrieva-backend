@@ -20,10 +20,6 @@ export function getAuthentikConfig(): AuthentikConfig | null {
   return { baseUrl, token };
 }
 
-export function isAuthentikConfigured(): boolean {
-  return getAuthentikConfig() !== null;
-}
-
 /**
  * Authentik M2M (client-credentials) verification config (ADR-0004) — SEPARATE from the discovery
  * config above. Used by services/security/servicePrincipal to verify an Authentik-issued RS256 token
