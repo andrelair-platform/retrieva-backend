@@ -26,6 +26,14 @@ export class ReportabilityDeterminationRepository extends BaseDrizzleRepository 
       { orderBy: [desc(reportabilityDeterminations.createdAt)] }
     );
   }
+
+  /** All determinations for an org, newest first — the caller reduces to the CURRENT one per
+   *  arrangement (first row seen per arrangement_id). Used by the A4 formal filter + the A5 dry-run. */
+  async listByOrg(organizationId: string) {
+    return this.find(eq(reportabilityDeterminations.organizationId, organizationId), {
+      orderBy: [desc(reportabilityDeterminations.createdAt)],
+    });
+  }
 }
 
 export class CmdbAssetRefRepository extends BaseDrizzleRepository {
