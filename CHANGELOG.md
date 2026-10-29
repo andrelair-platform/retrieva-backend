@@ -1,5 +1,54 @@
 # Changelog
 
+## [1.4.0](https://github.com/andrelair-platform/retrieva-backend/compare/retrieva-backend-v1.3.0...retrieva-backend-v1.4.0) (2026-10-29)
+
+
+### Features
+
+* **amendments:** draft dora art-30 contract amendments from assessment gaps (rtv-98) ([#134](https://github.com/andrelair-platform/retrieva-backend/issues/134)) ([7573572](https://github.com/andrelair-platform/retrieva-backend/commit/75735729350fdd7b23c200e0d730d604efd221a3))
+* **auth:** adr-0004 incr 3 — capability-driven evaluation authz ([#160](https://github.com/andrelair-platform/retrieva-backend/issues/160)) ([aa710c1](https://github.com/andrelair-platform/retrieva-backend/commit/aa710c1da936541db9c3535c5cc0f85789c46058))
+* **auth:** adr-0004 incr 4 — action_audit writes + disable-not-delete ([#161](https://github.com/andrelair-platform/retrieva-backend/issues/161)) ([69d80c0](https://github.com/andrelair-platform/retrieva-backend/commit/69d80c0efa496b519cd8432ccd2a9308c167f3c9))
+* **auth:** adr-0004 increment 1 — service-principal data model + internal entitlement ([#158](https://github.com/andrelair-platform/retrieva-backend/issues/158)) ([08ec7c1](https://github.com/andrelair-platform/retrieva-backend/commit/08ec7c1c3c7f1f7abc03ef0e1d2cb9dd6a43b9a1))
+* **auth:** adr-0004 increment 2 — isolated jwks service-principal verifier ([#159](https://github.com/andrelair-platform/retrieva-backend/issues/159)) ([0559f33](https://github.com/andrelair-platform/retrieva-backend/commit/0559f33e271fd2ad9a46f5edb4c9ef4aed00456a))
+* **completeness:** add contract-expiry as a register gap rule (rtv-93) ([#139](https://github.com/andrelair-platform/retrieva-backend/issues/139)) ([8cdf97a](https://github.com/andrelair-platform/retrieva-backend/commit/8cdf97a1317141bf15a818649588cc2f87d910a6))
+* **completeness:** register-completeness agent (RTV-93) ([#125](https://github.com/andrelair-platform/retrieva-backend/issues/125)) ([aaccf96](https://github.com/andrelair-platform/retrieva-backend/commit/aaccf964649bbcc9c9746715178da9b2fa23a6ab))
+* **concentration:** adr-0001 + phase 1 — arrangement-native concentration (flag-gated) ([#146](https://github.com/andrelair-platform/retrieva-backend/issues/146)) ([b8e27ae](https://github.com/andrelair-platform/retrieva-backend/commit/b8e27ae01fc635f2dd1cb7b807278ad3efc9cd61))
+* **concentration:** per-entity concentration view via the arrangement bridge (rtv-54) ([#145](https://github.com/andrelair-platform/retrieva-backend/issues/145)) ([ec98031](https://github.com/andrelair-platform/retrieva-backend/commit/ec980317e36553e4209c7e5cb48582ca89cd1d3b))
+* cut concentration over to the arrangement-native function model (adr-0001 phase 2) ([#147](https://github.com/andrelair-platform/retrieva-backend/issues/147)) ([b394f1d](https://github.com/andrelair-platform/retrieva-backend/commit/b394f1dceecc401f37e9ef9b0c9fb079cb0f3a9a))
+* **ddq:** dynamic DDQ generation + interactive follow-ups + evidence contradiction detection (RTV-103) ([#135](https://github.com/andrelair-platform/retrieva-backend/issues/135)) ([48a9bd6](https://github.com/andrelair-platform/retrieva-backend/commit/48a9bd6346ca1fe0e8f0347cc7b70ef8b5495509))
+* **discovery:** erpnext ap connector — propose arrangements from supplier spend (rtv-92) ([#127](https://github.com/andrelair-platform/retrieva-backend/issues/127)) ([ec0cf1a](https://github.com/andrelair-platform/retrieva-backend/commit/ec0cf1a79749cd4a78a9add1e3f530f21683c458))
+* **discovery:** generic ai-ingestion source — upload/paste → llm-normalise → pipeline (rtv-106) ([#137](https://github.com/andrelair-platform/retrieva-backend/issues/137)) ([c02562b](https://github.com/andrelair-platform/retrieva-backend/commit/c02562b3cd1293b250174d4a531a45333307ea97))
+* **discovery:** standard-protocol connectors — rest/scim/odata (rtv-107) ([#138](https://github.com/andrelair-platform/retrieva-backend/issues/138)) ([6380e59](https://github.com/andrelair-platform/retrieva-backend/commit/6380e59756dd5ca34b6f09d4f120b27edb2cf557))
+* dora art. 30 contract-clause pack + draft gap-check for legal (adr-0002 e3) ([#151](https://github.com/andrelair-platform/retrieva-backend/issues/151)) ([a999ca5](https://github.com/andrelair-platform/retrieva-backend/commit/a999ca5104934c081abe11bbfefa64ce98546479))
+* drop the legacy critical_functions model (adr-0001 phase 3) ([#148](https://github.com/andrelair-platform/retrieva-backend/issues/148)) ([3b6e5f8](https://github.com/andrelair-platform/retrieva-backend/commit/3b6e5f85f8c53ccd813f44cd60e947a2c05a6b17))
+* evaluation core — compare vendors, score, select, promote (ADR-0002 E2) ([#152](https://github.com/andrelair-platform/retrieva-backend/issues/152)) ([b6cae8d](https://github.com/andrelair-platform/retrieva-backend/commit/b6cae8d6d30065660470b6a134fba19dfd9811cd))
+* **exit:** dynamic exit strategy & transition planning for cif arrangements (rtv-99) ([#136](https://github.com/andrelair-platform/retrieva-backend/issues/136)) ([58e29b9](https://github.com/andrelair-platform/retrieva-backend/commit/58e29b98e18d02bc7c08e3b851170d7d6a404042))
+* **exit:** verified substitutes registry — 3-source provider matcher (rtv-100) ([#143](https://github.com/andrelair-platform/retrieva-backend/issues/143)) ([38cca35](https://github.com/andrelair-platform/retrieva-backend/commit/38cca358caa6973c076c528e8d9c68fc88981640))
+* govern arrangement intake approvals ([#154](https://github.com/andrelair-platform/retrieva-backend/issues/154)) ([181c018](https://github.com/andrelair-platform/retrieva-backend/commit/181c01822a7ea5ac9e9393c3b54dfc2601edfd48))
+* **lifecycle:** notice-period-aware renewal + price-escalation alerts (claim 3) ([#142](https://github.com/andrelair-platform/retrieva-backend/issues/142)) ([e0d4df4](https://github.com/andrelair-platform/retrieva-backend/commit/e0d4df4fe5a2124cb61385ad1e796bb9a962a6a7))
+* need-first adoption-request intake for new saas (dora art. 28(4) pre-contract) ([#149](https://github.com/andrelair-platform/retrieva-backend/issues/149)) ([ce7f658](https://github.com/andrelair-platform/retrieva-backend/commit/ce7f6589d113ba4a051477d364a7302099ec2dd7))
+* onboarding decision pack for pre-contract adoption (dora art. 28(4)) ([#150](https://github.com/andrelair-platform/retrieva-backend/issues/150)) ([4ae3a16](https://github.com/andrelair-platform/retrieva-backend/commit/4ae3a1607ae8025ba9c69653e5b2015c4a1a52c8))
+* public-research enrichment agent, default-off + ssrf-guarded (adr-0003 e5) ([#153](https://github.com/andrelair-platform/retrieva-backend/issues/153)) ([7ddef00](https://github.com/andrelair-platform/retrieva-backend/commit/7ddef00b9561590be2d0e92eb44813093d5ba49d))
+* **reportability:** adr-0005 a1 schema + migration + tests ([#177](https://github.com/andrelair-platform/retrieva-backend/issues/177)) ([4389f46](https://github.com/andrelair-platform/retrieva-backend/commit/4389f4663645e29bce6ce035187f77709e4cd4f7))
+* **reportability:** adr-0005 a2 promotion asset/service branching ([#179](https://github.com/andrelair-platform/retrieva-backend/issues/179)) ([0765e28](https://github.com/andrelair-platform/retrieva-backend/commit/0765e28abb621af0074cc38a79846f9f9d0b3b3a))
+* **reportability:** adr-0005 a3 determination api (human-only, sod) ([#181](https://github.com/andrelair-platform/retrieva-backend/issues/181)) ([da2d05c](https://github.com/andrelair-platform/retrieva-backend/commit/da2d05c6dd632f0d6e5169351da0524c97295ed1))
+* **reportability:** adr-0005 a4/a5 formal split + dry-run (flag off) ([#183](https://github.com/andrelair-platform/retrieva-backend/issues/183)) ([fad5cf4](https://github.com/andrelair-platform/retrieva-backend/commit/fad5cf460144203b87480919d8e50a371d996c3a))
+* **scoring:** unified live per-vendor dora risk score engine (claim 3) ([#140](https://github.com/andrelair-platform/retrieva-backend/issues/140)) ([cc1ad97](https://github.com/andrelair-platform/retrieva-backend/commit/cc1ad97441adf63a199faf9ba7958c1d544ed024))
+* **seed:** reusable is-evaluator service-principal seed (adr-0004) ([#163](https://github.com/andrelair-platform/retrieva-backend/issues/163)) ([70eb730](https://github.com/andrelair-platform/retrieva-backend/commit/70eb7304910851d765ce39c9f569d526b520404a))
+* **surveillance:** CTPP external-signal surveillance (RTV-94/95/96) ([#132](https://github.com/andrelair-platform/retrieva-backend/issues/132)) ([f544201](https://github.com/andrelair-platform/retrieva-backend/commit/f544201177324fc317a77e1cdd432261c695a431))
+* **surveillance:** cve advisory source via osv.dev (rtv-94) ([#144](https://github.com/andrelair-platform/retrieva-backend/issues/144)) ([efd6a02](https://github.com/andrelair-platform/retrieva-backend/commit/efd6a025e577070c5e3aa1f1163ee5b20feac2f7))
+
+
+### Bug Fixes
+
+* **auth:** m2m verifier must not strip the issuer trailing slash ([#166](https://github.com/andrelair-platform/retrieva-backend/issues/166)) ([7bc6643](https://github.com/andrelair-platform/retrieva-backend/commit/7bc664368ba16ce10d3ef0c305cdd9621687b69d))
+* **discovery:** erpnext host-header override for frappe split-horizon routing (rtv-92) ([#131](https://github.com/andrelair-platform/retrieva-backend/issues/131)) ([d51149a](https://github.com/andrelair-platform/retrieva-backend/commit/d51149a422f91a63488f834d16fb66bb8ad96ae4))
+
+
+### Performance Improvements
+
+* **surveillance:** gate the classify llm to material candidates (rtv-95) ([#133](https://github.com/andrelair-platform/retrieva-backend/issues/133)) ([8d1efaf](https://github.com/andrelair-platform/retrieva-backend/commit/8d1efaf06fdbd865a5d2d08a5567aef93cf91290))
+
 ## [1.3.0](https://github.com/andrelair-platform/retrieva-backend/compare/retrieva-backend-v1.2.0...retrieva-backend-v1.3.0) (2026-10-18)
 
 
