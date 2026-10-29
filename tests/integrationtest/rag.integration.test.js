@@ -20,6 +20,7 @@ process.env.JWT_ACCESS_SECRET = 'test-access-secret-key-that-is-at-least-32-char
 process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-key-that-is-at-least-32-characters-long';
 process.env.JWT_ACCESS_EXPIRY = '15m';
 process.env.JWT_REFRESH_EXPIRY = '7d';
+process.env.CHAT_ENABLED = 'true'; // chat feature under test (gated OFF by default — AUD-P1 Tier C)
 // 32 bytes = 64 hex characters for AES-256
 process.env.ENCRYPTION_KEY = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2';
 
