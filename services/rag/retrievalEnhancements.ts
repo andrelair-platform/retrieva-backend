@@ -252,35 +252,6 @@ export async function initChains() {
 }
 
 /**
- * Get expansion cache statistics for monitoring
- * @returns {ExpansionCacheStats} Cache statistics for both caches
- */
-export function getExpansionCacheStats() {
-  return {
-    queryExpansion: {
-      size: queryExpansionCache.size,
-      maxSize: queryExpansionCache.maxSize,
-      ttlMs: queryExpansionCache.ttlMs,
-    },
-    hyde: {
-      size: hydeCache.size,
-      maxSize: hydeCache.maxSize,
-      ttlMs: hydeCache.ttlMs,
-    },
-  };
-}
-
-/**
- * Clear all expansion caches
- * Useful for testing or when documents are updated
- */
-export function clearExpansionCaches() {
-  queryExpansionCache.clear();
-  hydeCache.clear();
-  logger.info('Expansion caches cleared', { service: 'rag' });
-}
-
-/**
  * Expand query into multiple variations for improved retrieval coverage
  * SECURITY FIX (GAP 34): Added caching to prevent redundant LLM calls
  *

@@ -155,8 +155,4 @@ worker.on('error', (err) => {
   });
 });
 
-export async function closeDiscoveryWorker() {
-  await worker.close();
-}
-
 export default worker;

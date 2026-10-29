@@ -155,8 +155,4 @@ worker.on('error', (err) => {
   });
 });
 
-export async function closeCompletenessWorker() {
-  await worker.close();
-}
-
 export default worker;

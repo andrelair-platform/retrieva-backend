@@ -225,8 +225,4 @@ worker.on('error', (err) => {
   });
 });
 
-export async function closeAssessmentWorker() {
-  await worker.close();
-}
-
 export default worker;

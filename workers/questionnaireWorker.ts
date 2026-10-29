@@ -117,8 +117,4 @@ worker.on('error', (err) => {
   });
 });
 
-export async function closeQuestionnaireWorker() {
-  await worker.close();
-}
-
 export default worker;
