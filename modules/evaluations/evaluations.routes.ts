@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requirePrincipal } from '../../middleware/principal.js';
 import { contractUploadMiddleware } from '../../middleware/fileUpload.js';
+import { evaluationsProcurementGate } from '../../middleware/evaluationsGate.js';
 import {
   postEvaluation,
   listEvaluations,
@@ -14,6 +15,11 @@ import {
 // optionalPrincipal → setEntityContext (app.ts). requirePrincipal ENFORCES a resolved principal
 // (staff OR service); per-action capability + the select hard-guard are in the controller.
 const router = Router();
+
+// Scope-down (AUD-P1 Tier B): this whole module is the procurement/sourcing front-door (ADR-0002) and is
+// gated OFF by default — out of scope for DORA Art 28–30. Mounted on the specific /api/v1/evaluations
+// prefix, so a router-level gate only affects this module. Reversible via EVALUATIONS_PROCUREMENT_ENABLED.
+router.use(evaluationsProcurementGate);
 
 router.get('/', requirePrincipal, listEvaluations);
 router.post('/', requirePrincipal, postEvaluation);
