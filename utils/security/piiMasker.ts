@@ -248,7 +248,8 @@ export function maskPII(text: unknown, options: { types?: string[] | null; parti
  * @param {Array} fieldsToCheck - Specific fields to check (null = all string fields)
  * @returns {Object} Masked object
  */
-export function maskPIIInObject(obj: unknown, fieldsToCheck: string[] | null = null): unknown {
+// Internal (de-exported, AUD-P1): recursion + used by maskPIIInResponse in this module.
+function maskPIIInObject(obj: unknown, fieldsToCheck: string[] | null = null): unknown {
   if (!piiConfig.enabled) {
     return obj;
   }

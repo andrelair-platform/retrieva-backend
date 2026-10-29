@@ -47,8 +47,9 @@ function parseExtra(raw: string | undefined): StatuspageSource[] {
     .filter((s): s is StatuspageSource => s !== null);
 }
 
-/** The effective source list (builtin + env extras; extras override a builtin with the same key). */
-export function getStatuspageSources(): StatuspageSource[] {
+/** The effective source list (builtin + env extras; extras override a builtin with the same key).
+ *  Internal (de-exported, AUD-P1): used only by getStatuspageBaseUrl in this module. */
+function getStatuspageSources(): StatuspageSource[] {
   const extra = parseExtra(process.env.SURVEILLANCE_STATUSPAGE_EXTRA);
   const byKey = new Map(BUILTIN.map((s) => [s.key, s]));
   for (const s of extra) byKey.set(s.key, s);
