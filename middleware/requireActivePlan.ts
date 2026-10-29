@@ -25,6 +25,15 @@ import { organizationRepository } from '../repositories/drizzle/OrganizationRepo
 import { sendError } from '../utils/index.js';
 import logger from '../config/logger.js';
 
+/** Billing/paywall master switch (AUD-P1 Tier C — scope-down). DISABLED by default: Retrieva is a
+ *  self-hosted, single-tenant DORA third-party-ICT-risk product, not a SaaS, so no route is paywalled and
+ *  the entitlement check is a no-op. Set BILLING_ENABLED=true to restore the Stripe paywall (SaaS
+ *  deployments). This is NOT a security control — authorization is `can()`/`setEntityContext`; this is
+ *  only the monetization gate. */
+function billingEnabled(): boolean {
+  return String(process.env.BILLING_ENABLED || '').toLowerCase() === 'true';
+}
+
 /** Fail-closed on a missing/malformed entitlement when enabled. Default OFF (preserves historical
  *  fail-open) until the #156 backfill lands. A DB error still fails open regardless — denying all paid
  *  traffic on a transient DB blip would be a self-inflicted outage. */
@@ -33,6 +42,10 @@ function strictEntitlement(): boolean {
 }
 
 export async function requireActivePlan(req: Request, res: Response, next: NextFunction) {
+  // Paywall neutralized (self-hosted profile, the default) → entitlement is a no-op for every route.
+  if (!billingEnabled()) {
+    return next();
+  }
   // Public routes (no auth token) bypass the check
   if (!req.user) {
     return next();

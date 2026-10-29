@@ -31,6 +31,7 @@ const res = () => ({ statusCode: 0, body: null }) as any;
 const future = () => new Date(Date.now() + 86_400_000);
 const past = () => new Date(Date.now() - 86_400_000);
 const ORIG = process.env.REQUIRE_ACTIVE_PLAN_STRICT;
+const ORIG_BILLING = process.env.BILLING_ENABLED;
 
 beforeEach(() => {
   findById.mockReset();
@@ -38,10 +39,14 @@ beforeEach(() => {
   error.mockReset();
   sendError.mockClear();
   delete process.env.REQUIRE_ACTIVE_PLAN_STRICT;
+  // The entitlement matrix only runs when billing is ENABLED; default is neutralized (AUD-P1 Tier C).
+  process.env.BILLING_ENABLED = 'true';
 });
 afterEach(() => {
   if (ORIG === undefined) delete process.env.REQUIRE_ACTIVE_PLAN_STRICT;
   else process.env.REQUIRE_ACTIVE_PLAN_STRICT = ORIG;
+  if (ORIG_BILLING === undefined) delete process.env.BILLING_ENABLED;
+  else process.env.BILLING_ENABLED = ORIG_BILLING;
 });
 
 describe('requireActivePlan — entitlement matrix', () => {
@@ -129,5 +134,28 @@ describe('requireActivePlan — #156 missing-entitlement migration', () => {
     await requireActivePlan(req({ userId: 'u', organizationId: 'o' }), res(), next);
     expect(next).toHaveBeenCalledOnce(); // availability: never block all paid traffic on a DB blip
     expect(error).toHaveBeenCalled();
+  });
+});
+
+describe('requireActivePlan — billing neutralized (AUD-P1 Tier C, default)', () => {
+  it('BILLING_ENABLED unset (default) ⇒ no-op: next(), NEVER a 402, DB not even queried', async () => {
+    delete process.env.BILLING_ENABLED; // self-hosted default
+    findById.mockResolvedValue({ planStatus: 'past_due' }); // would 402 if billing were on
+    const next = vi.fn();
+    const r = res();
+    await requireActivePlan(req({ userId: 'u', organizationId: 'o' }), r, next);
+    expect(next).toHaveBeenCalledOnce();
+    expect(r.statusCode).toBe(0); // no response written — pure pass-through
+    expect(findById).not.toHaveBeenCalled(); // short-circuits before any entitlement lookup
+  });
+
+  it('BILLING_ENABLED=true ⇒ paywall restored (past_due → 402)', async () => {
+    process.env.BILLING_ENABLED = 'true';
+    findById.mockResolvedValue({ planStatus: 'past_due' });
+    const next = vi.fn();
+    const r = res();
+    await requireActivePlan(req({ userId: 'u', organizationId: 'o' }), r, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(r.statusCode).toBe(402); // reversible
   });
 });
