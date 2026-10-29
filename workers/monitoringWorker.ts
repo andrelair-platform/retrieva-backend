@@ -75,8 +75,4 @@ worker.on('error', (err) => {
   });
 });
 
-export async function closeMonitoringWorker() {
-  await worker.close();
-}
-
 export default worker;

@@ -163,8 +163,4 @@ worker.on('error', (err) => {
   });
 });
 
-export async function closeSurveillanceWorker() {
-  await worker.close();
-}
-
 export default worker;
