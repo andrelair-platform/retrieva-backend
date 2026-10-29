@@ -3,7 +3,7 @@
  * generate handler (CIF gate 400, 404, success, blocked 409), the inbox list/get (+404), and
  * approve/reject transitions (+404 / already-decided 409).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../config/logger.js', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
@@ -54,7 +54,15 @@ const mkRes = () => {
 const req = (over: any = {}) => ({ user: { organizationId: 'org1', userId: 'u1' }, body: {}, query: {}, params: {}, ...over });
 const cifCtx = { providerName: 'Acme', criticality: 'critical', providerType: 'cloud', businessFunctionName: 'f' };
 
-beforeEach(() => vi.clearAllMocks());
+// The alt-provider / reintegration handlers are scope-gated (AUD-P1-02, default OFF). This file tests
+// their behaviour when ENABLED; the gated-OFF behaviour is covered by exitStrategyScope.unit.test.ts.
+beforeEach(() => {
+  vi.clearAllMocks();
+  process.env.EXIT_ENRICHMENTS_ENABLED = 'true';
+});
+afterEach(() => {
+  delete process.env.EXIT_ENRICHMENTS_ENABLED;
+});
 
 describe('exit-strategy.controller', () => {
   it('provider-matches: drafts + persists for a CIF arrangement', async () => {
