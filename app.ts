@@ -45,6 +45,7 @@ import billingRoutes from './routes/billingRoutes.js';
 import { mountApiDocs } from './openapi/index.js';
 import { handleStripeWebhook } from './controllers/billingController.js';
 import { requireActivePlan } from './middleware/requireActivePlan.js';
+import { chatGate } from './middleware/chatGate.js';
 import { optionalAuth } from './middleware/auth.js';
 import { optionalPrincipal } from './middleware/principal.js';
 import { setTenantContext } from './db/tenantContext.js';
@@ -286,12 +287,19 @@ app.use('/api/v1/public/evidence', publicEvidenceRoutes);
 // tenantIsolationPlugin, which then filters workspace-scoped models by it. Only
 // applied to the workspace-scoped routers — NOT /workspaces (which legitimately
 // queries across all of a user's workspaces, e.g. my-workspaces).
+// Scope-down (AUD-P1 / Tier C): the conversational chat assistant (RAG Q&A at /api/v1/rag[,/stream] +
+// the /api/v1/conversations history) is a scope-adjacent "second product experience", NOT part of DORA
+// Art 28–30. It is gated at REQUEST time by `chatGate` (CHAT_ENABLED, default OFF) — the routes stay
+// MOUNTED (so the OpenAPI surface is unchanged) and chatGate 404s them when disabled. ragRoutes applies
+// chatGate to its own /rag routes (it's mounted on the broad /api/v1 prefix, so it can't be gated here).
+// The CORE assessment grounding (services/assessment/arrangementRag) is a SEPARATE path, unaffected.
 app.use('/api/v1', optionalAuth, requireActivePlan, setTenantContext, ragRoutes);
 app.use(
   '/api/v1/conversations',
   optionalAuth,
   requireActivePlan,
   setTenantContext,
+  chatGate,
   conversationRoutes
 );
 app.use('/api/v1/workspaces', optionalAuth, requireActivePlan, workspaceRoutes);

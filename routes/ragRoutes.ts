@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/auth.js';
 import { requireWorkspaceAccess } from '../middleware/workspaceAuth.js';
 import { askQuestionSchema, streamQuestionSchema } from '../validators/schemas.js';
 import { ragQueryLimiter, ragBurstLimiter } from '../middleware/ragRateLimiter.js';
+import { chatGate } from '../middleware/chatGate.js';
 
 const router = express.Router();
 
@@ -15,6 +16,7 @@ const router = express.Router();
  */
 router.post(
   '/rag',
+  chatGate,
   authenticate,
   requireWorkspaceAccess,
   ragBurstLimiter,
@@ -30,6 +32,7 @@ router.post(
  */
 router.post(
   '/rag/stream',
+  chatGate,
   authenticate,
   requireWorkspaceAccess,
   ragBurstLimiter,

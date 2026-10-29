@@ -19,6 +19,23 @@ const requireOrg = (req: Request, res: Response) => {
 
 const CIF = new Set(['critical', 'important']);
 
+// Scope-down (AUD-P1-02): alternative-provider matching + reintegration estimation are scope-ADJACENT
+// (vendor sourcing / in-house capacity planning — beyond the DORA Art 28(8) requirement, which is simply
+// to HAVE a documented exit plan). They are DISABLED by default and reversibly re-enabled with
+// EXIT_ENRICHMENTS_ENABLED=true. The exit blueprint (the Art 28(8) core) is always available.
+function exitEnrichmentsEnabled(): boolean {
+  return String(process.env.EXIT_ENRICHMENTS_ENABLED || '').toLowerCase() === 'true';
+}
+function enrichmentDisabled(res: Response): boolean {
+  if (exitEnrichmentsEnabled()) return false;
+  sendError(
+    res,
+    404,
+    'Exit enrichment (alternative-provider matching / reintegration) is out of scope (DORA Art 28(8) = the exit blueprint). Set EXIT_ENRICHMENTS_ENABLED=true to re-enable.'
+  );
+  return true;
+}
+
 /** A generate handler shared by the three artefact types. */
 function generateHandler(
   type: ExitArtefactType,
@@ -55,13 +72,17 @@ function generateHandler(
   });
 }
 
-// POST /api/v1/exit-strategy/arrangements/:arrangementId/provider-matches
-export const draftProviderMatches = generateHandler('provider_match', async (ctx, sessionId, organizationId) => {
+// POST /api/v1/exit-strategy/arrangements/:arrangementId/provider-matches — scope-adjacent (gated).
+const _draftProviderMatches = generateHandler('provider_match', async (ctx, sessionId, organizationId) => {
   const { payload, usedFallback } = await matchAlternativeProviders(ctx, {
     sessionId,
     loadCatalog: (providerType) => substituteProviderRepository.listByType(organizationId, providerType),
   });
   return { payload, usedFallback, summary: `${payload.alternatives.length} alternative provider(s) proposed for ${ctx.providerName}` };
+});
+export const draftProviderMatches = catchAsync(async (req: Request, res: Response, next: any) => {
+  if (enrichmentDisabled(res)) return;
+  return _draftProviderMatches(req, res, next);
 });
 
 // POST /api/v1/exit-strategy/arrangements/:arrangementId/exit-blueprint
@@ -70,10 +91,14 @@ export const draftExitBlueprint = generateHandler('exit_blueprint', async (ctx, 
   return { payload, usedFallback, summary: `Exit blueprint (${payload.phases.length} phases, ${payload.totalDurationEstimate}) for ${ctx.providerName}` };
 });
 
-// POST /api/v1/exit-strategy/arrangements/:arrangementId/reintegration-model
-export const draftReintegration = generateHandler('reintegration_model', async (ctx, sessionId) => {
+// POST /api/v1/exit-strategy/arrangements/:arrangementId/reintegration-model — scope-adjacent (gated).
+const _draftReintegration = generateHandler('reintegration_model', async (ctx, sessionId) => {
   const { payload, usedFallback } = await modelReintegration(ctx, { sessionId });
   return { payload, usedFallback, summary: `Reintegration: ${payload.approach} (difficulty ${payload.difficulty}, ${payload.timelineEstimate})` };
+});
+export const draftReintegration = catchAsync(async (req: Request, res: Response, next: any) => {
+  if (enrichmentDisabled(res)) return;
+  return _draftReintegration(req, res, next);
 });
 
 // GET /api/v1/exit-strategy?status=&arrangementId=&type= — the exit-artefact inbox.
