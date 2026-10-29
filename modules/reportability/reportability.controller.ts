@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import { recordDetermination, listDeterminations } from '../../services/reportability/reportabilityService.js';
+import { buildReportabilityReconciliation } from '../../services/reportability/reconciliationService.js';
 import { can } from '../../services/security/can.js';
 import { recordAction } from '../../services/security/actionAudit.js';
 
@@ -70,6 +71,16 @@ export const postDetermination = catchAsync(async (req: Request, res: Response) 
     if (e?.statusCode) return sendError(res, e.statusCode, e.message);
     throw e;
   }
+});
+
+// GET /api/v1/reportability/reconciliation — the A5 dry-run: row-level diff of the current vs the
+// PROPOSED formal RT.02.01 export + the review backlog. Read-only; never flips the cutover.
+export const getReconciliation = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  if (!(await requireCap(req, res, 'reportability:read', organizationId))) return;
+  const report = await buildReportabilityReconciliation(organizationId);
+  sendSuccess(res, 200, 'Reportability reconciliation (dry-run)', report);
 });
 
 // GET /api/v1/reportability/:arrangementId — the append-only determination history (newest first).

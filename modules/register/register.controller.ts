@@ -32,7 +32,9 @@ export const getRegister = catchAsync(async (req: Request, res: Response) => {
 export const exportRegister = catchAsync(async (req: Request, res: Response) => {
   const id = requireOrg(req, res);
   if (!id) return;
-  const register = await buildRegister(id);
+  // ADR-0005 A4: the FORMAL RT.02.01 export view. Identical to the working register until the cutover
+  // flag is ON (then filtered to formally-reportable arrangements). getRegister stays the working view.
+  const register = await buildRegister(id, { formal: true });
   const dateStr = new Date().toISOString().slice(0, 10);
   const format = String(req.query.format || 'xlsx').toLowerCase();
 
