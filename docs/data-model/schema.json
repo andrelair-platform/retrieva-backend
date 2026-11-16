@@ -8167,6 +8167,8 @@
         "group_risk",
         "ict_risk_officer",
         "legal",
+        "procurement",
+        "security_officer",
         "service_evaluator",
         "vendor_contact",
         "viewer"

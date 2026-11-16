@@ -21,8 +21,10 @@ import type { RoleAssignmentRow } from '../../db/schema/index.js';
 export const ASSIGNABLE_ROLES = [
   'entity_admin',
   'analyst',
+  'procurement',
   'ict_risk_officer',
   'legal',
+  'security_officer',
   'dpo',
   'business_owner',
   'auditor',

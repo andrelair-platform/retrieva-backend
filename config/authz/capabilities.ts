@@ -28,7 +28,13 @@
 // checker/admin roles (group_admin, entity_admin, group_risk, group_compliance, ict_risk_officer) —
 // NEVER to `analyst` (the maker, SoD) and NEVER to `service_evaluator` (the controller also hard-guards
 // by principal-type so an inherited/wildcard grant can't let a SERVICE identity determine).
-export const CAPABILITY_MAP_VERSION = '1.4.0';
+// 1.5.0 (RACI completeness): added two internal-team roles so the governance model names them as
+// distinct actors instead of folding them into analyst/business_owner — `procurement` (vendor/contract
+// lifecycle MAKER: arrangement create/edit + contract-evidence upload; NO checker sign-off — approval
+// stays with ict_risk_officer/legal, SoD preserved) and `security_officer` (information-security
+// dimension CHECKER: `security:signoff`, parallel to legal's `clause:signoff` and dpo's `privacy:signoff`;
+// classifies security evidence). Both are additive + default-deny for everything not listed.
+export const CAPABILITY_MAP_VERSION = '1.5.0';
 
 // Convenience: every resource, read-only (auditor / read roles).
 const READ_ALL = {
@@ -101,6 +107,19 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
     workspace: ['read'],
     evaluation: ['read', 'write'], // ADR-0004: maker — evaluate/add/score; NOT select (SoD)
   },
+  procurement: {
+    // vendor/contract lifecycle MAKER (1.5.0): onboards arrangements + uploads contract evidence.
+    // NOT a checker — no finding:approve / risk:accept / clause:signoff (those stay with the
+    // ict_risk_officer / legal checkers → SoD preserved).
+    assessment: ['read'],
+    arrangement: ['read', 'create', 'edit'],
+    provider: ['read'],
+    evidence: ['read', 'upload'],
+    clause: ['read'],
+    finding: ['read'],
+    register: ['read'],
+    workspace: ['read'],
+  },
   ict_risk_officer: {
     // the "checker": signs off findings / risk acceptance (management-body delegate)
     ...READ_ALL,
@@ -114,6 +133,15 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
   legal: {
     ...READ_ALL,
     clause: ['read', 'signoff'],
+    evaluation: ['read'], // ADR-0004
+  },
+  security_officer: {
+    // information-security dimension CHECKER (1.5.0): signs off the security dimension of an
+    // arrangement (parallel to legal's clause:signoff / dpo's privacy:signoff) and classifies the
+    // security evidence it reviews (SOC 2 / ISO 27001 / pentest). Read-only on everything else.
+    ...READ_ALL,
+    security: ['read', 'signoff'],
+    evidence: ['read', 'classify'],
     evaluation: ['read'], // ADR-0004
   },
   dpo: {
