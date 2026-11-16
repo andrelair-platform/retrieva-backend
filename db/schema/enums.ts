@@ -65,8 +65,10 @@ export const domainRoleEnum = pgEnum('domain_role', [
   // entity scope — working roles
   'entity_admin',
   'analyst', // maker
+  'procurement', // maker — vendor/contract lifecycle (arrangement onboarding, contract evidence); NOT a checker
   'ict_risk_officer', // checker (finding approval / risk acceptance)
   'legal', // checker (contractual clauses)
+  'security_officer', // checker — information-security dimension (security:signoff), parallel to legal/dpo
   'dpo', // checker (data-protection dimension)
   'business_owner', // attester (own functions only)
   'auditor', // read-only everywhere

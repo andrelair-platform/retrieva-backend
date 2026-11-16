@@ -37,6 +37,15 @@ describe('roleGrants — capability matrix', () => {
     ['legal', 'clause:signoff', true],
     ['dpo', 'privacy:signoff', true],
     ['legal', 'privacy:signoff', false],
+    ['security_officer', 'security:signoff', true],
+    ['security_officer', 'clause:signoff', false], // dimension-scoped like legal/dpo
+    ['security_officer', 'evidence:classify', true],
+    ['security_officer', 'finding:approve', false], // dimension checker, not the risk checker
+    // procurement — vendor/contract lifecycle maker (NOT a checker, SoD)
+    ['procurement', 'arrangement:create', true],
+    ['procurement', 'evidence:upload', true],
+    ['procurement', 'finding:approve', false],
+    ['procurement', 'risk:accept', false],
     // admins
     ['entity_admin', 'user:manage', true],
     ['group_admin', 'entity:manage', true],
