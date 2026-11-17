@@ -24,7 +24,7 @@ import {
   findingRepository,
 } from '../../repositories/index.js';
 import { analyzeOrganization } from '../../services/concentrationService.js';
-import { buildOnboardingDecision } from '../../services/onboarding/onboardingDecision.js';
+import { buildOnboardingDecision, activationBlockers } from '../../services/onboarding/onboardingDecision.js';
 import { buildClausePack, gapCheckClausePack } from '../../services/legal/contractClausePack.js';
 
 // Arrangement-graph CRUD (RTV-36/37) — ORG-scoped. Every handler keys off req.user!.organizationId
@@ -223,6 +223,39 @@ export const transitionLifecycle = catchAsync(async (req: Request, res: Response
         ? 'This is a management-body decision — a checker role is required'
         : 'You do not have permission to change the arrangement lifecycle'
     );
+  }
+
+  // P1a — HARD pre-contract activation gate (DORA Art. 28(4) / blueprint B-8). A checker may APPROVE
+  // onboarding, but the platform must NOT let a risky supplier be activated just because the
+  // questionnaire is complete. Block `approve_onboarding` when the pre-contract assessment confirms a
+  // breach (recommendation 'blocked') or has not run at all. The exception path is explicit + auditable:
+  // the checker resolves the findings / formally accepts the risk first (which clears 'blocked'), then
+  // re-approves — never a silent activation.
+  if (transition === 'approve_onboarding') {
+    const [findings, concentration] = await Promise.all([
+      findingRepository.listByArrangement(organizationId as string, String(arrangement.id)),
+      analyzeOrganization(organizationId as string, {}, arrangement.legalEntityId ?? undefined),
+    ]);
+    const decision = buildOnboardingDecision({
+      arrangement: {
+        lifecycleStatus: arrangement.lifecycleStatus,
+        exitDifficulty: arrangement.exitDifficulty,
+        businessFunctionId: arrangement.businessFunctionId,
+      },
+      findings,
+      concentration,
+      transitions: allowedTransitions(arrangement.lifecycleStatus),
+      subcontractors: [],
+    });
+    const blockers = activationBlockers(decision);
+    if (blockers.length > 0) {
+      return sendError(
+        res,
+        409,
+        `Cannot activate — pre-contract conditions not met: ${blockers.join(' ')} ` +
+          `Resolve the findings or formally accept the risk, then re-approve.`
+      );
+    }
   }
 
   const to = nextState(from, transition);

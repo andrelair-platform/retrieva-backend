@@ -135,3 +135,21 @@ export function buildOnboardingDecision({
 
   return { recommendation, reasons, assessment, concentration: concentrationSignal, exit: { difficulty }, gate };
 }
+
+/**
+ * P1a — the HARD pre-contract activation gate (DORA Art. 28(4) / blueprint B-8). Turns the advisory
+ * onboarding decision into an *enforceable* precondition on `approve_onboarding`: returns the list of
+ * conditions that BLOCK activation (empty = clear to activate). A supplier is NOT activatable just
+ * because the questionnaire is complete — a confirmed breach (`recommendation: 'blocked'`) or a
+ * never-run assessment blocks it. Pure + deterministic so it's provable in isolation; the controller
+ * returns 409 with these reasons. The exception path stays explicit: resolve the findings / formally
+ * accept the risk (which clears 'blocked'), then re-approve.
+ */
+export function activationBlockers(decision: {
+  recommendation: string;
+  reasons: string[];
+  assessment: { total: number };
+}): string[] {
+  if (decision.assessment.total === 0) return ['Pre-contract assessment has not run yet.'];
+  return decision.recommendation === 'blocked' ? decision.reasons : [];
+}
