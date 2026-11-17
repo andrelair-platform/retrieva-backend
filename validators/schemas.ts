@@ -422,11 +422,15 @@ export const setRiskDecisionSchema = z
 
 // RTV-59 — domain-role provisioning. `role` is restricted to the entity-scope working roles that
 // are assignable via the admin endpoint (group_* + external vendor_contact are excluded).
+// MUST stay in sync with ASSIGNABLE_ROLES in services/authz/roleProvisioningService.ts — the
+// drift-guard test tests/unittest/assignableRoles.sync.test.ts asserts the two lists are identical.
 export const ASSIGNABLE_ROLE_VALUES = [
   'entity_admin',
   'analyst',
+  'procurement',
   'ict_risk_officer',
   'legal',
+  'security_officer',
   'dpo',
   'business_owner',
   'auditor',
