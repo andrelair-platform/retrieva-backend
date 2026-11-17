@@ -28,13 +28,18 @@
 // checker/admin roles (group_admin, entity_admin, group_risk, group_compliance, ict_risk_officer) —
 // NEVER to `analyst` (the maker, SoD) and NEVER to `service_evaluator` (the controller also hard-guards
 // by principal-type so an inherited/wildcard grant can't let a SERVICE identity determine).
+// 1.6.0 (P1b — graduated risk-acceptance delegation): added the escalated acceptance verbs
+// `risk:acceptHigh` + `risk:acceptCritical` to `group_risk`. The required authority to ACCEPT a risk
+// now escalates with severity — low/medium → `risk:accept` (ict_risk_officer); high → `risk:acceptHigh`;
+// critical → `risk:acceptCritical` (both group_risk only, the management-body delegate). The controller
+// requests the severity-scoped verb via riskLifecycle.capabilityForTransition(status, severity).
 // 1.5.0 (RACI completeness): added two internal-team roles so the governance model names them as
 // distinct actors instead of folding them into analyst/business_owner — `procurement` (vendor/contract
 // lifecycle MAKER: arrangement create/edit + contract-evidence upload; NO checker sign-off — approval
 // stays with ict_risk_officer/legal, SoD preserved) and `security_officer` (information-security
 // dimension CHECKER: `security:signoff`, parallel to legal's `clause:signoff` and dpo's `privacy:signoff`;
 // classifies security evidence). Both are additive + default-deny for everything not listed.
-export const CAPABILITY_MAP_VERSION = '1.5.0';
+export const CAPABILITY_MAP_VERSION = '1.6.0';
 
 // Convenience: every resource, read-only (auditor / read roles).
 const READ_ALL = {
@@ -69,7 +74,9 @@ export const CAPABILITIES: Record<string, Record<string, string[]>> = {
   group_risk: {
     ...READ_ALL,
     finding: ['read', 'approve'],
-    risk: ['read', 'accept', 'manage'],
+    // P1b: group risk holds the ESCALATED acceptances (high/critical) on top of the base accept —
+    // the entity ict_risk_officer keeps only `accept` (low/medium). See riskLifecycle.capabilityForAcceptance.
+    risk: ['read', 'accept', 'acceptHigh', 'acceptCritical', 'manage'],
     register: ['read', 'export', 'attest'],
     reportability: ['read', 'determine'], // ADR-0005 A3 (risk checker)
   },

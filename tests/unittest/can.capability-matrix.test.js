@@ -28,6 +28,13 @@ describe('roleGrants — capability matrix', () => {
     ['ict_risk_officer', 'finding:approve', true],
     ['ict_risk_officer', 'assessment:edit', false],
     ['ict_risk_officer', 'risk:accept', true],
+    // P1b — graduated risk-acceptance delegation: entity officer accepts low/medium only;
+    // high/critical escalate to group_risk.
+    ['ict_risk_officer', 'risk:acceptHigh', false],
+    ['ict_risk_officer', 'risk:acceptCritical', false],
+    ['group_risk', 'risk:accept', true],
+    ['group_risk', 'risk:acceptHigh', true],
+    ['group_risk', 'risk:acceptCritical', true],
     // read-only roles
     ['auditor', 'assessment:read', true],
     ['auditor', 'assessment:edit', false],

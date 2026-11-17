@@ -174,10 +174,17 @@ export const updateRiskStatus = catchAsync(async (req: Request, res: Response) =
     return sendError(res, 400, `Cannot transition a risk from '${risk.status}' to '${status}'`);
   }
 
-  // 2) capability gate — accept vs manage (SoD: acceptance is the checker's alone).
-  const capability = capabilityForTransition(status);
+  // 2) capability gate — accept vs manage (SoD: acceptance is the checker's alone). P1b: the authority
+  //    required to ACCEPT escalates with the risk's severity (high/critical → group_risk only).
+  const capability = capabilityForTransition(status, risk.severity);
   if (!(await can(req.user, capability, { organizationId }))) {
-    return sendError(res, 403, `You do not have permission to ${capability.split(':')[1]} risks`);
+    return sendError(
+      res,
+      403,
+      isAcceptance(status)
+        ? `Accepting a ${risk.severity}-severity risk requires higher delegated authority (${capability})`
+        : `You do not have permission to ${capability.split(':')[1]} risks`
+    );
   }
 
   // 3) the acceptance decision must carry a rationale (management-body accountability).
