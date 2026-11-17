@@ -355,14 +355,16 @@ describe('RTV-55 findings approval (real pg)', () => {
   // ── RTV-43 follow-up: the risk remediation lifecycle (manage vs accept, SoD) ─────────────────
   describe('RTV-43 risk lifecycle', () => {
     // open a fresh risk by approving a non_compliant finding as a checker; return the risk row.
-    const openRisk = async (controlId = 'DORA-30.3d-ICT-SECURITY') => {
+    // verdict drives the derived risk severity (non_compliant→high, partial→medium,
+    // insufficient_evidence→low), which under P1b drives the acceptance authority required.
+    const openRisk = async (controlId = 'DORA-30.3d-ICT-SECURITY', verdict = 'non_compliant') => {
       const checker = await mkChecker();
       const gap = await findingRepository.upsertForControl({
         organizationId: orgA.id,
         arrangementId: graphA.arrangements.franceClaims.id,
         controlId,
         libraryVersion: '1.0.0',
-        verdict: 'non_compliant',
+        verdict,
         status: 'draft',
       });
       const res = await invoke(decideFinding, {
@@ -401,11 +403,13 @@ describe('RTV-55 findings approval (real pg)', () => {
         body: { status: 'accepted', reason: 'residual risk tolerable' },
       });
       expect(res.statusCode).toBe(403);
-      expect(res.body.message).toMatch(/permission to accept/i);
+      // P1b: a high-severity risk escalates — the 403 names the required delegated authority.
+      expect(res.body.message).toMatch(/higher delegated authority/i);
     });
 
-    it('a checker accepts a risk WITH a rationale → 200; WITHOUT → 400', async () => {
-      const risk = await openRisk();
+    it('a checker accepts a MEDIUM-severity risk WITH a rationale → 200; WITHOUT → 400', async () => {
+      // partial → medium severity → risk:accept, which the entity ict_risk_officer holds (P1b).
+      const risk = await openRisk('DORA-30.3d-ICT-SECURITY', 'partial');
       const checker = await mkChecker();
       const denied = await invoke(updateRiskStatus, {
         user: checker,
@@ -422,6 +426,18 @@ describe('RTV-55 findings approval (real pg)', () => {
       });
       expect(ok.statusCode).toBe(200);
       expect(ok.body.data.risk.status).toBe('accepted');
+    });
+
+    it('P1b: an entity ict_risk_officer CANNOT accept a HIGH-severity risk (escalates to group risk) → 403', async () => {
+      const risk = await openRisk(); // non_compliant → high severity
+      const checker = await mkChecker(); // ict_risk_officer holds risk:accept, NOT risk:acceptHigh
+      const res = await invoke(updateRiskStatus, {
+        user: checker,
+        params: { arrangementId: risk.arrangementId, riskId: risk.id },
+        body: { status: 'accepted', reason: 'attempt to accept a high risk at entity level' },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.body.message).toMatch(/higher delegated authority/i);
     });
 
     it('rejects an illegal transition (open → mitigated) with 400', async () => {
