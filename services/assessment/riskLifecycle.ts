@@ -38,10 +38,30 @@ export function isAcceptance(to: string): boolean {
   return to === 'accepted';
 }
 
+export type AcceptanceCapability = 'risk:accept' | 'risk:acceptHigh' | 'risk:acceptCritical';
+export type RiskCapability = AcceptanceCapability | 'risk:manage';
+
 /**
- * The capability a transition to `to` requires: accepting a risk is the management-body sign-off
- * (`risk:accept`); every other progress transition is remediation work (`risk:manage`).
+ * P1b — graduated risk-acceptance delegation (DORA Art. 28(1) governance). The authority required to
+ * ACCEPT a risk escalates with its severity, so a higher-impact acceptance needs a higher delegated
+ * authority — not a single flat `risk:accept`:
+ *   low / medium  → `risk:accept`          (entity ICT-risk officer)
+ *   high          → `risk:acceptHigh`      (group risk)
+ *   critical      → `risk:acceptCritical`  (group risk — management-body delegate)
+ * Distinct *verbs* (not `accept:high`) because the capability lookup splits on ':' and keeps two
+ * segments. Pure so the mapping is provable in isolation.
  */
-export function capabilityForTransition(to: string): 'risk:accept' | 'risk:manage' {
-  return isAcceptance(to) ? 'risk:accept' : 'risk:manage';
+export function capabilityForAcceptance(severity: string): AcceptanceCapability {
+  if (severity === 'critical') return 'risk:acceptCritical';
+  if (severity === 'high') return 'risk:acceptHigh';
+  return 'risk:accept'; // low / medium (or unknown → least-escalated, still a checker)
+}
+
+/**
+ * The capability a transition to `to` requires: accepting a risk is a management-body sign-off whose
+ * required authority escalates with `severity` (P1b); every other progress transition is remediation
+ * work (`risk:manage`). `severity` is only consulted for an acceptance.
+ */
+export function capabilityForTransition(to: string, severity?: string): RiskCapability {
+  return isAcceptance(to) ? capabilityForAcceptance(String(severity ?? '')) : 'risk:manage';
 }

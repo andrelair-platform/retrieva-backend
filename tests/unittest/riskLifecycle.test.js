@@ -7,8 +7,29 @@ import {
   canTransition,
   isAcceptance,
   capabilityForTransition,
+  capabilityForAcceptance,
   RISK_STATUSES,
 } from '../../services/assessment/riskLifecycle.js';
+
+describe('P1b — graduated risk-acceptance delegation', () => {
+  it('escalates the required acceptance capability with severity', () => {
+    expect(capabilityForAcceptance('low')).toBe('risk:accept');
+    expect(capabilityForAcceptance('medium')).toBe('risk:accept');
+    expect(capabilityForAcceptance('high')).toBe('risk:acceptHigh');
+    expect(capabilityForAcceptance('critical')).toBe('risk:acceptCritical');
+  });
+
+  it('an unknown severity falls back to the least-escalated (still a checker)', () => {
+    expect(capabilityForAcceptance('')).toBe('risk:accept');
+  });
+
+  it('capabilityForTransition uses severity only for an acceptance', () => {
+    expect(capabilityForTransition('accepted', 'critical')).toBe('risk:acceptCritical');
+    expect(capabilityForTransition('accepted', 'low')).toBe('risk:accept');
+    expect(capabilityForTransition('mitigating', 'critical')).toBe('risk:manage');
+    expect(capabilityForTransition('closed', 'high')).toBe('risk:manage');
+  });
+});
 
 describe('RTV-43 canTransition — the remediation state machine', () => {
   it('allows the forward remediation path', () => {
