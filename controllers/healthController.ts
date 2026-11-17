@@ -11,7 +11,13 @@ import logger from '../config/logger.js';
 import { assessmentQueue } from '../config/queue.js';
 
 // ISSUE #14 FIX: Health check timeouts to prevent hanging
-const HEALTH_CHECK_TIMEOUT_MS = 5000; // 5 seconds for each service check
+const HEALTH_CHECK_TIMEOUT_MS = 5000; // 5 seconds for fast deps (DB/redis/qdrant)
+// The LLM invoke goes through the gateway to the configured model; EU-resident premium models
+// (prod tier-premium → bedrock-mistral-large on Bedrock eu-west-1) have a cold/first-token latency
+// that exceeds 5s, which produced a FALSE `llm: down` on an otherwise-funded, working path. Give the
+// LLM probe a realistic budget so health reflects reality (and we don't break EU residency by
+// repointing to a faster US model just to satisfy a too-tight probe).
+const LLM_HEALTH_CHECK_TIMEOUT_MS = 15000; // 15s — accommodates Bedrock/premium-model latency
 
 /**
  * Basic health check
@@ -121,7 +127,7 @@ export const detailedHealth = async (req: Request, res: Response) => {
 
     const testResponse = await promiseWithTimeout(
       llmCheck(),
-      HEALTH_CHECK_TIMEOUT_MS,
+      LLM_HEALTH_CHECK_TIMEOUT_MS,
       'LLM health check timed out'
     );
 
