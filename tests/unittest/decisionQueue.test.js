@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildDecisionQueue,
   highConfidenceFindingIds,
+  itemsForRole,
 } from '../../services/decisionQueue/decisionQueue.js';
 
 const ctx = {
@@ -139,5 +140,41 @@ describe('RTV-67 highConfidenceFindingIds (bulk-accept candidates)', () => {
       ctx
     );
     expect(highConfidenceFindingIds(q.items)).toEqual(['x']);
+  });
+});
+
+describe('P2a routedRole enrichment + itemsForRole (my-role inbox)', () => {
+  // controlId → domain map (what the controller resolves from the control library)
+  const ctxWithDomains = {
+    ...ctx,
+    controlDomain: new Map([
+      ['DORA-30.3d-ICT-SECURITY', 'Security and Resilience'], // → security_officer
+      ['DORA-28.8-EXIT-STRATEGY', 'Termination and Exit'], // → legal
+    ]),
+  };
+
+  it('stamps each item with its owning routedRole when controlDomain is supplied', () => {
+    const q = buildDecisionQueue([finding()], [risk()], ctxWithDomains);
+    const f = q.items.find((i) => i.kind === 'finding');
+    const r = q.items.find((i) => i.kind === 'risk');
+    expect(f.routedRole).toBe('security_officer');
+    expect(r.routedRole).toBe('legal');
+  });
+
+  it('leaves routedRole undefined when controlDomain is NOT supplied (back-compat)', () => {
+    const q = buildDecisionQueue([finding()], [risk()], ctx);
+    expect(q.items.every((i) => i.routedRole === undefined)).toBe(true);
+  });
+
+  it('routes an unknown control domain to the default owner (ict_risk_officer)', () => {
+    const q = buildDecisionQueue([finding({ controlId: 'UNMAPPED' })], [], ctxWithDomains);
+    expect(q.items[0].routedRole).toBe('ict_risk_officer');
+  });
+
+  it('itemsForRole filters the queue to one party', () => {
+    const q = buildDecisionQueue([finding()], [risk()], ctxWithDomains);
+    expect(itemsForRole(q.items, 'legal').map((i) => i.kind)).toEqual(['risk']);
+    expect(itemsForRole(q.items, 'security_officer').map((i) => i.kind)).toEqual(['finding']);
+    expect(itemsForRole(q.items, 'dpo')).toEqual([]);
   });
 });
