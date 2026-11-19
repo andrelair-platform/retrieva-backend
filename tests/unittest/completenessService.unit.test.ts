@@ -69,8 +69,9 @@ describe('runCompletenessAudit', () => {
           businessFunctionName: 'Claims', businessFunctionCriticalFlag: true,
         },
       ],
-      legalEntities: [{ id: 'le1', name: 'ACME SA', lei: '9695', country: 'FR' }],
-      providers: [{ id: 'p1', name: 'Microsoft', lei: '123', onCritical: true, hasSubchain: true }],
+      // valid ISO 17442 LEIs + an ISO 3166-1 country so the P3 data-quality checks also see it as clean
+      legalEntities: [{ id: 'le1', name: 'ACME SA', lei: '529900T8BM49AURSDO55', country: 'FR' }],
+      providers: [{ id: 'p1', name: 'Microsoft', lei: '5493001KJTIIGC8Y1R12', onCritical: true, hasSubchain: true }],
       subchainEdges: [{ parentId: 'p1', parentName: 'Microsoft', childName: 'Akamai', confirmed: true }],
     });
     const res = await runCompletenessAudit({ organizationId: ORG, deps: { loadSnapshot: async () => clean } });
