@@ -438,6 +438,7 @@ erDiagram
   text control_id
   timestamp_with_time_zone created_at
   text description
+  timestamp_with_time_zone due_date
   uuid finding_id FK
   uuid id
   text library_version

@@ -4961,6 +4961,11 @@
           "default": "''::text"
         },
         {
+          "name": "due_date",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
           "name": "finding_id",
           "type": "uuid",
           "nullable": false

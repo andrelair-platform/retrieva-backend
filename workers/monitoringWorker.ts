@@ -14,6 +14,7 @@ import {
   sendReviewReminderAlert,
 } from '../services/alertMonitorService.js';
 import { runPeriodicReassessment } from '../services/lifecycle/periodicReassessment.js';
+import { runRemediationSlaSweep } from '../services/assessment/remediationReminderService.js';
 import logger from '../config/logger.js';
 
 const worker = new Worker<MonitoringJobData>(
@@ -22,6 +23,16 @@ const worker = new Worker<MonitoringJobData>(
     if (job.name === 'run-monitoring-alerts') {
       logger.info('Running monitoring alerts', { service: 'monitoringWorker', jobId: job.id });
       await runMonitoringAlerts();
+      // Workflow A step 6: remind owners of due-soon remediations + escalate overdue ones. Fail-safe —
+      // a reminder-sweep error must not fail the whole monitoring run.
+      try {
+        await runRemediationSlaSweep();
+      } catch (err) {
+        logger.error('Remediation SLA sweep failed', {
+          service: 'monitoringWorker',
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       return { ran: true, timestamp: new Date().toISOString() };
     } else if (job.name === 'send-weekly-digest') {
       logger.info('Running weekly digest', { service: 'monitoringWorker', jobId: job.id });

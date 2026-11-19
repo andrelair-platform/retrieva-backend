@@ -3,7 +3,7 @@
  * A gap-finding approved by the checker opens ONE risk (idempotent per source finding). Every read
  * composes entityScopeCondition → RTV-54 isolation, and reuses the existing `risk:read` capability.
  */
-import { and, eq, desc } from 'drizzle-orm';
+import { and, eq, desc, inArray } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
 import { risks, type RiskInsert } from '../../db/schema/index.js';
 import { entityScopeCondition } from '../../services/security/entityScope.js';
@@ -65,6 +65,45 @@ export class RiskRepository extends BaseDrizzleRepository {
         entityScopeCondition(risks.organizationId, { action: 'risk:read' })
       )
     );
+  }
+
+  /** Risks still IN the remediation loop (open or mitigating) — the SLA job's input. Entity-scoped.
+   *  A system (scheduled) run reads org-wide via the background entity scope. */
+  async listInLoopByOrg(organizationId: string) {
+    return this.find(
+      and(
+        eq(risks.organizationId, organizationId),
+        inArray(risks.status, ['open', 'mitigating']),
+        entityScopeCondition(risks.organizationId, { action: 'risk:read' })
+      ),
+      { orderBy: [desc(risks.createdAt)] }
+    );
+  }
+
+  /** Distinct org ids that currently have in-loop (open/mitigating) risks — the SLA sweep's fan-out.
+   *  Runs in the background (system) context, so it reads across orgs (like periodicReassessment). */
+  async listOrgIdsWithInLoopRisks(): Promise<string[]> {
+    const rows = await this.db
+      .selectDistinct({ organizationId: risks.organizationId })
+      .from(risks)
+      .where(inArray(risks.status, ['open', 'mitigating']));
+    return rows.map((r: { organizationId: string }) => r.organizationId);
+  }
+
+  /** Set (or clear, with null) a risk's remediation due date. Entity-scoped to the owner's org. */
+  async setDueDate(organizationId: string, id: string, dueDate: Date | null) {
+    const [row] = await this.db
+      .update(risks)
+      .set({ dueDate, updatedAt: new Date() })
+      .where(
+        and(
+          eq(risks.id, id),
+          eq(risks.organizationId, organizationId),
+          entityScopeCondition(risks.organizationId, { action: 'risk:manage' })
+        )
+      )
+      .returning();
+    return row ?? null;
   }
 
   /**

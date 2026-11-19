@@ -5,6 +5,8 @@ import {
   decideFinding,
   getRisks,
   updateRiskStatus,
+  setRiskDueDate,
+  postSupplierNotice,
 } from './arrangementAssessment.controller.js';
 import { authenticate } from '../../middleware/auth.js';
 import { validateBody } from '../../middleware/validate.js';
@@ -40,5 +42,14 @@ router.patch(
   validateBody(riskStatusUpdateSchema),
   updateRiskStatus
 );
+
+// PATCH /api/v1/arrangements/:arrangementId/risks/:riskId/due-date — set/clear the remediation deadline
+// that drives the overdue reminder/escalation sweep (Workflow A step 6). Body: { dueDate: ISO | null }.
+router.patch('/:arrangementId/risks/:riskId/due-date', authenticate, setRiskDueDate);
+
+// POST /api/v1/arrangements/:arrangementId/supplier-notice — log a supplier notification (breach /
+// subprocessor / residency / incident / degradation / other) → record + reopen for reassessment
+// (Workflow A step 8). Body: { type, summary?, reference? }.
+router.post('/:arrangementId/supplier-notice', authenticate, postSupplierNotice);
 
 export default router;

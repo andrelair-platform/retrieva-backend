@@ -1,0 +1,1 @@
+ALTER TABLE "risks" ADD COLUMN "due_date" timestamp with time zone;

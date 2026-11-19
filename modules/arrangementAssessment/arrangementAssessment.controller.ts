@@ -10,6 +10,10 @@ import {
 import { can } from '../../services/security/can.js';
 import { applyFindingDecision } from '../../services/assessment/applyFindingDecision.js';
 import {
+  recordSupplierNotice,
+  SUPPLIER_NOTICE_TYPES,
+} from '../../services/lifecycle/supplierNotice.js';
+import {
   canTransition,
   capabilityForTransition,
   isAcceptance,
@@ -225,4 +229,70 @@ export const updateRiskStatus = catchAsync(async (req: Request, res: Response) =
   await recalcForArrangementSafe(organizationId, String(risk.arrangementId));
 
   sendSuccess(res, 200, 'Risk updated', { risk: updated });
+});
+
+// PATCH /api/v1/arrangements/:arrangementId/risks/:riskId/due-date — set/clear a remediation deadline
+// (Workflow A step 6). Body: { dueDate: ISO-string | null }. `risk:manage` gated; the overdue
+// reminder/escalation sweep keys off this date. Audited.
+export const setRiskDueDate = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+
+  if (!(await arrangementRepository.findByIdInOrg(organizationId, String(req.params.arrangementId))))
+    return sendError(res, 404, 'Arrangement not found');
+  const risk = await riskRepository.findByIdInOrg(organizationId, String(req.params.riskId));
+  if (!risk || risk.arrangementId !== req.params.arrangementId) {
+    return sendError(res, 404, 'Risk not found');
+  }
+  if (!(await can(req.user, 'risk:manage', { organizationId }))) {
+    return sendError(res, 403, 'You do not have permission to manage risks');
+  }
+
+  const raw = req.body?.dueDate;
+  let dueDate: Date | null = null;
+  if (raw !== null && raw !== undefined && raw !== '') {
+    const d = new Date(String(raw));
+    if (Number.isNaN(d.getTime())) return sendError(res, 400, 'dueDate must be an ISO date string or null');
+    dueDate = d;
+  }
+
+  const updated = await riskRepository.setDueDate(organizationId, String(req.params.riskId), dueDate);
+  await recordAudit({
+    organizationId,
+    actor: req.user!.userId,
+    action: 'risk.due_date_set',
+    targetType: 'risk',
+    targetId: String(req.params.riskId),
+    metadata: { arrangementId: risk.arrangementId, dueDate: dueDate ? dueDate.toISOString() : null },
+  });
+  sendSuccess(res, 200, 'Remediation due date updated', { risk: updated });
+});
+
+// POST /api/v1/arrangements/:arrangementId/supplier-notice — log a notification the SUPPLIER sent the
+// bank (breach / subprocessor / residency / incident / degradation / other) → record it + reopen the
+// arrangement for reassessment (Workflow A step 8). Body: { type, summary?, reference? }. `arrangement:edit`.
+export const postSupplierNotice = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+
+  const arrangement = await arrangementRepository.findByIdInOrg(organizationId, String(req.params.arrangementId));
+  if (!arrangement) return sendError(res, 404, 'Arrangement not found');
+  if (!(await can(req.user, 'arrangement:edit', { organizationId }))) {
+    return sendError(res, 403, 'You do not have permission to log a supplier notice on this arrangement');
+  }
+
+  const type = String(req.body?.type || '');
+  if (!SUPPLIER_NOTICE_TYPES.includes(type as (typeof SUPPLIER_NOTICE_TYPES)[number])) {
+    return sendError(res, 400, `type must be one of: ${SUPPLIER_NOTICE_TYPES.join(', ')}`);
+  }
+
+  const result = await recordSupplierNotice({
+    organizationId,
+    arrangement: { id: arrangement.id, lifecycleStatus: arrangement.lifecycleStatus, criticality: arrangement.criticality },
+    type,
+    summary: typeof req.body?.summary === 'string' ? req.body.summary.trim() : undefined,
+    reference: typeof req.body?.reference === 'string' ? req.body.reference.trim() : undefined,
+    actorId: req.user!.userId,
+  });
+  sendSuccess(res, 201, 'Supplier notice recorded', result);
 });
