@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import { recordDetermination, listDeterminations } from '../../services/reportability/reportabilityService.js';
 import { buildReportabilityReconciliation } from '../../services/reportability/reconciliationService.js';
+import { buildDashboard, buildArrangementAuditPack } from '../../services/reportability/auditReadinessService.js';
 import { can } from '../../services/security/can.js';
 import { recordAction } from '../../services/security/actionAudit.js';
 
@@ -81,6 +82,36 @@ export const getReconciliation = catchAsync(async (req: Request, res: Response) 
   if (!(await requireCap(req, res, 'reportability:read', organizationId))) return;
   const report = await buildReportabilityReconciliation(organizationId);
   sendSuccess(res, 200, 'Reportability reconciliation (dry-run)', report);
+});
+
+// GET /api/v1/reportability/dashboard — the audit-readiness dashboard (P4): overdue reassessments,
+// evidence freshness, register coverage, upcoming deadlines. Read-only; reportability:read (auditors too).
+export const getAuditDashboard = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  if (!(await requireCap(req, res, 'reportability:read', organizationId))) return;
+  const dashboard = await buildDashboard(organizationId);
+  sendSuccess(res, 200, 'Audit-readiness dashboard', dashboard);
+});
+
+// GET /api/v1/reportability/audit-pack/:arrangementId — the on-demand evidence pack (P4): a single
+// tamper-evident dossier (determinations, findings, risks, audit trail, register gaps) for an auditor.
+export const getAuditPack = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  if (!(await requireCap(req, res, 'reportability:read', organizationId))) return;
+  try {
+    const pack = await buildArrangementAuditPack(
+      organizationId,
+      String(req.params.arrangementId),
+      { generatedAt: new Date().toISOString(), generatedBy: actorId(req) }
+    );
+    await audit(req, 'reportability.audit_pack', 'allow', 'success', pack.manifest.integrityHash);
+    sendSuccess(res, 200, 'Audit evidence pack', pack);
+  } catch (e: any) {
+    if (e?.statusCode) return sendError(res, e.statusCode, e.message);
+    throw e;
+  }
 });
 
 // GET /api/v1/reportability/:arrangementId — the append-only determination history (newest first).
