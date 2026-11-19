@@ -23,8 +23,16 @@ const finding = (over = {}) => ({
 function stub(over = {}) {
   return {
     findingRepository: { setDecision: vi.fn(async (_o, _id, status) => ({ id: 'f1', status })) },
-    riskRepository: { createFromFinding: vi.fn(async () => ({ id: 'risk1' })) },
+    riskRepository: { createFromFinding: vi.fn(async () => ({ id: 'risk1', severity: 'high' })) },
     recordAudit: vi.fn(async () => {}),
+    // P2a: inject the routing collaborators so routing is deterministic + DB-free in unit tests.
+    arrangementRepository: { findByIdInOrg: vi.fn(async () => ({ criticality: 'standard' })) },
+    notifyRoutedGap: vi.fn(async () => ({
+      notified: false,
+      roles: [],
+      recipientCount: 0,
+      recipients: [],
+    })),
     ...over,
   };
 }
@@ -102,12 +110,15 @@ describe('RTV-43 applyFindingDecision — approve opens the remediation risk', (
       repos,
     });
     expect(r.ok).toBe(true);
-    expect(r.risk).toEqual({ id: 'risk1' });
+    expect(r.risk).toEqual({ id: 'risk1', severity: 'high' });
     expect(repos.riskRepository.createFromFinding).toHaveBeenCalledTimes(1);
+    // P2a: opening a risk also routes it to the owning party + audits the routing.
     expect(repos.recordAudit.mock.calls.map((c) => c[0].action)).toEqual([
       'finding.approve',
       'risk.created',
+      'finding.routed',
     ]);
+    expect(repos.notifyRoutedGap).toHaveBeenCalledTimes(1);
   });
 
   it('approving a compliant verdict is agreement (no reason), opens NO risk', async () => {

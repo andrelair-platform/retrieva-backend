@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
 import { buildDecisionQueue } from '../../services/decisionQueue/decisionQueue.js';
 import { applyFindingDecision } from '../../services/assessment/applyFindingDecision.js';
+import { controlLibraryService } from '../../services/controlLibraryService.js';
 import { isVerdictOverride } from '../../services/security/separationOfDuties.js';
 import { can } from '../../services/security/can.js';
 import {
@@ -51,7 +52,27 @@ export const getDecisionQueue = catchAsync(async (req: Request, res: Response) =
     ])
   );
 
-  const queue = buildDecisionQueue(findings, risks, { arrangementContext });
+  // P2a: controlId → control domain (per control-library version present), so each queue item is
+  // stamped with its owning `routedRole` ("filter by my role"). An unknown version is skipped — those
+  // items fall back to the default owner inside buildDecisionQueue.
+  const controlDomain = new Map<string, string>();
+  const versions = new Set<string>(
+    [
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...findings.map((f: any) => f.libraryVersion),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...risks.map((r: any) => r.libraryVersion),
+    ].filter(Boolean)
+  );
+  for (const v of versions) {
+    try {
+      for (const c of controlLibraryService.getControls(v)) controlDomain.set(c.id, c.domain);
+    } catch {
+      /* unknown library version → its items default-route */
+    }
+  }
+
+  const queue = buildDecisionQueue(findings, risks, { arrangementContext, controlDomain });
   sendSuccess(res, 200, 'Decision queue', queue);
 });
 

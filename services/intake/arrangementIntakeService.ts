@@ -7,6 +7,7 @@
 import { sha256 } from '../../utils/security/crypto.js';
 import { recordAudit } from '../auditLogService.js';
 import { initialStatusForTrigger } from '../lifecycle/arrangementLifecycle.js';
+import { reingestDependencyCheck } from '../lifecycle/reingestDependencyCheck.js';
 import {
   legalEntityRepository,
   businessFunctionRepository,
@@ -74,6 +75,41 @@ export async function confirmProposal({
     kind: 'external',
     name: p.providerName,
   });
+
+  // P2b (DORA Art. 28(1)/29, RTV-32): on a RE-INGESTION of an existing arrangement, snapshot the PRIOR
+  // subprocessors + residency NOW, BEFORE the graph is mutated below — so a material change can be diffed
+  // and the prior arrangement reopened for reassessment. Best-effort: a snapshot failure never blocks intake.
+  const isReingest = trigger === 'change' || trigger === 'existing';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- prior arrangement row is heterogeneous
+  let reingestPrev: { arrangement: any; subprocessors: string[]; residency: string; cif: boolean } | null = null;
+  if (isReingest) {
+    try {
+      const priors = (await arrangements.listByProvider(organizationId, provider.id)) || [];
+      const prior = priors.find(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (x: any) =>
+          x.businessFunctionId === businessFunction.id &&
+          (x.lifecycleStatus === 'active' || x.lifecycleStatus === 'under_review')
+      );
+      if (prior) {
+        const edges = (await providerGraph.listDependencies(organizationId)) || [];
+        const subprocessors = edges
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .filter((e: any) => norm(e.parent?.name) === norm(p.providerName))
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .map((e: any) => String(e.child?.name || ''))
+          .filter(Boolean);
+        reingestPrev = {
+          arrangement: prior,
+          subprocessors,
+          residency: String(prior.dataResidency || ''),
+          cif: prior.criticality === 'critical' || prior.criticality === 'important',
+        };
+      }
+    } catch {
+      reingestPrev = null; // best-effort snapshot
+    }
+  }
 
   // nth-party subcontractor edges (unconfirmed — extracted; a human can confirm in the graph).
   for (const subName of Array.isArray(p.subcontractors) ? p.subcontractors : []) {
@@ -161,6 +197,31 @@ export async function confirmProposal({
     targetId: arrangement.id,
     metadata: { source: sourceFileName, extracted: p, confirmedBy: userId },
   });
+
+  // P2b: diff the re-ingested subprocessors + residency against the prior snapshot and, on a material
+  // change, reopen the PRIOR arrangement for a fresh assessment (the RTV-32 change trigger). Best-effort
+  // + fail-safe — a trigger failure must never fail the intake that already committed above.
+  if (reingestPrev) {
+    try {
+      await reingestDependencyCheck(
+        {
+          organizationId,
+          arrangement: {
+            id: reingestPrev.arrangement.id,
+            lifecycleStatus: reingestPrev.arrangement.lifecycleStatus,
+          },
+          prevSubprocessors: reingestPrev.subprocessors,
+          nextSubprocessors: Array.isArray(p.subcontractors) ? p.subcontractors : [],
+          prevResidency: reingestPrev.residency,
+          nextResidency: p.dataResidency ?? '',
+          cif: reingestPrev.cif,
+        },
+        { repo: arrangements, audit, enqueue: repos.enqueueAssessment }
+      );
+    } catch {
+      /* best-effort — never fail a committed intake on a reassessment-trigger error */
+    }
+  }
 
   return arrangement;
 }

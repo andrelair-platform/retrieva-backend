@@ -12,11 +12,17 @@
  * in, so this stays unit-testable with no DB.
  */
 
+import { ownerForDomain, type RoutableRole } from '../assessment/findingRouting.js';
+
 const SEVERITY_RANK: Record<string, number> = { critical: 1, high: 0.8, medium: 0.5, low: 0.3 };
 
 export interface QueueContext {
   // arrangementId → { providerName, businessFunctionName } (already entity-scoped by the caller)
   arrangementContext: Map<string, { providerName: string; businessFunctionName: string }>;
+  // OPTIONAL (P2a): controlId → control domain. When provided, each item is stamped with the
+  // `routedRole` (the owning party) so the inbox can offer a "filter by my role" lane. Omitted → no
+  // routedRole on items (back-compat: existing callers/tests are unchanged).
+  controlDomain?: Map<string, string>;
 }
 
 export interface DecisionItem {
@@ -28,6 +34,8 @@ export interface DecisionItem {
   controlId: string;
   urgency: number; // 0..1, higher = surfaces first
   createdAt: unknown;
+  // P2a: the owning party for this item (present only when ctx.controlDomain is supplied).
+  routedRole?: RoutableRole;
   // finding-only
   verdict?: string;
   confidence?: number | null;
@@ -43,6 +51,10 @@ export interface DecisionItem {
 
 const ctxFor = (m: QueueContext['arrangementContext'], id: string) =>
   m.get(id) || { providerName: '(unknown provider)', businessFunctionName: '' };
+
+/** The owning role for an item's control, when the ctx carries a controlId→domain map (P2a). */
+const roleFor = (ctx: QueueContext, controlId: string): RoutableRole | undefined =>
+  ctx.controlDomain ? ownerForDomain(ctx.controlDomain.get(controlId)) : undefined;
 
 /**
  * Merge draft findings + open risks into one urgency-sorted decision queue.
@@ -68,6 +80,7 @@ export function buildDecisionQueue(
       controlId: f.controlId,
       urgency: 1 - (confidence ?? 0), // low confidence → high urgency (top)
       createdAt: f.createdAt,
+      routedRole: roleFor(ctx, f.controlId),
       verdict: f.verdict,
       confidence,
       rationale: f.rationale ?? '',
@@ -86,6 +99,7 @@ export function buildDecisionQueue(
       controlId: r.controlId,
       urgency: SEVERITY_RANK[r.severity] ?? 0.3,
       createdAt: r.createdAt,
+      routedRole: roleFor(ctx, r.controlId),
       severity: r.severity,
       sourceVerdict: r.sourceVerdict,
       title: r.title,
@@ -114,4 +128,12 @@ export function highConfidenceFindingIds(items: DecisionItem[], threshold = 0.8)
   return items
     .filter((i) => i.kind === 'finding' && typeof i.confidence === 'number' && i.confidence >= threshold)
     .map((i) => i.id);
+}
+
+/**
+ * The items owned by a given role (P2a "my-role inbox"). Requires the queue to have been built with
+ * `ctx.controlDomain` so items carry `routedRole`; items without it are never matched. Pure.
+ */
+export function itemsForRole(items: DecisionItem[], role: RoutableRole): DecisionItem[] {
+  return items.filter((i) => i.routedRole === role);
 }
