@@ -14,7 +14,13 @@ export type GapType =
   | 'inconsistent_flag'
   | 'unconfirmed_subchain'
   | 'unmapped_subchain'
-  | 'contract_expiry';
+  | 'contract_expiry'
+  // P3 (ESA data-quality, ITS 2024/2956): invalid_format = a present value fails its format/checksum
+  // (LEI ISO 17442, ISO 3166-1 country); referential_integrity = a cross-template reference dangles
+  // (an arrangement/edge points at an entity absent from the register snapshot). Both are growable
+  // text in the DB → no migration.
+  | 'invalid_format'
+  | 'referential_integrity';
 
 /** high on critical/important arrangements (and the proportionality gate itself), else medium. */
 export type GapSeverity = 'high' | 'medium' | 'low';
@@ -46,6 +52,11 @@ export interface ArrangementInput {
   // ISO date the governing contract/evidence stays valid until (the furthest-out validityUntil across
   // this arrangement's contract-type evidence), or null if none is recorded. Drives the expiry rule.
   contractValidUntil: string | null;
+  // P3 (ESA referential integrity): the ids this arrangement references in the other RT templates.
+  // Optional (back-compat) — the integrity check only fires when the repo populates them.
+  legalEntityId?: string;
+  providerId?: string;
+  providerName?: string;
 }
 
 export interface LegalEntityInput {
@@ -70,14 +81,21 @@ export interface SubchainEdgeInput {
   parentName: string;
   childName: string;
   confirmed: boolean;
+  // P3 (ESA referential integrity): the child provider node id. Optional (back-compat) — when present,
+  // the integrity check verifies both endpoints resolve to a provider node in the snapshot.
+  childId?: string;
 }
 
 /** The whole Register snapshot the audit runs against (one org, already entity-scoped). */
 export interface RegisterSnapshot {
   arrangements: ArrangementInput[];
   legalEntities: LegalEntityInput[];
-  providers: ProviderInput[];
+  providers: ProviderInput[]; // third-party (external) providers only — the RT.03/04 vendor set
   subchainEdges: SubchainEdgeInput[];
+  // P3 (ESA referential integrity): the id set of ALL provider-graph nodes (external + workspace), used
+  // to resolve references without false-flagging a workspace-kind node that the external-only `providers`
+  // list excludes. Optional (back-compat) — the sub-chain endpoint integrity check runs only when present.
+  providerNodeIds?: ReadonlySet<string>;
 }
 
 export interface CompletenessResult {
