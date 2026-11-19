@@ -9,8 +9,12 @@
  * scoped finding; this owns gates 2 (maker≠checker) and 3 (override reason). Returns a discriminated
  * result rather than throwing, so a bulk caller can collect per-finding skips.
  */
+import defaultLogger from '../../config/logger.js';
 import { recordAudit as defaultRecordAudit } from '../auditLogService.js';
 import { verdictWarrantsRisk, buildRiskFromFinding } from './findingRisk.js';
+import { routeFinding, domainForControl } from './findingRouting.js';
+import { notifyRoutedGap as defaultNotifyRoutedGap } from './findingRouteNotifier.js';
+import { controlLibraryService } from '../controlLibraryService.js';
 import {
   DECISION_STATUS,
   isSelfApproval,
@@ -21,6 +25,7 @@ import { CAPABILITY_MAP_VERSION } from '../../config/authz/capabilities.js';
 import {
   findingRepository as defaultFindingRepo,
   riskRepository as defaultRiskRepo,
+  arrangementRepository as defaultArrangementRepo,
 } from '../../repositories/index.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- persisted finding/risk rows are heterogeneous
@@ -127,6 +132,56 @@ export async function applyFindingDecision({
           libraryVersion: finding.libraryVersion,
         },
       });
+
+      // P2a (DORA Art. 28): route the opened gap to its owning party by control domain + severity, and
+      // notify the people holding that role. Best-effort — routing/notification must NEVER break the
+      // SoD decision commit above, so the whole block is guarded and only logs on failure.
+      try {
+        const arrangementRepo = repos.arrangementRepository || defaultArrangementRepo;
+        const notify = repos.notifyRoutedGap || defaultNotifyRoutedGap;
+        let controls: Array<{ id: string; domain: string }> = [];
+        try {
+          controls = controlLibraryService.getControls(finding.libraryVersion);
+        } catch {
+          controls = []; // unknown library version → domain unresolved → routeFinding uses the safe default
+        }
+        const domain = domainForControl(finding.controlId, controls);
+        const arr = finding.arrangementId
+          ? await arrangementRepo
+              .findByIdInOrg(organizationId, String(finding.arrangementId))
+              .catch(() => null)
+          : null;
+        const cif = controlLibraryService.isCIF({ criticality: arr?.criticality });
+        const route = routeFinding({ domain, severity: derived.severity, cif });
+        const notifyResult = await notify({ organizationId, route, finding, risk }, {});
+        await audit({
+          organizationId,
+          actor: userId,
+          action: 'finding.routed',
+          targetType: 'risk',
+          targetId: risk.id,
+          evidenceRefs: [finding.controlId],
+          metadata: {
+            arrangementId: finding.arrangementId,
+            findingId: finding.id,
+            domain: domain ?? null,
+            owner: route.owner,
+            notify: route.notify,
+            escalated: route.escalated,
+            reason: route.reason,
+            notified: notifyResult.notified,
+            recipientCount: notifyResult.recipientCount,
+          },
+        });
+      } catch (err) {
+        defaultLogger.warn('finding.routed.skipped', {
+          service: 'finding-routing',
+          organizationId,
+          findingId: finding.id,
+          riskId: risk.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   }
 
