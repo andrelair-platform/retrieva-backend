@@ -7,6 +7,7 @@ import {
   researchVendor,
   confirmIntake,
   importEstateFromFile,
+  triageDocumentsHandler,
   listIntakeProposals,
   getIntakeProposal,
   checkIntakeProposal,
@@ -40,5 +41,9 @@ router.post('/proposals/:id/resubmit', authenticate, resubmitIntakeProposal);
 
 // POST /api/v1/arrangements/intake/import[?dryRun=true] — bulk estate import from CSV/XLSX (RTV-69)
 router.post('/import', authenticate, estateUploadMiddleware, importEstateFromFile);
+
+// POST /api/v1/arrangements/intake/documents/triage — propose vendor + DORA category for each uploaded
+// document by filename/folder (onboarding bulk-upload mapping). JSON body, nothing persisted.
+router.post('/documents/triage', authenticate, triageDocumentsHandler);
 
 export default router;
