@@ -325,6 +325,10 @@ export class CompletenessRepository {
           businessFunctionName: bf?.name ?? a.businessFunctionId.slice(0, 8),
           businessFunctionCriticalFlag: bf?.criticalOrImportant ?? false,
           contractValidUntil: contractValidUntilByArr.get(a.id) ?? null,
+          // P3 (ESA referential integrity): the cross-template reference ids (RT.02.01 → RT.01.01/RT.03).
+          legalEntityId: a.legalEntityId,
+          providerId: a.providerId,
+          providerName: prov?.displayName,
         };
       }),
       legalEntities: leRows.map((le) => ({ id: le.id, name: le.name, lei: le.lei ?? null, country: le.country ?? '' })),
@@ -343,7 +347,11 @@ export class CompletenessRepository {
         parentName: provById.get(d.parentNodeId)?.displayName ?? d.parentNodeId.slice(0, 8),
         childName: provById.get(d.childNodeId)?.displayName ?? d.childNodeId.slice(0, 8),
         confirmed: d.confirmed,
+        childId: d.childNodeId, // P3 (ESA referential integrity): verify the child resolves to a provider
       })),
+      // P3 (ESA referential integrity): ALL provider-graph node ids (external + workspace), so a
+      // workspace-kind vendor node isn't falsely flagged as a dangling reference.
+      providerNodeIds: new Set(provRows.map((p) => p.id)),
     };
     return snapshot;
   }

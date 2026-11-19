@@ -13,6 +13,7 @@ import type {
   RegisterSnapshot,
   SubchainEdgeInput,
 } from './types.js';
+import { auditEsaDataQuality } from './esaDataQuality.js';
 
 const CRITICAL = new Set(['critical', 'important']);
 const isCritical = (tier: string | null) => CRITICAL.has(tier ?? '');
@@ -128,5 +129,8 @@ export function auditRegister(s: RegisterSnapshot, opts: { now?: Date } = {}): C
     ...s.legalEntities.flatMap(auditLegalEntity),
     ...s.providers.flatMap(auditProvider),
     ...auditSubchainEdges(s.subchainEdges),
+    // P3 (ESA data-quality, ITS 2024/2956): identifier validity (LEI), code-list validity (country),
+    // and cross-template referential integrity — beyond mere field presence above.
+    ...auditEsaDataQuality(s),
   ];
 }
