@@ -8,6 +8,7 @@
 | control_id      | text                     |                     | false    |          |                                                 |         |
 | created_at      | timestamp with time zone | now()               | false    |          |                                                 |         |
 | description     | text                     | ''::text            | false    |          |                                                 |         |
+| due_date        | timestamp with time zone |                     | true     |          |                                                 |         |
 | finding_id      | uuid                     |                     | false    |          | [public.findings](public.findings.md)           |         |
 | id              | uuid                     | gen_random_uuid()   | false    |          |                                                 |         |
 | library_version | text                     |                     | false    |          |                                                 |         |
@@ -58,6 +59,7 @@ erDiagram
   text control_id
   timestamp_with_time_zone created_at
   text description
+  timestamp_with_time_zone due_date
   uuid finding_id FK
   uuid id
   text library_version

@@ -47,6 +47,10 @@ export const risks = pgTable(
     // who opened it (the checker who approved the finding) + who owns remediation.
     openedBy: uuid('opened_by').references(() => users.id, { onDelete: 'set null' }),
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
+    // the remediation DEADLINE (nullable) — drives the overdue reminder/escalation job. A null date
+    // means "no deadline set yet". Open/mitigating risks past this date are overdue; due-soon ones are
+    // nudged to the owner; overdue ones escalate to the management-body delegate.
+    dueDate: timestamp('due_date', { withTimezone: true }),
     // free-form remediation notes / evidence refs the owner adds while working the loop.
     remediation: jsonb('remediation').notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

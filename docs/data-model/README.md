@@ -36,7 +36,7 @@
 | [public.register_completeness_findings](public.register_completeness_findings.md) | 13      |         | BASE TABLE |
 | [public.register_completeness_runs](public.register_completeness_runs.md)         | 14      |         | BASE TABLE |
 | [public.reportability_determinations](public.reportability_determinations.md)     | 11      |         | BASE TABLE |
-| [public.risks](public.risks.md)                                                   | 16      |         | BASE TABLE |
+| [public.risks](public.risks.md)                                                   | 17      |         | BASE TABLE |
 | [public.role_assignments](public.role_assignments.md)                             | 7       |         | BASE TABLE |
 | [public.substitute_providers](public.substitute_providers.md)                     | 10      |         | BASE TABLE |
 | [public.surveillance_events](public.surveillance_events.md)                       | 18      |         | BASE TABLE |
@@ -688,6 +688,7 @@ erDiagram
   text control_id
   timestamp_with_time_zone created_at
   text description
+  timestamp_with_time_zone due_date
   uuid finding_id FK
   uuid id
   text library_version
