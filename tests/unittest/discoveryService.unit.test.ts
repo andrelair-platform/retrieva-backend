@@ -12,21 +12,21 @@ vi.mock('../../config/logger.js', () => ({
 vi.mock('../../repositories/index.js', () => ({ providerGraphRepository: { listNodesByOrg: vi.fn() } }));
 vi.mock('../../services/auditLogService.js', () => ({ recordAudit: vi.fn() }));
 // Default: no source configured unless a test injects deps.listApps.
-vi.mock('../../config/okta.js', () => ({ getOktaConfig: vi.fn(() => null) }));
-vi.mock('../../config/authentik.js', () => ({ getAuthentikConfig: vi.fn(() => null) }));
+vi.mock('../../config/generic.js', () => ({ getOktaConfig: vi.fn(() => null) }));
+vi.mock('../../config/generic.js', () => ({ getAuthentikConfig: vi.fn(() => null) }));
 
 import { runDiscovery } from '../../services/discovery/discoveryService.js';
 import type { DiscoveredApp, DiscoverySource } from '../../services/discovery/types.js';
 import type { DiscoveredProposal } from '../../services/discovery/appToProposal.js';
 
 const ORG = 'org-1';
-const appOf = (id: string, label: string, source: DiscoverySource = 'okta'): DiscoveredApp => ({
+const appOf = (id: string, label: string, source: DiscoverySource = 'generic'): DiscoveredApp => ({
   id,
   label,
   name: label,
   source,
 });
-const proposalOf = (providerName: string, externalId: string, source: DiscoverySource = 'okta'): DiscoveredProposal => ({
+const proposalOf = (providerName: string, externalId: string, source: DiscoverySource = 'generic'): DiscoveredProposal => ({
   proposal: { providerName } as DiscoveredProposal['proposal'],
   provenance: { source, externalId, externalName: providerName },
 });
@@ -34,10 +34,10 @@ const proposalOf = (providerName: string, externalId: string, source: DiscoveryS
 beforeEach(() => vi.clearAllMocks());
 
 describe('runDiscovery', () => {
-  it('maps new apps to proposals and skips providers already registered (okta)', async () => {
+  it('maps new apps to proposals and skips providers already registered (generic)', async () => {
     const recordAuditFn = vi.fn();
     const res = await runDiscovery({
-      source: 'okta',
+      source: 'generic',
       organizationId: ORG,
       userId: 'u1',
       deps: {
@@ -48,39 +48,39 @@ describe('runDiscovery', () => {
       },
     });
 
-    expect(res.source).toBe('okta');
+    expect(res.source).toBe('generic');
     expect(res.configured).toBe(true);
     expect(res.discovered).toBe(2);
     expect(res.proposed).toBe(1);
     expect(res.proposals[0].proposal.providerName).toBe('Datadog');
     expect(res.skipped).toEqual([{ externalId: '1', externalName: 'Slack', reason: 'already-registered' }]);
     expect(recordAuditFn).toHaveBeenCalledWith(
-      expect.objectContaining({ organizationId: ORG, action: 'discovery.okta.run' })
+      expect.objectContaining({ organizationId: ORG, action: 'discovery.generic.run' })
     );
   });
 
-  it('works for the authentik source and keys the audit action by source', async () => {
+  it('works for the generic source and keys the audit action by source', async () => {
     const recordAuditFn = vi.fn();
     const res = await runDiscovery({
-      source: 'authentik',
+      source: 'generic',
       organizationId: ORG,
       deps: {
-        listApps: async () => [appOf('ak-1', 'Grafana', 'authentik')],
+        listApps: async () => [appOf('ak-1', 'Grafana', 'generic')],
         listExistingProviders: async () => [],
-        mapApp: async (a) => proposalOf(a.label, a.id, 'authentik'),
+        mapApp: async (a) => proposalOf(a.label, a.id, 'generic'),
         recordAuditFn,
       },
     });
-    expect(res.source).toBe('authentik');
+    expect(res.source).toBe('generic');
     expect(res.proposed).toBe(1);
     expect(recordAuditFn).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'discovery.authentik.run' })
+      expect.objectContaining({ action: 'discovery.generic.run' })
     );
   });
 
   it('dedupes two apps that map to the same provider within one batch', async () => {
     const res = await runDiscovery({
-      source: 'okta',
+      source: 'generic',
       organizationId: ORG,
       deps: {
         listApps: async () => [appOf('1', 'AWS SSO'), appOf('2', 'AWS Console')],
@@ -96,7 +96,7 @@ describe('runDiscovery', () => {
   it('skips apps already in the inbox (knownExternalIds) → idempotent re-runs', async () => {
     const mapApp = vi.fn(async (a) => proposalOf(a.label, a.id));
     const res = await runDiscovery({
-      source: 'authentik',
+      source: 'generic',
       organizationId: ORG,
       deps: {
         listApps: async () => [appOf('1', 'Datadog'), appOf('2', 'Grafana')],
@@ -114,7 +114,7 @@ describe('runDiscovery', () => {
   it('dry-run does not record an audit entry', async () => {
     const recordAuditFn = vi.fn();
     const res = await runDiscovery({
-      source: 'okta',
+      source: 'generic',
       organizationId: ORG,
       dryRun: true,
       deps: {
@@ -130,9 +130,9 @@ describe('runDiscovery', () => {
   });
 
   it('returns configured:false when the source is not configured and no deps are injected', async () => {
-    const res = await runDiscovery({ source: 'authentik', organizationId: ORG });
+    const res = await runDiscovery({ source: 'generic', organizationId: ORG });
     expect(res).toEqual({
-      source: 'authentik',
+      source: 'generic',
       configured: false,
       dryRun: false,
       discovered: 0,
