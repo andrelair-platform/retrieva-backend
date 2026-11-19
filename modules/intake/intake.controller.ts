@@ -18,12 +18,14 @@ import {
 } from '../../services/intake/arrangementProposalWorkflow.js';
 import { summarizeControlTouchpoints } from '../../services/intake/controlTouchpoints.js';
 import { parseEstateSheet, importEstate } from '../../services/intake/estateImport.js';
+import { triageDocuments, type TriageInput, type VendorRef } from '../../services/intake/documentTriage.js';
 import {
   legalEntityRepository,
   businessFunctionRepository,
   ictServiceRepository,
   providerGraphRepository,
   arrangementProposalRepository,
+  arrangementRepository,
 } from '../../repositories/index.js';
 import { can } from '../../services/security/can.js';
 
@@ -318,5 +320,59 @@ export const importEstateFromFile = catchAsync(async (req: Request, res: Respons
   sendSuccess(res, dryRun ? 200 : 201, verb, {
     ...summary,
     source: { fileName: req.file.originalname, rows: rows.length },
+  });
+});
+
+// POST /api/v1/arrangements/intake/documents/triage — bulk document → vendor/category mapping (onboarding).
+// Body: { files: [{ filename, relativePath? }] }. Name-only + stateless (no upload here) → proposes which
+// register vendor (arrangement) + DORA evidence category each document belongs to, so the human confirms a
+// grid and then ingests the files through the existing per-arrangement evidence endpoint. Nothing persisted.
+export const triageDocumentsHandler = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+
+  const raw = Array.isArray(req.body?.files) ? req.body.files : [];
+  if (raw.length === 0) {
+    return sendError(res, 400, 'Provide a non-empty "files" array of { filename, relativePath? }');
+  }
+  if (raw.length > 1000) return sendError(res, 413, 'Too many files in one triage batch (max 1000)');
+  const inputs: TriageInput[] = raw
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter((f: any) => f && typeof f.filename === 'string' && f.filename.trim())
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((f: any) => ({
+      filename: String(f.filename),
+      relativePath: f.relativePath ? String(f.relativePath) : undefined,
+    }));
+
+  // Resolve the org's vendors (one per arrangement, with its provider display name) for name matching.
+  const [arrangements, providers, functions] = await Promise.all([
+    arrangementRepository.listByOrg(organizationId),
+    providerGraphRepository.listNodesByOrg(organizationId),
+    businessFunctionRepository.listByOrg(organizationId),
+  ]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const providerName = new Map<string, string>(providers.map((p: any) => [p.id, String(p.displayName ?? p.name ?? '')]));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fnName = new Map<string, string>(functions.map((f: any) => [f.id, String(f.name ?? '')]));
+  const vendors: VendorRef[] = arrangements
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((a: any) => {
+      const pn = providerName.get(a.providerId) ?? '';
+      const bf = a.businessFunctionId ? fnName.get(a.businessFunctionId) : undefined;
+      return { arrangementId: a.id, providerName: pn, businessFunctionName: bf, label: bf ? `${pn} / ${bf}` : pn };
+    })
+    .filter((v: VendorRef) => v.providerName);
+
+  const proposals = triageDocuments(inputs, vendors);
+  const matched = proposals.filter((p) => p.proposedArrangementId).length;
+  sendSuccess(res, 200, 'Document triage proposals', {
+    proposals,
+    counts: {
+      total: proposals.length,
+      matched,
+      unmatched: proposals.length - matched,
+      vendors: vendors.length,
+    },
   });
 });
