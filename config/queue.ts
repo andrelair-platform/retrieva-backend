@@ -18,9 +18,6 @@ const connection = redisConnection as unknown as ConnectionOptions;
 const MONITORING_INTERVAL_HOURS = parseInt(process.env.MONITORING_INTERVAL_HOURS || '', 10) || 24;
 const REASSESSMENT_SCAN_INTERVAL_HOURS =
   parseInt(process.env.REASSESSMENT_SCAN_INTERVAL_HOURS || '', 10) || 24;
-// RTV-91d — opt-in repeatable discovery sweep. Off unless DISCOVERY_SCHEDULE_ENABLED=true.
-const DISCOVERY_SCHEDULE_ENABLED = process.env.DISCOVERY_SCHEDULE_ENABLED === 'true';
-const DISCOVERY_SCHEDULE_HOURS = parseInt(process.env.DISCOVERY_SCHEDULE_HOURS || '', 10) || 24;
 // RTV-93 — opt-in repeatable register-completeness audit. Off unless COMPLETENESS_SCHEDULE_ENABLED=true.
 const COMPLETENESS_SCHEDULE_ENABLED = process.env.COMPLETENESS_SCHEDULE_ENABLED === 'true';
 const COMPLETENESS_SCHEDULE_HOURS = parseInt(process.env.COMPLETENESS_SCHEDULE_HOURS || '', 10) || 24;
@@ -269,40 +266,20 @@ export async function schedulePeriodicReassessmentJob() {
 }
 
 /**
- * Schedule the repeatable discovery sweep (RTV-91d). OPT-IN: only registers a repeatable job when
- * DISCOVERY_SCHEDULE_ENABLED=true; otherwise it REMOVES any existing repeatable (so toggling it off
- * is effective on the next boot). Every DISCOVERY_SCHEDULE_HOURS (default 24h) the fan-out job
- * (`discovery-scheduled-sweep`) enqueues a sweep per configured source for DISCOVERY_SCHEDULE_ORG_ID
- * (see workers/discoveryWorker.ts → runScheduledSweep).
+ * Clean up the (now-removed) scheduled discovery sweep. The live system-access connectors + their
+ * repeatable auto-sweep were removed (enterprises don't grant direct system access); this removes any
+ * `discovery-scheduled-sweep` repeatable left over from a previous deploy, so the queue has no job the
+ * worker no longer handles. Estate ingestion is now tenant-initiated only (upload → confirm).
  */
 export async function scheduleDiscoverySweep() {
   const jobName = 'discovery-scheduled-sweep';
-
   const existingJobs = await withTimeout(discoveryQueue.getRepeatableJobs(), QUEUE_OP_TIMEOUT);
   for (const job of existingJobs) {
     if (job.name === jobName) {
       await withTimeout(discoveryQueue.removeRepeatableByKey(job.key), QUEUE_OP_TIMEOUT);
     }
   }
-
-  if (!DISCOVERY_SCHEDULE_ENABLED) {
-    logger.info('Discovery sweep schedule disabled (DISCOVERY_SCHEDULE_ENABLED != true)', { service: 'queue' });
-    return;
-  }
-
-  await withTimeout(
-    discoveryQueue.add(
-      jobName,
-      { scheduled: true },
-      {
-        repeat: { every: DISCOVERY_SCHEDULE_HOURS * 60 * 60 * 1000 },
-        jobId: 'discovery-scheduled-sweep',
-      }
-    ),
-    QUEUE_OP_TIMEOUT
-  );
-
-  logger.info('Discovery sweep scheduled', { service: 'queue', intervalHours: DISCOVERY_SCHEDULE_HOURS });
+  logger.info('Discovery scheduled-sweep disabled (connectors removed; estate ingestion is tenant-initiated)', { service: 'queue' });
 }
 
 /**

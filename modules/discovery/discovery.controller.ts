@@ -1,63 +1,21 @@
 import type { Request, Response } from 'express';
 import { catchAsync, sendSuccess, sendError } from '../../utils/index.js';
-import { isSourceConfigured } from '../../services/discovery/discoveryService.js';
 import { enqueueDiscoveryRun } from '../../services/discovery/enqueue.js';
 import { discoveryRepository } from '../../repositories/index.js';
 import { confirmProposal } from '../../services/intake/arrangementIntakeService.js';
 import { ingestGeneric } from '../../services/discovery/genericIngestion.js';
-import type { DiscoverySource } from '../../services/discovery/types.js';
 
-// Discovery connectors (RTV-91) — ORG-scoped. A connector sweeps a source system and PROPOSES
-// arrangements; nothing is written to the register until a human confirms. The sweep runs ASYNC
-// (RTV-91c): the API enqueues a job + returns a runId; a worker runs the (slow, many-app) sweep and
-// writes the result to discovery_runs + the proposal inbox, polled via the endpoints below.
+// Estate ingestion (RTV-91/106) — ORG-scoped. The tenant UPLOADS an export (CSV/XLSX/JSON) they
+// exported from their own tool; the LLM normalises it to PROPOSED arrangements for a human to confirm.
+// Nothing is written to the register until confirmed, and nothing connects to the tenant's systems. The
+// run is ASYNC: the API enqueues a job + returns a runId; a worker writes the result to discovery_runs +
+// the proposal inbox, polled via the endpoints below.
 const orgId = (req: Request) => req.user?.organizationId as string;
 const requireOrg = (req: Request, res: Response) => {
   const id = orgId(req);
   if (!id) sendError(res, 400, 'No organization context for this user');
   return id;
 };
-
-const ENV_HINT: Record<DiscoverySource, string> = {
-  okta: 'OKTA_ORG_URL and OKTA_API_TOKEN',
-  authentik: 'AUTHENTIK_BASE_URL and AUTHENTIK_API_TOKEN',
-  erpnext: 'ERPNEXT_BASE_URL, ERPNEXT_API_KEY and ERPNEXT_API_SECRET',
-  generic: 'an uploaded CSV/XLSX file or a pasted JSON array (no env needed)',
-  rest: 'DISCOVERY_REST_CONFIG (a JSON secret: baseUrl, listPath, auth, recordsPath, mapping)',
-  scim: 'DISCOVERY_SCIM_CONFIG (a JSON secret: baseUrl, listPath, auth)',
-  odata: 'DISCOVERY_ODATA_CONFIG (a JSON secret: baseUrl, listPath, auth)',
-};
-
-/** One enqueue handler per source — same rails, different adapter. Returns 202 + the runId to poll. */
-function makeRun(source: DiscoverySource) {
-  return catchAsync(async (req: Request, res: Response) => {
-    const organizationId = requireOrg(req, res);
-    if (!organizationId) return;
-
-    if (!isSourceConfigured(source)) {
-      return sendError(res, 503, `${source} discovery is not configured (set ${ENV_HINT[source]})`);
-    }
-
-    const dryRun = req.query.dryRun === 'true' || req.body?.dryRun === true;
-    const run = await enqueueDiscoveryRun({ organizationId, source, userId: req.user!.userId, dryRun });
-
-    sendSuccess(res, 202, `${source} discovery queued`, {
-      runId: run.id,
-      status: run.status,
-      source,
-      dryRun,
-      poll: `/api/v1/discovery/runs/${run.id}`,
-    });
-  });
-}
-
-export const oktaRun = makeRun('okta');
-export const authentikRun = makeRun('authentik');
-export const erpnextRun = makeRun('erpnext');
-// Standard-protocol connectors (RTV-107) — same async rails; 503 if the protocol's config secret is unset.
-export const restRun = makeRun('rest');
-export const scimRun = makeRun('scim');
-export const odataRun = makeRun('odata');
 
 // GET /api/v1/discovery/runs — recent sweeps for the org.
 export const listRuns = catchAsync(async (req: Request, res: Response) => {

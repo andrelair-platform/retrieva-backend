@@ -1,65 +1,24 @@
 /**
- * Discovery orchestrator (RTV-91) — source-agnostic.
+ * Discovery orchestrator (RTV-91/106) — tenant-provided only.
  *
- * Sweeps a source system (Okta, Authentik, …), maps each app to a PROPOSED arrangement, dedupes
- * against the arrangements already registered (and within the batch), and returns the proposals for a
- * human to confirm via `/api/v1/arrangements/intake/confirm`. It NEVER writes an arrangement —
- * "autonomous discovery & drafting, never autonomous sign-off". `dryRun` suppresses the audit-log
- * record, so a dry run is fully side-effect-free.
+ * Takes the apps a tenant UPLOADED (a CSV/XLSX/JSON export they exported from their own tool,
+ * LLM-normalised — see genericIngestion), maps each to a PROPOSED arrangement, dedupes against the
+ * arrangements already registered (and within the batch), and returns the proposals for a human to
+ * confirm via `/api/v1/arrangements/intake/confirm`. It NEVER writes an arrangement, and it NEVER
+ * connects to a tenant's systems — the apps are always injected via `deps.listApps` (the worker passes
+ * the job's normalised, tenant-uploaded apps). `dryRun` suppresses the audit-log record.
  *
- * Adding a source = one entry in CLIENTS. Every collaborator is injectable (listApps / mapApp /
- * listExistingProviders / recordAudit) so the whole flow unit-tests with no network, model, or DB.
+ * (Live system-access connectors — Okta/Authentik/ERPNext/SCIM/OData/REST — were removed: enterprises
+ * do not grant an external SaaS direct access to their systems. The realistic path is tenant-provided
+ * data: a vendor-list import, document upload, or an export the tenant hands over.)
  */
 import logger from '../../config/logger.js';
-import { getOktaConfig } from '../../config/okta.js';
-import { getAuthentikConfig } from '../../config/authentik.js';
-import { getErpnextConfig } from '../../config/erpnext.js';
-import { listOktaApps } from './oktaClient.js';
-import { listAuthentikApps } from './authentikClient.js';
-import { listErpnextApps } from './erpnextClient.js';
-import { listRestApps, listScimApps, listOdataApps } from './protocolClient.js';
-import { isProtocolConfigured } from '../../config/protocolDiscovery.js';
 import { mapAppToProposal, type DiscoveredProposal } from './appToProposal.js';
 import type { DiscoveredApp, DiscoverySource } from './types.js';
 import { providerGraphRepository } from '../../repositories/index.js';
 import { recordAudit } from '../auditLogService.js';
 
 const norm = (s: unknown) => String(s || '').trim().toLowerCase();
-
-/** The source registry — each source knows if it's configured and how to list its apps. */
-const CLIENTS: Record<
-  DiscoverySource,
-  { isConfigured: () => boolean; listApps: () => Promise<DiscoveredApp[]> }
-> = {
-  okta: { isConfigured: () => getOktaConfig() !== null, listApps: () => listOktaApps() },
-  authentik: {
-    isConfigured: () => getAuthentikConfig() !== null,
-    listApps: () => listAuthentikApps(),
-  },
-  erpnext: {
-    isConfigured: () => getErpnextConfig() !== null,
-    listApps: () => listErpnextApps(),
-  },
-  // Generic AI-ingestion (RTV-106) is upload-driven, not env-configured: it NEVER lists a live source.
-  // The apps come from the parsed+LLM-normalised upload, injected via `deps.listApps` (the worker passes
-  // the job's normalised apps). isConfigured=false so the plain source route can't trigger it blindly.
-  generic: {
-    isConfigured: () => false,
-    listApps: () => {
-      throw new Error('generic discovery requires an uploaded/pasted dataset (deps.listApps)');
-    },
-  },
-  // Standard-protocol connectors (RTV-107) — config-driven (one JSON secret per protocol); isConfigured
-  // reflects whether that protocol's config is present.
-  rest: { isConfigured: () => isProtocolConfigured('rest'), listApps: () => listRestApps() },
-  scim: { isConfigured: () => isProtocolConfigured('scim'), listApps: () => listScimApps() },
-  odata: { isConfigured: () => isProtocolConfigured('odata'), listApps: () => listOdataApps() },
-};
-
-/** Whether a source's connector is configured (env present) — the controller 503s early if not. */
-export function isSourceConfigured(source: DiscoverySource): boolean {
-  return CLIENTS[source].isConfigured();
-}
 
 export interface SkippedApp {
   externalId: string;
@@ -100,13 +59,12 @@ export async function runDiscovery({
   dryRun = false,
   deps = {},
 }: RunDiscoveryArgs): Promise<DiscoveryResult> {
-  const client = CLIENTS[source];
-  const configured = Boolean(deps.listApps) || client.isConfigured();
-  if (!configured) {
+  // The apps are always tenant-provided (uploaded + LLM-normalised), injected via deps.listApps.
+  if (!deps.listApps) {
     return { source, configured: false, dryRun, discovered: 0, proposed: 0, proposals: [], skipped: [] };
   }
 
-  const listApps = deps.listApps ?? client.listApps;
+  const listApps = deps.listApps;
   const mapApp =
     deps.mapApp ?? ((app: DiscoveredApp, sessionId: string) => mapAppToProposal(app, { sessionId }));
   const listExistingProviders =

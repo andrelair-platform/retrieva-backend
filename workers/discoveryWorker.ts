@@ -1,21 +1,17 @@
-// Discovery worker (RTV-91c/d) — runs discovery sweeps OFF the request path. Two job types on the
-// `discoveryJobs` queue:
-//   • `run-discovery`            — one org+source sweep (API- or scheduler-enqueued) → processDiscoveryJob
-//   • `discovery-scheduled-sweep`— the repeatable fan-out (RTV-91d) → runScheduledSweep
-// A sweep runs in the caller's entity scope (so dedup is isolated exactly as the request path was); a
-// SYSTEM run (no user → scheduled) runs org-wide. Re-runs are idempotent — apps already in the inbox
-// are skipped. Governance is unchanged: nothing is written to the register; a human confirms.
+// Estate-ingestion worker (RTV-91c/106) — runs the `run-discovery` job on the `discoveryJobs` queue OFF
+// the request path: processDiscoveryJob takes a TENANT-UPLOADED, LLM-normalised dataset and turns it into
+// proposals for a human to confirm. A run uses the caller's entity scope (dedup isolated as the request
+// path was); re-runs are idempotent (apps already in the inbox are skipped). Governance: nothing is
+// written to the register; a human confirms. (The scheduled auto-sweep over live connectors was removed.)
 import { Worker, type ConnectionOptions, type Job } from 'bullmq';
 import { redisConnection } from '../config/redis.js';
 import { discoveryRepository } from '../repositories/index.js';
-import { runDiscovery, isSourceConfigured } from '../services/discovery/discoveryService.js';
-import { enqueueDiscoveryRun } from '../services/discovery/enqueue.js';
+import { runDiscovery } from '../services/discovery/discoveryService.js';
 import { resolveEntityScope } from '../services/security/entityScope.js';
 import { runWithEntityScope, type EntityScope } from '../db/entityContext.js';
 import { connectPg } from '../config/db.js';
 import logger from '../config/logger.js';
 import type { DiscoveryJobData, DiscoveryRunJobData } from '../types/jobs.js';
-import type { DiscoverySource } from '../services/discovery/types.js';
 
 connectPg().catch((err: unknown) =>
   logger.error('Discovery worker: DB connection failed', {
@@ -99,43 +95,9 @@ export async function processDiscoveryJob(job: Job<DiscoveryRunJobData>, deps: P
   }
 }
 
-export interface ScheduledSweepDeps {
-  enqueueFn?: typeof enqueueDiscoveryRun;
-  isConfiguredFn?: typeof isSourceConfigured;
-  orgId?: string;
-}
-
-/**
- * The repeatable fan-out (RTV-91d): enqueue a (system) real-run for the scheduled org + each configured
- * source. The scheduled org is `DISCOVERY_SCHEDULE_ORG_ID` (connector creds are a single platform-level
- * credential today). No-op (logged) when it isn't set. Injectable for tests.
- */
-export async function runScheduledSweep(deps: ScheduledSweepDeps = {}) {
-  const enqueue = deps.enqueueFn ?? enqueueDiscoveryRun;
-  const isConfigured = deps.isConfiguredFn ?? isSourceConfigured;
-  const orgId = deps.orgId ?? process.env.DISCOVERY_SCHEDULE_ORG_ID;
-  if (!orgId) {
-    logger.warn('discovery.schedule.skipped', { service: 'discovery-worker', reason: 'no DISCOVERY_SCHEDULE_ORG_ID' });
-    return { skipped: true as const };
-  }
-  const sources = (['okta', 'authentik'] as DiscoverySource[]).filter((s) => isConfigured(s));
-  const runs: string[] = [];
-  for (const source of sources) {
-    const run = await enqueue({ organizationId: orgId, source, userId: null, dryRun: false });
-    runs.push(run.id);
-  }
-  logger.info('discovery.schedule.fanned-out', {
-    service: 'discovery-worker', orgId, sources, runs: runs.length,
-  });
-  return { orgId, sources, runs };
-}
-
 const worker = new Worker<DiscoveryJobData>(
   'discoveryJobs',
-  async (job) => {
-    if (job.name === 'discovery-scheduled-sweep') return runScheduledSweep();
-    return processDiscoveryJob(job as Job<DiscoveryRunJobData>);
-  },
+  async (job) => processDiscoveryJob(job as Job<DiscoveryRunJobData>),
   {
     connection: redisConnection as unknown as ConnectionOptions,
     concurrency: CONCURRENCY,

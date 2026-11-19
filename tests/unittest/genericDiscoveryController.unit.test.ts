@@ -13,7 +13,6 @@ const { ingestGeneric, enqueueDiscoveryRun } = vi.hoisted(() => ({
 }));
 vi.mock('../../services/discovery/genericIngestion.js', () => ({ ingestGeneric }));
 vi.mock('../../services/discovery/enqueue.js', () => ({ enqueueDiscoveryRun }));
-vi.mock('../../services/discovery/discoveryService.js', () => ({ isSourceConfigured: vi.fn(() => true) }));
 vi.mock('../../repositories/index.js', () => ({ discoveryRepository: {} }));
 vi.mock('../../services/intake/arrangementIntakeService.js', () => ({ confirmProposal: vi.fn() }));
 
