@@ -23,6 +23,9 @@ arrangements (and the proportionality gate itself), **medium** otherwise.
 | **Provider** (third-party) | critical/important but **no nth-party (sub-chain) dependencies mapped** | `unmapped_subchain` |
 | **Provider** (sub-chain edge) | a known nth-party dependency **not yet confirmed** by a human | `unconfirmed_subchain` |
 | **Arrangement** | governing contract/evidence **expired** (high on a CIF, else medium) or **expiring within 30 days** (medium) | `contract_expiry` |
+| **Legal entity / Provider** | a recorded **LEI** is malformed (fails ISO 17442 structure or the ISO 7064 mod 97-10 checksum) | `invalid_format` |
+| **Legal entity** | a recorded **country** is not an ISO 3166-1 alpha-2 code | `invalid_format` |
+| **Arrangement / sub-chain edge** | a **cross-template reference dangles** (an arrangement's maintaining entity / provider, or an nth-party edge endpoint, is absent from the register) | `referential_integrity` |
 
 **Contract expiry (the `contract_expiry` rule).** A current contract is a DORA Art. 28/30 register
 obligation, so a lapsed one is a gap the register should surface before a regulator does. The arrangement
@@ -36,6 +39,26 @@ The rule is pure — the reference `now` is injected, so it's deterministic in t
 > This complements, and is finer-grained than, the workspace-level contract-renewal email nudge in
 > `alertMonitorService` (that's a 60-day workspace heads-up; this is a per-arrangement register gap in
 > the continuous audit).
+
+### ESA data-quality checks (`services/completeness/esaDataQuality.ts`)
+
+Beyond "is the field present?", the audit also runs the **ESA/EBA data-quality validation families** the
+Register of Information is actually filed against (ITS 2024/2956) — a value that *is* present must also be
+**well-formed** and **consistent**:
+
+- **Identifier validity** — a recorded **LEI** must match the ISO 17442 structure (18 alphanumerics + 2
+  check digits) **and** satisfy the **ISO 7064 mod 97-10 checksum**, not merely be non-empty.
+- **Code-list validity** — a recorded **country** must be an **ISO 3166-1 alpha-2** code.
+- **Referential integrity** — cross-template references must resolve: an arrangement's maintaining legal
+  entity (RT.02.01 → RT.01.01) and its provider (→ RT.03/RT.04), and every nth-party edge's endpoints,
+  must exist in the register. References resolve against the **full** provider-node set (external +
+  workspace), so a workspace-kind vendor node is never false-flagged as dangling.
+
+Each finding carries its **check id + ITS reference** in its `detail` (the catalogue `ESA_CHECKS` maps
+`checkId → {family, itsRef, description}`) so a gap is traceable back to the rule and the regulation — no
+schema change (the `gap_type`/`field`/`detail` columns are growable text; this adds the `invalid_format` +
+`referential_integrity` gap types). **Honest scope:** the families applicable to the current data model
+are covered; ESA checks over non-modelled fields (monetary amounts, specific contract dates) are **N/A**.
 
 ## Flow (async)
 
@@ -106,7 +129,8 @@ org (a `readAcross` entity scope) rather than an empty default-deny one.
 | File | Role |
 |---|---|
 | `services/completeness/types.ts` | the normalised snapshot shapes + `CompletenessFinding` |
-| `services/completeness/rules.ts` | the pure gap rules (one per class) + `auditRegister` |
+| `services/completeness/rules.ts` | the pure gap rules (one per class) + `auditRegister` (runs the ESA checks too) |
+| `services/completeness/esaDataQuality.ts` | the pure ESA data-quality checks (LEI/country/referential integrity) + the `ESA_CHECKS` catalogue |
 | `services/completeness/completenessService.ts` | orchestrator — `runCompletenessAudit` (dedup + tally); `findingKey` |
 | `services/completeness/enqueue.ts` | create the run + add the BullMQ job (shared API + scheduler) |
 | `config/queue.ts` · `types/jobs.ts` | the `completenessJobs` queue + `CompletenessJobData` |
