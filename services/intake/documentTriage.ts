@@ -169,6 +169,42 @@ export function matchVendor(input: TriageInput, vendors: VendorRef[]): {
   return { arrangementId: null, providerName: null, confidence: 0, matchSource: 'none' };
 }
 
+/**
+ * Content fallback (Layer 2): match a provider NAME extracted from a document's text (by the LLM) to a
+ * register vendor — for files the name/folder pass left unassigned. Pure: exact canonical match → full
+ * name contained either way → distinctive token; CANDIDATES when >1 vendor shares the name/token.
+ */
+export function matchExtractedProvider(extractedName: string | null | undefined, vendors: VendorRef[]): {
+  arrangementId: string | null;
+  providerName: string | null;
+  confidence: number;
+  candidates?: TriageCandidate[];
+} {
+  const ex = norm(extractedName);
+  if (!ex) return { arrangementId: null, providerName: null, confidence: 0 };
+  const indexed = vendors.map((v) => ({ v, canon: norm(v.providerName) })).filter((x) => x.canon);
+
+  const exact = indexed.filter((x) => x.canon === ex);
+  if (exact.length === 1) return { arrangementId: exact[0].v.arrangementId, providerName: exact[0].v.providerName, confidence: 0.9 };
+  if (exact.length > 1) {
+    return { arrangementId: null, providerName: null, confidence: 0.5, candidates: exact.map((x) => ({ arrangementId: x.v.arrangementId, providerName: x.v.providerName, label: x.v.label })) };
+  }
+
+  // one name contains the other (e.g. extracted "Microsoft Ireland" vs vendor "Microsoft")
+  const contained = indexed.filter((x) => (ex.includes(x.canon) || x.canon.includes(ex)) && Math.min(ex.length, x.canon.length) >= 3);
+  if (contained.length === 1) return { arrangementId: contained[0].v.arrangementId, providerName: contained[0].v.providerName, confidence: 0.75 };
+
+  // a distinctive token in common
+  const exTokens = new Set(tokens(ex));
+  const tokenHits = indexed.filter((x) => tokens(x.v.providerName).some((t) => exTokens.has(t)));
+  if (tokenHits.length === 1) return { arrangementId: tokenHits[0].v.arrangementId, providerName: tokenHits[0].v.providerName, confidence: 0.6 };
+  if (contained.length > 1 || tokenHits.length > 1) {
+    const cands = (contained.length > 1 ? contained : tokenHits).map((x) => ({ arrangementId: x.v.arrangementId, providerName: x.v.providerName, label: x.v.label }));
+    return { arrangementId: null, providerName: null, confidence: 0.4, candidates: cands };
+  }
+  return { arrangementId: null, providerName: null, confidence: 0 };
+}
+
 /** Triage a batch of documents → one proposal each. Pure; the caller supplies the register's vendors. */
 export function triageDocuments(inputs: TriageInput[], vendors: VendorRef[]): TriageProposal[] {
   return inputs.map((input) => {
