@@ -41,13 +41,17 @@ Delivery pipeline for this repo:
 
 ```
  push main ──▶ GitHub Actions (build.yml)
-              │ build ─▶ Harbor (dev)  +  ghcr.io/andrelair-platform/retrieva-backend:<sha>
-              │ cosign sign + SBOM (main)
+              │ build ─▶ ghcr.io/andrelair-platform/retrieva-backend:<sha>
+              │ cosign keyless sign + CycloneDX SBOM (main)
               ▼
-        Kargo (minicloud-gitops)  ── image Warehouse ─▶ dev Stage (auto) ─▶ prod Stage (CODEOWNERS)
+        Kargo (minicloud-gitops)  ── git Warehouse ─▶ dev Stage (auto) ─▶ prod Stage (CODEOWNERS)
               ▼
         ArgoCD ─▶ retrieva-{dev,prod} (k3s)
 ```
+
+> Registry note: **ghcr.io is the only registry** (dev + prod); Harbor was decommissioned
+> (2026-11-16). Kargo uses a **git Warehouse** (Freight keyed on the commit SHA) because Retrieva is a
+> multi-image product (backend + frontend + crew) promoted together as a product release.
 
 | Concern | Choice |
 |---|---|
@@ -57,7 +61,7 @@ Delivery pipeline for this repo:
 | Vector store | Qdrant |
 | Queue / cache | Redis + BullMQ |
 | LLM | LangChain via the LiteLLM gateway; Langfuse tracing |
-| Registry | Harbor (dev) + ghcr (prod, SHA-pinned) |
+| Registry | ghcr.io (dev + prod, SHA-pinned) — Harbor decommissioned 2026-11-16 |
 | GitOps | ArgoCD + Kargo (`minicloud-gitops/services/retrieva`) |
 
 ## Getting Started
@@ -77,8 +81,8 @@ Copy `.env.example` → `.env` and fill in local values. Production env is SOPS-
 
 ## CI/CD Pipeline
 
-- **`ci.yml`** (push/PR to main): lint + `tsc --noEmit` + vitest (Postgres + Redis services) + a Docker build check.
-- **`build.yml`** (push to main): dual-push Harbor + ghcr, cosign keyless sign + CycloneDX SBOM.
+- **`ci.yml`** (push/PR to main): lint + `tsc --noEmit` + vitest L0–L2 (Postgres + Redis services; integration uses a real Postgres) + a Docker build check.
+- **`build.yml`** (push to main): build + push to ghcr, cosign keyless sign + CycloneDX SBOM.
 - **`release.yml`**: release-please opens/merges release PRs (SemVer from conventional commits).
 - **`bmad-sync.yml`**: syncs backend-scoped BMAD stories to GitHub Issues (Retrieva board #2).
 
@@ -87,17 +91,52 @@ Deployment is GitOps — Kargo promotes the `main` image dev→prod; prod is COD
 
 | Secret | Purpose |
 |---|---|
-| `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET` | Tailscale access to Harbor (org-level) |
-| `MINICLOUD_CA_CERT` | trust the minicloud CA for Harbor TLS |
-| `HARBOR_USER` / `HARBOR_PASSWORD` | Harbor push (org-level) |
+| `MINICLOUD_CA_CERT` | baked into the image at build (CA trust) via a `CA_CERT` build-arg |
+| `GITOPS_TOKEN` | `write:packages` PAT (ghcr push where the package is linked to minicloud-gitops) |
+| `GPG_PRIVATE_KEY` | signed commits / artifacts |
+
+## DORA capabilities (the TPRM engine)
+
+Retrieva covers the **financial entity's side of DORA Pillar 4 (ICT third-party risk management)** —
+the arrangement graph *is* the Register of Information, and the lifecycle (discover → classify & assess
+→ evidence & decide → register & monitor) is a coherent, human-in-the-loop workflow. Notable engine
+capabilities:
+
+- **Evidence-grounded assessment** — control-library-driven gap analysis (AI drafts, cited; a human
+  checker decides under maker≠checker SoD) + the agentic supervisor/CrewAI orchestration.
+- **Register of Information** — RT.01–04 + B_01/02 projection with completeness auditing, and **ESA
+  data-quality checks** (LEI ISO 17442 + ISO 7064 checksum, ISO 3166 country, cross-template
+  referential integrity — traced to ITS 2024/2956).
+- **Intelligent finding routing** — an approved gap is routed to the owning party by control domain
+  (security / DPO / legal / ICT-risk), escalating to the management-body delegate on a severe
+  critical/important finding, and the holders are notified.
+- **Event-driven re-assessment** — a material change (subprocessor added/removed, data-residency move)
+  on re-ingestion reopens the arrangement for a fresh assessment (the change trigger, twin of the
+  periodic cadence).
+- **Audit readiness** — an on-demand, tamper-evident **evidence pack** per arrangement + a readiness
+  **dashboard** (overdue reassessments, evidence freshness, register coverage, upcoming deadlines).
+- **Continuous monitoring** — CTPP surveillance (status-page incidents + CVE feeds) + periodic
+  re-assessment.
 
 ## Endpoints
+
+The full, authoritative API surface is the auto-generated OpenAPI spec — **Swagger UI at `/api-docs`**
+(JSON at `/api-docs.json`). A non-exhaustive map of the main areas:
 
 | Method | Path | Description |
 |---|---|---|
 | GET | `/health` | Liveness/readiness probe |
-| * | `/api/v1/**` | Application API (auth, RAG, assessments, conversations) |
-| GET | `/api-docs` | Swagger/OpenAPI UI |
+| * | `/api/v1/auth/**` | Authentication (login, refresh, MFA, sessions) |
+| * | `/api/v1/arrangements/**` | Arrangement graph CRUD + governed intake (propose → check → approve) |
+| * | `/api/v1/assessments/**`, `/api/v1/assessment-runs/**` | Control assessment + agentic runs |
+| * | `/api/v1/decision-queue/**` | Decision inbox — draft findings + open risks (carries the routed role) |
+| * | `/api/v1/register/**` | Register of Information projection + export (RT.01–04) |
+| * | `/api/v1/register-completeness/**` | Register data-quality audit (incl. the ESA checks) |
+| * | `/api/v1/surveillance/**` | CTPP surveillance events (incidents, CVEs) |
+| GET | `/api/v1/reportability/dashboard` | Audit-readiness dashboard (overdue / freshness / coverage / deadlines) |
+| GET | `/api/v1/reportability/audit-pack/:arrangementId` | On-demand, tamper-evident audit evidence pack |
+| * | `/api/v1/reportability/**` | RoI reportability determinations (append-only, human-only) |
+| GET | `/api-docs`, `/api-docs.json` | Swagger/OpenAPI UI + spec |
 
 ## Environment variables
 
