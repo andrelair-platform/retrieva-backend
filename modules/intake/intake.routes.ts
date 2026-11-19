@@ -8,6 +8,7 @@ import {
   confirmIntake,
   importEstateFromFile,
   triageDocumentsHandler,
+  triageDocumentContentHandler,
   listIntakeProposals,
   getIntakeProposal,
   checkIntakeProposal,
@@ -45,5 +46,9 @@ router.post('/import', authenticate, estateUploadMiddleware, importEstateFromFil
 // POST /api/v1/arrangements/intake/documents/triage — propose vendor + DORA category for each uploaded
 // document by filename/folder (onboarding bulk-upload mapping). JSON body, nothing persisted.
 router.post('/documents/triage', authenticate, triageDocumentsHandler);
+
+// POST /api/v1/arrangements/intake/documents/triage-content — content fallback (Layer 2) for ONE file
+// unmatched by name: read the doc, extract the provider name, match to a vendor. Multipart (field: contract).
+router.post('/documents/triage-content', authenticate, contractUploadMiddleware, triageDocumentContentHandler);
 
 export default router;

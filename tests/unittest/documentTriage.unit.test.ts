@@ -7,6 +7,7 @@ import {
   norm,
   guessCategory,
   matchVendor,
+  matchExtractedProvider,
   triageDocuments,
   type VendorRef,
 } from '../../services/intake/documentTriage.js';
@@ -80,6 +81,38 @@ describe('triage matchVendor', () => {
   it('returns unassigned (none) when nothing matches', () => {
     const m = matchVendor({ filename: 'unknown-vendor-doc.pdf' }, vendors);
     expect(m).toMatchObject({ arrangementId: null, matchSource: 'none', confidence: 0 });
+  });
+});
+
+describe('triage matchExtractedProvider (Layer 2 — content fallback)', () => {
+  it('exact canonical name match', () => {
+    const m = matchExtractedProvider('Amazon Web Services', vendors);
+    expect(m).toMatchObject({ arrangementId: 'a-aws', providerName: 'Amazon Web Services' });
+    expect(m.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it('one name contains the other (extracted "Microsoft Ireland Ltd" vs vendor "Microsoft") → candidates', () => {
+    const m = matchExtractedProvider('Microsoft Ireland Ltd', vendors);
+    // two "Microsoft" arrangements share the name → ambiguous → candidates, not a single pick
+    expect(m.arrangementId).toBeNull();
+    expect(m.candidates?.map((c) => c.arrangementId).sort()).toEqual(['a-ms', 'a-ms2']);
+  });
+
+  it('contained match is unambiguous when only one vendor shares the name', () => {
+    const single: VendorRef[] = [{ arrangementId: 'a-stripe', providerName: 'Stripe' }];
+    const m = matchExtractedProvider('Stripe Payments Europe', single);
+    expect(m).toMatchObject({ arrangementId: 'a-stripe', confidence: 0.75 });
+  });
+
+  it('distinctive token match', () => {
+    const single: VendorRef[] = [{ arrangementId: 'a-dd', providerName: 'Datadog Inc' }];
+    expect(matchExtractedProvider('Datadog', single)).toMatchObject({ arrangementId: 'a-dd' });
+  });
+
+  it('no match → unassigned; empty extraction → unassigned', () => {
+    expect(matchExtractedProvider('Totally Unknown Vendor', vendors).arrangementId).toBeNull();
+    expect(matchExtractedProvider('', vendors)).toMatchObject({ arrangementId: null, confidence: 0 });
+    expect(matchExtractedProvider(null, vendors).arrangementId).toBeNull();
   });
 });
 

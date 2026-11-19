@@ -18,7 +18,12 @@ import {
 } from '../../services/intake/arrangementProposalWorkflow.js';
 import { summarizeControlTouchpoints } from '../../services/intake/controlTouchpoints.js';
 import { parseEstateSheet, importEstate } from '../../services/intake/estateImport.js';
-import { triageDocuments, type TriageInput, type VendorRef } from '../../services/intake/documentTriage.js';
+import {
+  triageDocuments,
+  matchExtractedProvider,
+  type TriageInput,
+  type VendorRef,
+} from '../../services/intake/documentTriage.js';
 import {
   legalEntityRepository,
   businessFunctionRepository,
@@ -327,6 +332,29 @@ export const importEstateFromFile = catchAsync(async (req: Request, res: Respons
 // Body: { files: [{ filename, relativePath? }] }. Name-only + stateless (no upload here) → proposes which
 // register vendor (arrangement) + DORA evidence category each document belongs to, so the human confirms a
 // grid and then ingests the files through the existing per-arrangement evidence endpoint. Nothing persisted.
+/** Resolve the org's vendors (one per arrangement, with its provider display name) for triage matching. */
+async function loadOrgVendors(organizationId: string): Promise<VendorRef[]> {
+  const [arrangements, providers, functions] = await Promise.all([
+    arrangementRepository.listByOrg(organizationId),
+    providerGraphRepository.listNodesByOrg(organizationId),
+    businessFunctionRepository.listByOrg(organizationId),
+  ]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const providerName = new Map<string, string>(providers.map((p: any) => [p.id, String(p.displayName ?? p.name ?? '')]));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fnName = new Map<string, string>(functions.map((f: any) => [f.id, String(f.name ?? '')]));
+  return (
+    arrangements
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((a: any) => {
+        const pn = providerName.get(a.providerId) ?? '';
+        const bf = a.businessFunctionId ? fnName.get(a.businessFunctionId) : undefined;
+        return { arrangementId: a.id, providerName: pn, businessFunctionName: bf, label: bf ? `${pn} / ${bf}` : pn };
+      })
+      .filter((v: VendorRef) => v.providerName)
+  );
+}
+
 export const triageDocumentsHandler = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
@@ -345,25 +373,7 @@ export const triageDocumentsHandler = catchAsync(async (req: Request, res: Respo
       relativePath: f.relativePath ? String(f.relativePath) : undefined,
     }));
 
-  // Resolve the org's vendors (one per arrangement, with its provider display name) for name matching.
-  const [arrangements, providers, functions] = await Promise.all([
-    arrangementRepository.listByOrg(organizationId),
-    providerGraphRepository.listNodesByOrg(organizationId),
-    businessFunctionRepository.listByOrg(organizationId),
-  ]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const providerName = new Map<string, string>(providers.map((p: any) => [p.id, String(p.displayName ?? p.name ?? '')]));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fnName = new Map<string, string>(functions.map((f: any) => [f.id, String(f.name ?? '')]));
-  const vendors: VendorRef[] = arrangements
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((a: any) => {
-      const pn = providerName.get(a.providerId) ?? '';
-      const bf = a.businessFunctionId ? fnName.get(a.businessFunctionId) : undefined;
-      return { arrangementId: a.id, providerName: pn, businessFunctionName: bf, label: bf ? `${pn} / ${bf}` : pn };
-    })
-    .filter((v: VendorRef) => v.providerName);
-
+  const vendors = await loadOrgVendors(organizationId);
   const proposals = triageDocuments(inputs, vendors);
   const matched = proposals.filter((p) => p.proposedArrangementId).length;
   sendSuccess(res, 200, 'Document triage proposals', {
@@ -374,5 +384,35 @@ export const triageDocumentsHandler = catchAsync(async (req: Request, res: Respo
       unmatched: proposals.length - matched,
       vendors: vendors.length,
     },
+  });
+});
+
+// POST /api/v1/arrangements/intake/documents/triage-content — content fallback (Layer 2) for ONE file
+// the name-based pass couldn't place: read the document's text, extract the provider name (LLM), and
+// match it to a register vendor. Multipart (field: contract). Nothing persisted — just a proposal.
+export const triageDocumentContentHandler = catchAsync(async (req: Request, res: Response) => {
+  const organizationId = requireOrg(req, res);
+  if (!organizationId) return;
+  if (!req.file) return sendError(res, 400, 'A document is required (field: contract)');
+
+  const ext = path.extname(req.file.originalname).replace('.', '').toLowerCase();
+  const text = await parseFile(req.file.buffer, ext, req.file.originalname);
+  if (!text || text.trim().length < 20) {
+    return sendError(res, 422, 'Could not extract readable text from the document');
+  }
+
+  const proposal = await extractArrangementProposal(text, { sessionId: organizationId });
+  const extractedName = typeof proposal?.providerName === 'string' ? proposal.providerName : '';
+  const vendors = await loadOrgVendors(organizationId);
+  const m = matchExtractedProvider(extractedName, vendors);
+
+  sendSuccess(res, 200, 'Document content triage proposal', {
+    filename: req.file.originalname,
+    extractedProviderName: extractedName || null,
+    proposedArrangementId: m.arrangementId,
+    proposedProviderName: m.providerName,
+    confidence: m.confidence,
+    matchSource: 'content',
+    ...(m.candidates ? { candidates: m.candidates } : {}),
   });
 });
