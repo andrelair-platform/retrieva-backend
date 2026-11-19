@@ -3,7 +3,7 @@
  * One current finding per (org, arrangement, control) — re-assessment upserts. Every read
  * composes entityScopeCondition → RTV-54 isolation.
  */
-import { and, eq, asc } from 'drizzle-orm';
+import { and, eq, asc, max } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
 import { findings, type FindingInsert } from '../../db/schema/index.js';
 import { entityScopeCondition } from '../../services/security/entityScope.js';
@@ -49,6 +49,28 @@ export class FindingRepository extends BaseDrizzleRepository {
       ),
       { orderBy: [asc(findings.controlId)] }
     );
+  }
+
+  /**
+   * The latest finding date per arrangement (P4 audit dashboard) — a proxy for "last assessed", since a
+   * re-assessment upserts fresh findings. Returns Map<arrangementId, ISO>. Entity-scoped (RTV-54).
+   */
+  async latestAssessedByArrangement(organizationId: string): Promise<Map<string, string>> {
+    const rows = await this.db
+      .select({ arrangementId: findings.arrangementId, last: max(findings.createdAt) })
+      .from(findings)
+      .where(
+        and(
+          eq(findings.organizationId, organizationId),
+          entityScopeCondition(findings.organizationId, { action: 'finding:read' })
+        )
+      )
+      .groupBy(findings.arrangementId);
+    const out = new Map<string, string>();
+    for (const r of rows) {
+      if (r.last) out.set(String(r.arrangementId), new Date(r.last as unknown as string).toISOString());
+    }
+    return out;
   }
 
   /**
