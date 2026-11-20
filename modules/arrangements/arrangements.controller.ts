@@ -24,7 +24,7 @@ import {
   findingRepository,
 } from '../../repositories/index.js';
 import { analyzeOrganization } from '../../services/concentrationService.js';
-import { buildOnboardingDecision, activationBlockers } from '../../services/onboarding/onboardingDecision.js';
+import { buildOnboardingDecision, activationBlockers, buildReadiness } from '../../services/onboarding/onboardingDecision.js';
 import { buildClausePack, gapCheckClausePack } from '../../services/legal/contractClausePack.js';
 
 // Arrangement-graph CRUD (RTV-36/37) — ORG-scoped. Every handler keys off req.user!.organizationId
@@ -99,6 +99,14 @@ export const createArrangement = catchAsync(async (req: Request, res: Response) 
     exitDifficulty: req.body.exitDifficulty ?? null,
     // RTV-31 trigger → initial lifecycle state (🟢 new → prospect; 🟡 existing/default → active).
     lifecycleStatus: initialStatusForTrigger(req.body.trigger),
+    // Workflow B pre-contract intake — the business owner's need (nullable; only a new-provider prospect).
+    // Coerce '' → null so the numeric/date columns don't choke on empty form fields.
+    businessPurpose: req.body.businessPurpose?.trim() || null,
+    expectedCost: req.body.expectedCost === '' || req.body.expectedCost == null ? null : String(req.body.expectedCost),
+    expectedCostCurrency: req.body.expectedCostCurrency?.trim() || null,
+    requestedStartDate: req.body.requestedStartDate || null,
+    // default the business owner to the submitter unless explicitly named
+    requestedBy: req.body.requestedBy ?? req.user!.userId,
     createdBy: req.user!.userId,
   });
   const maps = await loadDimensionMaps(organizationId);
@@ -155,7 +163,23 @@ export const getOnboardingDecision = catchAsync(async (req: Request, res: Respon
     subcontractors: [],
   });
 
-  sendSuccess(res, 200, 'Onboarding decision pack', { arrangementId: arrangement.id, ...decision });
+  // Pre-contract readiness checklist — makes the HARD activation gate legible before approval.
+  // intake is "complete" once the business owner + purpose are captured (Workflow B step 1).
+  const intakeComplete = Boolean(arrangement.requestedBy && arrangement.businessPurpose);
+  const readiness = buildReadiness(decision, { intakeComplete });
+
+  sendSuccess(res, 200, 'Onboarding decision pack', {
+    arrangementId: arrangement.id,
+    ...decision,
+    readiness,
+    intake: {
+      businessPurpose: arrangement.businessPurpose ?? null,
+      expectedCost: arrangement.expectedCost ?? null,
+      expectedCostCurrency: arrangement.expectedCostCurrency ?? null,
+      requestedStartDate: arrangement.requestedStartDate ?? null,
+      requestedBy: arrangement.requestedBy ?? null,
+    },
+  });
 });
 
 // GET /api/v1/arrangements/:id/contract-clauses — the mandatory DORA Art. 30 clause pack for legal,

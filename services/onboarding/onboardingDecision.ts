@@ -153,3 +153,65 @@ export function activationBlockers(decision: {
   if (decision.assessment.total === 0) return ['Pre-contract assessment has not run yet.'];
   return decision.recommendation === 'blocked' ? decision.reasons : [];
 }
+
+// ── Pre-contract readiness checklist (makes the HARD gate legible BEFORE activation) ───────────────
+export type ReadinessStatus = 'pass' | 'fail' | 'pending';
+export interface ReadinessItem {
+  /** stable key the UI localises (intake | assessment | findings | evidence) */
+  key: string;
+  status: ReadinessStatus;
+  /** short machine-generated detail (count/why); the UI may show it verbatim */
+  detail: string;
+}
+export interface Readiness {
+  items: ReadinessItem[];
+  /** the ENFORCED gate — identical to activationBlockers() being empty (UI never disagrees with 409) */
+  canActivate: boolean;
+  blockers: string[];
+}
+
+/**
+ * Turn the (already-built) onboarding decision + intake completeness into the discrete pre-contract
+ * readiness checklist the UI shows on a prospect — so the compliance gate is visible BEFORE someone
+ * attempts activation, not only as a 409 at approval time. `canActivate` is derived from the SAME
+ * activationBlockers() the controller enforces, so the checklist and the hard gate can never diverge.
+ */
+export function buildReadiness(
+  decision: ReturnType<typeof buildOnboardingDecision>,
+  opts: { intakeComplete?: boolean } = {}
+): Readiness {
+  const { total, blocking, needsEvidence } = decision.assessment;
+  const items: ReadinessItem[] = [];
+
+  items.push({
+    key: 'intake',
+    status: opts.intakeComplete ? 'pass' : 'pending',
+    detail: opts.intakeComplete ? 'Business need captured.' : 'Capture owner, purpose, cost, start date.',
+  });
+  items.push({
+    key: 'assessment',
+    status: total > 0 ? 'pass' : 'fail',
+    detail: total > 0 ? `${total} control(s) assessed.` : 'Pre-contract assessment has not run yet.',
+  });
+  items.push({
+    key: 'findings',
+    status: total === 0 ? 'pending' : blocking > 0 ? 'fail' : 'pass',
+    detail:
+      total === 0
+        ? 'Run the assessment to evaluate findings.'
+        : blocking > 0
+          ? `${blocking} non-compliant control(s) — resolve or formally accept the risk.`
+          : 'No blocking (non-compliant) findings.',
+  });
+  items.push({
+    key: 'evidence',
+    status: total === 0 ? 'pending' : needsEvidence > 0 ? 'pending' : 'pass',
+    detail:
+      needsEvidence > 0
+        ? `${needsEvidence} control(s) still lack vendor evidence.`
+        : 'Evidence sufficient for the assessed controls.',
+  });
+
+  const blockers = activationBlockers(decision);
+  return { items, canActivate: blockers.length === 0, blockers };
+}

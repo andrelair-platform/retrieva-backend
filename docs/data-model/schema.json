@@ -332,6 +332,11 @@
           "nullable": false
         },
         {
+          "name": "business_purpose",
+          "type": "text",
+          "nullable": true
+        },
+        {
           "name": "created_at",
           "type": "timestamp with time zone",
           "nullable": false,
@@ -370,6 +375,16 @@
           "nullable": true
         },
         {
+          "name": "expected_cost",
+          "type": "numeric(14,2)",
+          "nullable": true
+        },
+        {
+          "name": "expected_cost_currency",
+          "type": "text",
+          "nullable": true
+        },
+        {
           "name": "ict_service_id",
           "type": "uuid",
           "nullable": true
@@ -400,6 +415,16 @@
           "name": "provider_id",
           "type": "uuid",
           "nullable": false
+        },
+        {
+          "name": "requested_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "requested_start_date",
+          "type": "date",
+          "nullable": true
         },
         {
           "name": "updated_at",
@@ -551,6 +576,19 @@
           "referenced_table": "public.provider_nodes",
           "columns": [
             "provider_id"
+          ],
+          "referenced_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "arrangements_requested_by_users_id_fk",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL",
+          "table": "public.arrangements",
+          "referenced_table": "public.users",
+          "columns": [
+            "requested_by"
           ],
           "referenced_columns": [
             "id"
@@ -6671,6 +6709,19 @@
       ],
       "parent_cardinality": "zero_or_one",
       "def": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "public.arrangements",
+      "columns": [
+        "requested_by"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "public.users",
+      "parent_columns": [
+        "id"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL"
     },
     {
       "table": "public.arrangements",

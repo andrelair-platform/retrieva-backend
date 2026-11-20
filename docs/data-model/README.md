@@ -6,7 +6,7 @@
 | --------------------------------------------------------------------------------- | ------- | ------- | ---------- |
 | [public.action_audit](public.action_audit.md)                                     | 9       |         | BASE TABLE |
 | [public.arrangement_proposals](public.arrangement_proposals.md)                   | 19      |         | BASE TABLE |
-| [public.arrangements](public.arrangements.md)                                     | 16      |         | BASE TABLE |
+| [public.arrangements](public.arrangements.md)                                     | 21      |         | BASE TABLE |
 | [public.assessment_run_approvals](public.assessment_run_approvals.md)             | 13      |         | BASE TABLE |
 | [public.assessment_runs](public.assessment_runs.md)                               | 11      |         | BASE TABLE |
 | [public.assessments](public.assessments.md)                                       | 15      |         | BASE TABLE |
@@ -120,6 +120,7 @@ erDiagram
 "public.arrangement_proposals" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.arrangement_proposals" }o--o| "public.arrangements" : "FOREIGN KEY (arrangement_id) REFERENCES arrangements(id) ON DELETE SET NULL"
 "public.arrangements" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.arrangements" }o--o| "public.users" : "FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.arrangements" }o--|| "public.organizations" : "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
 "public.arrangements" }o--|| "public.provider_nodes" : "FOREIGN KEY (provider_id) REFERENCES provider_nodes(id) ON DELETE CASCADE"
 "public.arrangements" }o--|| "public.legal_entities" : "FOREIGN KEY (legal_entity_id) REFERENCES legal_entities(id) ON DELETE CASCADE"
@@ -257,6 +258,7 @@ erDiagram
 "public.arrangements" {
   arrangement_type arrangement_type
   uuid business_function_id FK
+  text business_purpose
   timestamp_with_time_zone created_at
   uuid created_by FK
   tier criticality
@@ -264,12 +266,16 @@ erDiagram
   text data_residency
   dependency_level dependency
   exit_difficulty exit_difficulty
+  numeric_14_2_ expected_cost
+  text expected_cost_currency
   uuid ict_service_id FK
   uuid id
   uuid legal_entity_id FK
   arrangement_lifecycle lifecycle_status
   uuid organization_id FK
   uuid provider_id FK
+  uuid requested_by FK
+  date requested_start_date
   timestamp_with_time_zone updated_at
 }
 "public.assessment_run_approvals" {
