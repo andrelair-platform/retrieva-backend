@@ -9,7 +9,7 @@
 // Isolation: `organization_id` is the RTV-54 entity-isolation scope AND satisfies AC-2's
 // multi-tenant `entity_id` (every arrangement carries it even in single-entity v1). `legal_entity_id`
 // is the ADR dimension FK (AC-1). Both present by design.
-import { pgTable, uuid, text, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, jsonb, timestamp, index, numeric, date } from 'drizzle-orm/pg-core';
 import {
   arrangementTypeEnum,
   dependencyLevelEnum,
@@ -55,6 +55,14 @@ export const arrangements = pgTable(
     exitDifficulty: exitDifficultyEnum('exit_difficulty'), // low/medium/high — nullable
     // RTV-31 lifecycle state (default active — existing rows are real, contracted arrangements).
     lifecycleStatus: arrangementLifecycleEnum('lifecycle_status').notNull().default('active'),
+    // ── Workflow B pre-contract intake (new-provider onboarding) ─────────────────
+    // The business owner's "need" as submitted at intake (DORA Art. 28(4) pre-contract). Nullable —
+    // only populated for a new-provider prospect; imported/existing arrangements leave them null.
+    businessPurpose: text('business_purpose'), // why this provider/service is needed
+    expectedCost: numeric('expected_cost', { precision: 14, scale: 2 }), // annual/contract value
+    expectedCostCurrency: text('expected_cost_currency'), // ISO code, UI defaults EUR
+    requestedStartDate: date('requested_start_date'), // desired go-live
+    requestedBy: uuid('requested_by').references(() => users.id, { onDelete: 'set null' }), // the business owner
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })

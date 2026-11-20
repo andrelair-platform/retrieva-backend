@@ -107,6 +107,7 @@ erDiagram
 "public.arrangements" {
   arrangement_type arrangement_type
   uuid business_function_id FK
+  text business_purpose
   timestamp_with_time_zone created_at
   uuid created_by FK
   tier criticality
@@ -114,12 +115,16 @@ erDiagram
   text data_residency
   dependency_level dependency
   exit_difficulty exit_difficulty
+  numeric_14_2_ expected_cost
+  text expected_cost_currency
   uuid ict_service_id FK
   uuid id
   uuid legal_entity_id FK
   arrangement_lifecycle lifecycle_status
   uuid organization_id FK
   uuid provider_id FK
+  uuid requested_by FK
+  date requested_start_date
   timestamp_with_time_zone updated_at
 }
 "public.assessment_run_approvals" {

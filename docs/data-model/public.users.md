@@ -61,6 +61,7 @@ erDiagram
 "public.arrangement_proposals" }o--o| "public.users" : "FOREIGN KEY (checked_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.arrangement_proposals" }o--|| "public.users" : "FOREIGN KEY (prepared_by) REFERENCES users(id) ON DELETE RESTRICT"
 "public.arrangements" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
+"public.arrangements" }o--o| "public.users" : "FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.assessment_run_approvals" }o--o| "public.users" : "FOREIGN KEY (assignee) REFERENCES users(id) ON DELETE SET NULL"
 "public.assessment_run_approvals" }o--o| "public.users" : "FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL"
 "public.assessment_runs" }o--o| "public.users" : "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL"
@@ -149,6 +150,7 @@ erDiagram
 "public.arrangements" {
   arrangement_type arrangement_type
   uuid business_function_id FK
+  text business_purpose
   timestamp_with_time_zone created_at
   uuid created_by FK
   tier criticality
@@ -156,12 +158,16 @@ erDiagram
   text data_residency
   dependency_level dependency
   exit_difficulty exit_difficulty
+  numeric_14_2_ expected_cost
+  text expected_cost_currency
   uuid ict_service_id FK
   uuid id
   uuid legal_entity_id FK
   arrangement_lifecycle lifecycle_status
   uuid organization_id FK
   uuid provider_id FK
+  uuid requested_by FK
+  date requested_start_date
   timestamp_with_time_zone updated_at
 }
 "public.assessment_run_approvals" {
