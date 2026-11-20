@@ -12,6 +12,10 @@ import { recordAudit } from './auditLogService.js';
 import { ASSIGNABLE_ROLES } from './authz/roleProvisioningService.js';
 import logger from '../config/logger.js';
 
+// The creator of an org IS its accountable owner → gets the top-authority domain role so they can
+// immediately manage the team (user:manage). Mirrors the org_admin → entity_admin base mapping.
+const OWNER_DOMAIN_ROLE = 'entity_admin';
+
 const VALID_ROLES = ['org_admin', 'analyst', 'viewer'];
 const TRIAL_DAYS = 20;
 
@@ -67,6 +71,24 @@ class OrganizationService {
     });
 
     await this.userRepo.updateById(userId, { organizationId: org.id });
+
+    // Grant the creator the entity_admin domain role in their own entity scope. Without this,
+    // can('user:manage') is default-denied and the owner cannot invite/assign roles or run any
+    // capability-gated action in their fresh org (the 403-on-day-one bug). Idempotent + audited.
+    await this.roleAssignmentRepo.assign({
+      userId,
+      scopeType: 'entity',
+      scopeId: org.id,
+      role: OWNER_DOMAIN_ROLE,
+    });
+    await recordAudit({
+      organizationId: org.id,
+      actor: userId,
+      action: 'role.assign',
+      targetType: 'user',
+      targetId: userId,
+      metadata: { role: OWNER_DOMAIN_ROLE, scopeType: 'entity', via: 'org-create' },
+    });
 
     // Provision Stripe billing — failure must never block org creation
     let billingFields: Record<string, any> = {
@@ -257,7 +279,25 @@ class OrganizationService {
     const callerMembership = await this.memberRepo.findActiveByUserId(userId);
     if (!callerMembership) throw new AppError('You do not belong to an organization', 403);
 
-    return this.memberRepo.findByOrganizationWithUser(callerMembership.organizationId);
+    const orgId = callerMembership.organizationId;
+    const members = await this.memberRepo.findByOrganizationWithUser(orgId);
+
+    // Attach each member's ACTIVE domain roles in this entity scope so the Team UI can show +
+    // manage them (the org-member `role` is only the coarse access tier; the DORA workflow role
+    // lives in role_assignments). One scope query, mapped by userId — pending invitees have none yet.
+    const assignments = await this.roleAssignmentRepo.findByScope('entity', orgId);
+    const rolesByUser = new Map<string, string[]>();
+    for (const a of assignments) {
+      const key = String(a.userId);
+      const list = rolesByUser.get(key) ?? [];
+      list.push(a.role);
+      rolesByUser.set(key, list);
+    }
+
+    return members.map((m: any) => ({
+      ...m,
+      domainRoles: m.userId ? (rolesByUser.get(String(m.userId)) ?? []) : [],
+    }));
   }
 
   async removeMember(userId: string, memberId: string) {
