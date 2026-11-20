@@ -15,7 +15,21 @@ import {
 } from '../services/alertMonitorService.js';
 import { runPeriodicReassessment } from '../services/lifecycle/periodicReassessment.js';
 import { runRemediationSlaSweep } from '../services/assessment/remediationReminderService.js';
+import { runEvidenceStalenessSweep } from '../services/assessment/evidenceStalenessReminder.js';
+import { runScoreDeteriorationSweep } from '../services/assessment/scoreDeteriorationSweep.js';
 import logger from '../config/logger.js';
+
+/** Run a monitoring sub-sweep fail-safe — one sweep's error must never fail the whole monitoring run. */
+async function safely(name: string, fn: () => Promise<unknown>): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    logger.error(`${name} failed`, {
+      service: 'monitoringWorker',
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 const worker = new Worker<MonitoringJobData>(
   'monitoringJobs',
@@ -23,16 +37,12 @@ const worker = new Worker<MonitoringJobData>(
     if (job.name === 'run-monitoring-alerts') {
       logger.info('Running monitoring alerts', { service: 'monitoringWorker', jobId: job.id });
       await runMonitoringAlerts();
-      // Workflow A step 6: remind owners of due-soon remediations + escalate overdue ones. Fail-safe —
-      // a reminder-sweep error must not fail the whole monitoring run.
-      try {
-        await runRemediationSlaSweep();
-      } catch (err) {
-        logger.error('Remediation SLA sweep failed', {
-          service: 'monitoringWorker',
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+      // Workflow A step 6: remind owners of due-soon remediations + escalate overdue ones.
+      await safely('Remediation SLA sweep', runRemediationSlaSweep);
+      // Workflow C #7: reopen arrangements whose evidence has expired / is expiring (no silent rot).
+      await safely('Evidence staleness sweep', runEvidenceStalenessSweep);
+      // Workflow C #6: escalate + reopen on a material DORA-score deterioration.
+      await safely('Score deterioration sweep', runScoreDeteriorationSweep);
       return { ran: true, timestamp: new Date().toISOString() };
     } else if (job.name === 'send-weekly-digest') {
       logger.info('Running weekly digest', { service: 'monitoringWorker', jobId: job.id });

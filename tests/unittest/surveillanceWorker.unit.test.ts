@@ -12,6 +12,11 @@ vi.mock('../../config/logger.js', () => ({ default: { info: vi.fn(), warn: vi.fn
 vi.mock('../../repositories/index.js', () => ({ surveillanceRepository: {} }));
 vi.mock('../../services/surveillance/surveillanceService.js', () => ({ runSurveillance: vi.fn() }));
 vi.mock('../../services/surveillance/enqueue.js', () => ({ enqueueSurveillanceRun: vi.fn() }));
+// Workflow C #3 — the worker now auto-reopens on a material event; mock the reassessment service so
+// this test's import graph doesn't pull in the queue/reopen chain (that path has its own unit test).
+vi.mock('../../services/surveillance/surveillanceReassessment.js', () => ({
+  reopenArrangementsForSurveillanceEvent: vi.fn().mockResolvedValue({ affected: 0, reopened: 0 }),
+}));
 vi.mock('../../services/auditLogService.js', () => ({ recordAudit: vi.fn() }));
 vi.mock('../../services/security/entityScope.js', () => ({ resolveEntityScope: vi.fn() }));
 vi.mock('../../db/entityContext.js', () => ({ runWithEntityScope: vi.fn() }));

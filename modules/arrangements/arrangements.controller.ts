@@ -25,6 +25,26 @@ import {
 } from '../../repositories/index.js';
 import { analyzeOrganization } from '../../services/concentrationService.js';
 import { buildOnboardingDecision, activationBlockers, buildReadiness } from '../../services/onboarding/onboardingDecision.js';
+import { reopenForReassessment } from '../../services/lifecycle/reopenForReassessment.js';
+
+// Workflow C #4 — fire-and-forget reopen on new evidence for an ACTIVE arrangement (reopenForReassessment
+// no-ops for non-reviewable states). Gated to `active` so repeated attaches during an open review don't
+// re-trigger; errors are swallowed (change-monitoring must never break an evidence upload).
+function maybeReassessOnNewEvidence(
+  organizationId: string,
+  arrangement: { id: string; lifecycleStatus: string },
+  via: string
+): void {
+  if (arrangement.lifecycleStatus !== 'active') return;
+  void reopenForReassessment({
+    organizationId,
+    arrangement: { id: arrangement.id, lifecycleStatus: arrangement.lifecycleStatus },
+    reason: 'new-evidence',
+    event: { action: 'arrangement.new_evidence', metadata: { via } },
+  }).catch(() => {
+    /* fire-and-forget — logged inside reopenForReassessment; never fail the upload */
+  });
+}
 import { buildClausePack, gapCheckClausePack } from '../../services/legal/contractClausePack.js';
 
 // Arrangement-graph CRUD (RTV-36/37) — ORG-scoped. Every handler keys off req.user!.organizationId
@@ -313,8 +333,8 @@ export const attachArrangementEvidence = catchAsync(async (req: Request, res: Re
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   // Branch isolation (RTV-35/36) — can't attach evidence to another branch's arrangement.
-  if (!(await arrangementRepository.findByIdInOrg(organizationId, String(req.params.id))))
-    return sendError(res, 404, 'Arrangement not found');
+  const arrangementRow = await arrangementRepository.findByIdInOrg(organizationId, String(req.params.id));
+  if (!arrangementRow) return sendError(res, 404, 'Arrangement not found');
   const { document } = req.body;
   if (!document) return sendError(res, 400, 'document is required');
   const source = req.body.source ?? '';
@@ -340,6 +360,10 @@ export const attachArrangementEvidence = catchAsync(async (req: Request, res: Re
     hash: sha256(`arrangement:${req.params.id}|${document}|${source}|${version}`),
     createdBy: req.user!.userId,
   });
+  // Workflow C #4 — new certification/audit report on an already-APPROVED (active) arrangement reopens
+  // it for reassessment (compare the new evidence against the previous findings). Fail-safe + fire-and-
+  // forget; the reviewable guard no-ops for a prospect/due-diligence arrangement (normal onboarding).
+  maybeReassessOnNewEvidence(organizationId, arrangementRow, 'attach');
   sendSuccess(res, 201, 'Evidence attached', { evidence });
 });
 
@@ -350,8 +374,8 @@ export const ingestArrangementEvidence = catchAsync(async (req: Request, res: Re
   if (!organizationId) return;
   if (!req.file) return sendError(res, 400, 'A document file is required (field: contract)');
   // Branch isolation (RTV-35/36) — can't ingest into another branch's arrangement.
-  if (!(await arrangementRepository.findByIdInOrg(organizationId, String(req.params.id))))
-    return sendError(res, 404, 'Arrangement not found');
+  const arrangementRow = await arrangementRepository.findByIdInOrg(organizationId, String(req.params.id));
+  if (!arrangementRow) return sendError(res, 404, 'Arrangement not found');
 
   const ext = path.extname(req.file.originalname).replace('.', '').toLowerCase();
   const text = await parseFile(req.file.buffer, ext, req.file.originalname);
@@ -369,6 +393,8 @@ export const ingestArrangementEvidence = catchAsync(async (req: Request, res: Re
     hash: sha256(text),
     createdBy: req.user!.userId,
   });
+  // Workflow C #4 — a newly-ingested document on an active arrangement reopens it for reassessment.
+  maybeReassessOnNewEvidence(organizationId, arrangementRow, 'ingest');
   sendSuccess(res, 201, 'Document ingested', { evidence, chunks });
 });
 

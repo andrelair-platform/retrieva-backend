@@ -12,6 +12,7 @@ import { redisConnection } from '../config/redis.js';
 import { surveillanceRepository } from '../repositories/index.js';
 import { runSurveillance } from '../services/surveillance/surveillanceService.js';
 import { enqueueSurveillanceRun } from '../services/surveillance/enqueue.js';
+import { reopenArrangementsForSurveillanceEvent } from '../services/surveillance/surveillanceReassessment.js';
 import { recordAudit } from '../services/auditLogService.js';
 import { resolveEntityScope } from '../services/security/entityScope.js';
 import { runWithEntityScope, type EntityScope } from '../db/entityContext.js';
@@ -95,6 +96,30 @@ export async function processSurveillanceJob(job: Job<SurveillanceRunJobData>, d
             url: ev.url,
           },
         });
+        // Workflow C #3 — don't wait on a human to file a supplier notice: auto-reopen the provider's
+        // arrangements for reassessment. Fail-safe — a reopen error must not fail the surveillance run.
+        try {
+          await withScope(scope, () =>
+            reopenArrangementsForSurveillanceEvent({
+              organizationId,
+              event: {
+                id: ev.id,
+                providerNodeId: ev.providerNodeId as string,
+                providerName: ev.providerName,
+                severity: ev.severity,
+                title: ev.title,
+                kind: ev.type, // incident | cve | breach
+                url: ev.url,
+              },
+            })
+          );
+        } catch (err) {
+          logger.error('surveillance.reassessment.failed', {
+            service: 'surveillance-worker',
+            eventId: ev.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
     }
 
