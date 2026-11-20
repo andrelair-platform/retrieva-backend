@@ -3,7 +3,7 @@
 // loaded by their own repos) and the arrangement graph (risks). This repo owns the RISK link — a vendor
 // (workspace) maps into the graph as a provider_node(kind=workspace) whose arrangements carry the risks —
 // plus the score CACHE on `workspaces` and the `dora_score_history` trail (for the 30-day trend).
-import { and, eq, inArray, lte, desc } from 'drizzle-orm';
+import { and, eq, inArray, lte, desc, sql } from 'drizzle-orm';
 import { getDb } from '../../config/db.js';
 import { workspaces, risks, arrangements, providerNodes, doraScoreHistory } from '../../db/schema/index.js';
 import type { UnifiedScoreBreakdown } from '../../services/scoring/unifiedDoraScore.js';
@@ -71,6 +71,70 @@ export class DoraScoreRepository {
         breakdown: { components: b.components, metrics: b.metrics } as object,
       });
     }
+  }
+
+  /**
+   * Workflow C #6 — the latest-vs-prior score per vendor whose most-recent score was written since
+   * `since` and there IS a prior row (so a delta exists). Cross-org background read for the sweep.
+   * Ordered worst-drop first. Returns current + previous so the sweep classifies the deterioration.
+   */
+  async listRecentScoreDrops({
+    since,
+    limit = 100,
+  }: {
+    since: Date;
+    limit?: number;
+  }): Promise<Array<{ workspaceId: string; organizationId: string; current: number; previous: number }>> {
+    const result = await this.db.execute(sql`
+      with ranked as (
+        select workspace_id, organization_id, score, created_at,
+               row_number() over (partition by workspace_id order by created_at desc) as rn
+        from dora_score_history
+      )
+      select cur.workspace_id as "workspaceId", cur.organization_id as "organizationId",
+             cur.score as "current", prev.score as "previous"
+      from ranked cur
+      join ranked prev on prev.workspace_id = cur.workspace_id and prev.rn = 2
+      where cur.rn = 1 and cur.created_at >= ${since}
+      order by (prev.score - cur.score) desc
+      limit ${limit}
+    `);
+    const rows = (result as unknown as { rows?: unknown[] }).rows ?? (result as unknown as unknown[]);
+    return (rows as Array<{ workspaceId: string; organizationId: string; current: number; previous: number }>).map(
+      (r) => ({
+        workspaceId: String(r.workspaceId),
+        organizationId: String(r.organizationId),
+        current: Number(r.current),
+        previous: Number(r.previous),
+      })
+    );
+  }
+
+  /** Workflow C #6 — a vendor's arrangements via the graph link workspace → provider_node(kind=workspace). */
+  async listWorkspaceArrangements(
+    organizationId: string,
+    workspaceId: string
+  ): Promise<Array<{ id: string; lifecycleStatus: string; organizationId: string }>> {
+    const rows = await this.db
+      .select({
+        id: arrangements.id,
+        lifecycleStatus: arrangements.lifecycleStatus,
+        organizationId: arrangements.organizationId,
+      })
+      .from(arrangements)
+      .innerJoin(providerNodes, eq(providerNodes.id, arrangements.providerId))
+      .where(
+        and(
+          eq(arrangements.organizationId, organizationId),
+          eq(providerNodes.kind, 'workspace'),
+          eq(providerNodes.workspaceId, workspaceId)
+        )
+      );
+    return rows.map((r) => ({
+      id: String(r.id),
+      lifecycleStatus: String(r.lifecycleStatus),
+      organizationId: String(r.organizationId),
+    }));
   }
 
   /** Resolve the vendor (workspace) a given arrangement belongs to — the reverse graph link, for

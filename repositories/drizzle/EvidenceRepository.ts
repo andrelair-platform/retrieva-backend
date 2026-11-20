@@ -7,7 +7,7 @@
  * (sha256) and deduped per (org, target, hash) so the same document isn't stored twice (AC-3).
  * Every read composes entityScopeCondition → RTV-54 isolation.
  */
-import { and, eq, or, desc } from 'drizzle-orm';
+import { and, eq, or, desc, lte, isNotNull, inArray } from 'drizzle-orm';
 import { BaseDrizzleRepository } from './BaseDrizzleRepository.js';
 import { evidence, arrangements } from '../../db/schema/index.js';
 import { entityScopeCondition } from '../../services/security/entityScope.js';
@@ -73,6 +73,37 @@ export class EvidenceRepository extends BaseDrizzleRepository {
       ),
       { orderBy: [desc(evidence.createdAt)] }
     );
+  }
+
+  /**
+   * Workflow C #7 — cross-org sweep source: arrangement-scoped evidence whose validity is expired or
+   * expiring by `before`, on a reviewable (active/under_review) arrangement. Background/scheduled use →
+   * NO entityScopeCondition (deliberate cross-org read, like periodicReassessment). Returns the
+   * arrangement + the stale evidence so the sweep can reopen the record + describe what lapsed.
+   */
+  async listExpiringArrangementEvidence({ before, limit = 200 }: { before: Date; limit?: number }) {
+    return this.db
+      .select({
+        evidenceId: evidence.id,
+        document: evidence.document,
+        category: evidence.category,
+        validityUntil: evidence.validityUntil,
+        arrangementId: evidence.arrangementId,
+        organizationId: evidence.organizationId,
+        lifecycleStatus: arrangements.lifecycleStatus,
+      })
+      .from(evidence)
+      .innerJoin(arrangements, eq(evidence.arrangementId, arrangements.id))
+      .where(
+        and(
+          eq(evidence.scope, 'arrangement'),
+          isNotNull(evidence.validityUntil),
+          lte(evidence.validityUntil, before),
+          inArray(arrangements.lifecycleStatus, ['active', 'under_review'])
+        )
+      )
+      .orderBy(evidence.validityUntil)
+      .limit(limit);
   }
 
   /**
