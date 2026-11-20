@@ -114,6 +114,21 @@ vi.mock('../../repositories/drizzle/UserRepository.js', () => ({
   },
 }));
 
+// createOrganization now grants entity_admin + audits; getMembers resolves domain roles. Mock the
+// role-assignment repo + audit sink so the controller unit tests stay DB-free.
+vi.mock('../../repositories/drizzle/RoleAssignmentRepository.js', () => ({
+  roleAssignmentRepository: {
+    assign: vi.fn().mockResolvedValue([{ id: 'ra-1' }]),
+    findByScope: vi.fn().mockResolvedValue([]),
+    findByUser: vi.fn().mockResolvedValue([]),
+    revoke: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+vi.mock('../../services/auditLogService.js', () => ({
+  recordAudit: vi.fn().mockResolvedValue(undefined),
+}));
+
 // ---------------------------------------------------------------------------
 // Subject imports (AFTER mocks)
 // ---------------------------------------------------------------------------
@@ -129,6 +144,7 @@ import {
 import { organizationRepository as Organization } from '../../repositories/drizzle/OrganizationRepository.js';
 import { organizationMemberRepository as OrganizationMember } from '../../repositories/drizzle/OrganizationMemberRepository.js';
 import { userRepository as User } from '../../repositories/drizzle/UserRepository.js';
+import { roleAssignmentRepository as RoleAssignment } from '../../repositories/drizzle/RoleAssignmentRepository.js';
 import { emailService } from '../../services/emailService.js';
 import { safeDecrypt } from '../../utils/security/fieldEncryption.js';
 
@@ -142,6 +158,10 @@ beforeEach(() => {
   safeDecrypt.mockImplementation((v) => v);
   emailService.sendOrganizationInvitation.mockResolvedValue({ success: true });
   User.updateOnboarding.mockResolvedValue({});
+  // mockReset:true wipes factory impls between tests → re-establish the role-assignment repo's
+  // resolved values so createOrganization's grant + getMembers' role resolution don't return undefined.
+  RoleAssignment.assign.mockResolvedValue([{ id: 'ra-1' }]);
+  RoleAssignment.findByScope.mockResolvedValue([]);
 });
 
 // ---------------------------------------------------------------------------

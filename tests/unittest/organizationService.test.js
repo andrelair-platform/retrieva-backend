@@ -8,6 +8,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OrganizationService } from '../../services/OrganizationService.js';
 
+// recordAudit is a direct module import (not injected) — stub it so the unit tests never touch the DB.
+vi.mock('../../services/auditLogService.js', () => ({ recordAudit: vi.fn() }));
+
 const ORG_ID = 'org-uuid-1';
 
 function makeService(overrides = {}) {
@@ -15,6 +18,10 @@ function makeService(overrides = {}) {
     create: vi.fn().mockResolvedValue({ id: ORG_ID, name: 'Acme', _id: undefined }),
     updateById: vi.fn().mockResolvedValue({ id: ORG_ID }),
     findById: vi.fn(),
+  };
+  const roleAssignmentRepo = {
+    assign: vi.fn().mockResolvedValue([{ id: 'ra-1' }]),
+    findByScope: vi.fn().mockResolvedValue([]),
   };
   const memberRepo = {
     findActiveByUserId: vi.fn().mockResolvedValue(null), // not already in an org
@@ -38,6 +45,7 @@ function makeService(overrides = {}) {
     organizationRepo,
     memberRepo,
     userRepo,
+    roleAssignmentRepo,
     setupOrgBilling,
     emailService: { sendOrganizationInvitation: vi.fn().mockResolvedValue(undefined) },
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -67,6 +75,16 @@ describe('OrganizationService.createOrganization', () => {
       'user-1',
       expect.objectContaining({ organizationId: ORG_ID })
     );
+  });
+
+  it('grants the creator the entity_admin domain role (fixes the day-one 403)', async () => {
+    await svc.createOrganization('user-1', { name: 'Acme' });
+    expect(svc.roleAssignmentRepo.assign).toHaveBeenCalledWith({
+      userId: 'user-1',
+      scopeType: 'entity',
+      scopeId: ORG_ID,
+      role: 'entity_admin',
+    });
   });
 
   it('still succeeds (org id, not undefined) when Stripe billing provisioning fails', async () => {
@@ -110,7 +128,7 @@ describe('OrganizationService — RTV-49 Mongo-ism fixes (retrieva-backend#10)',
     expect(await svc.getMyOrganization('user-1')).toEqual({ organization: null, role: null });
   });
 
-  it('getMembers delegates to findByOrganizationWithUser (no $ne/populate)', async () => {
+  it('getMembers delegates to findByOrganizationWithUser (no $ne/populate) + attaches domainRoles', async () => {
     const svc = makeService();
     svc.memberRepo.findActiveByUserId.mockResolvedValue({
       organizationId: ORG_ID,
@@ -120,7 +138,35 @@ describe('OrganizationService — RTV-49 Mongo-ism fixes (retrieva-backend#10)',
 
     const members = await svc.getMembers('user-1');
     expect(svc.memberRepo.findByOrganizationWithUser).toHaveBeenCalledWith(ORG_ID);
-    expect(members).toEqual([{ id: 'm1', user: { id: 'u1' } }]);
+    // no userId on the member row → no domain roles resolved
+    expect(members).toEqual([{ id: 'm1', user: { id: 'u1' }, domainRoles: [] }]);
+  });
+
+  it('getMembers maps each member to its ACTIVE entity-scope domain roles by userId', async () => {
+    const svc = makeService();
+    svc.memberRepo.findActiveByUserId.mockResolvedValue({
+      organizationId: ORG_ID,
+      role: 'org_admin',
+    });
+    svc.memberRepo.findByOrganizationWithUser.mockResolvedValue([
+      { id: 'm1', userId: 'u1', user: { id: 'u1' } },
+      { id: 'm2', userId: 'u2', user: { id: 'u2' } },
+      { id: 'm3', userId: null, user: null }, // pending invite — no user yet
+    ]);
+    svc.roleAssignmentRepo.findByScope.mockResolvedValue([
+      { userId: 'u1', role: 'entity_admin' },
+      { userId: 'u1', role: 'ict_risk_officer' },
+      { userId: 'u2', role: 'analyst' },
+    ]);
+
+    const members = await svc.getMembers('user-1');
+    expect(svc.roleAssignmentRepo.findByScope).toHaveBeenCalledWith('entity', ORG_ID);
+    expect(members.find((m) => m.id === 'm1').domainRoles).toEqual([
+      'entity_admin',
+      'ict_risk_officer',
+    ]);
+    expect(members.find((m) => m.id === 'm2').domainRoles).toEqual(['analyst']);
+    expect(members.find((m) => m.id === 'm3').domainRoles).toEqual([]);
   });
 
   it('inviteMember: dup-check via findActiveByOrgAndEmail + onboarding via updateOnboarding', async () => {

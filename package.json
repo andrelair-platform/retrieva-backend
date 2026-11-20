@@ -27,6 +27,7 @@
     "seed:ktayl-register": "node --import tsx scripts/seedKtaylRegister.ts",
     "seed:is-evaluator": "node --import tsx scripts/seedIsEvaluator.ts",
     "seed:langfuse-prompts": "node --import tsx scripts/seedLangfusePrompts.ts",
+    "backfill:entity-admin": "node --import tsx scripts/backfillEntityAdmin.ts",
     "evaluate": "node scripts/evaluate.js",
     "evaluate:clause-mapping": "node --import tsx scripts/evaluateClauseMapping.js",
     "evaluate:verdicts": "node --import tsx scripts/evaluateVerdicts.js",

@@ -111,6 +111,7 @@ export const getMembers = catchAsync(async (req: Request, res: Response) => {
     role: m.role,
     status: m.status,
     joinedAt: m.joinedAt,
+    domainRoles: m.domainRoles ?? [],
     user: m.user
       ? {
           id: m.user.id,
