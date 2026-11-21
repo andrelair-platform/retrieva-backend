@@ -70,17 +70,22 @@ export async function mapAppToProposal(
     };
   }
 
+  return { proposal: parseProposal(app, content), provenance };
+}
+
+/** Parse the LLM mapping to a normalised proposal; any parse miss → a manual-review fallback. */
+function parseProposal(app: DiscoveredApp, content: string): ReturnType<typeof normalizeProposal> {
   const match = String(content || '').match(/\{[\s\S]*\}/);
   if (!match) {
-    return { proposal: fallback(app, 'Could not parse the mapping — review manually.'), provenance };
+    return fallback(app, 'Could not parse the mapping — review manually.');
   }
   try {
     const parsed = JSON.parse(match[0]);
     // Seed providerName from the app label when the model leaves it empty — the label IS a vendor name.
     if (!parsed.providerName && (app.label || app.name)) parsed.providerName = app.label || app.name;
-    return { proposal: normalizeProposal(parsed), provenance };
+    return normalizeProposal(parsed);
   } catch {
-    return { proposal: fallback(app, 'Malformed mapping JSON — review manually.'), provenance };
+    return fallback(app, 'Malformed mapping JSON — review manually.');
   }
 }
 

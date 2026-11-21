@@ -25,17 +25,17 @@ import {
 } from './remediationSla.js';
 
 export interface RemediationReminderDeps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable collaborators for tests
+   
   riskRepository?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   userRepository?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   roleAssignmentRepository?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   email?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   recordAudit?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   logger?: any;
 }
 
@@ -83,6 +83,62 @@ function recipientIdsForRole(assignments: Array<{ userId: string; role: string; 
   return [...ids];
 }
 
+/** The injected collaborators + org context the two sweep loops share. */
+interface SweepIo {
+  emailOf: (userId: string | null) => Promise<string | null>;
+  send: (to: string[], subject: string, html: string) => Promise<boolean>;
+
+  audit: any;
+
+  logger: any;
+  organizationId: string;
+}
+
+/** Due-soon loop: nudge each owner, audit every send. Fail-safe per risk. Returns the count sent. */
+async function remindDueSoon(items: RemediationItem[], io: SweepIo): Promise<number> {
+  let reminded = 0;
+  for (const item of items) {
+    try {
+      const to = await io.emailOf(item.ownerId);
+      const { subject, html } = reminderHtml(item, 'due_soon');
+      if (to && (await io.send([to], subject, html))) {
+        reminded += 1;
+        await io.audit({
+          organizationId: io.organizationId, actor: null, action: 'risk.remediation_reminder',
+          targetType: 'risk', targetId: item.id,
+          metadata: { arrangementId: item.arrangementId, daysToDue: item.daysToDue, severity: item.severity, kind: 'due_soon' },
+        });
+      }
+    } catch (err) {
+      io.logger.warn('remediation.reminder.failed', { service: 'remediation-sla', riskId: item.id, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return reminded;
+}
+
+/** Overdue loop: escalate to the delegate + notify the owner, audit every send. Returns the count. */
+async function escalateOverdue(items: RemediationItem[], escalationEmails: string[], io: SweepIo): Promise<number> {
+  let escalated = 0;
+  for (const item of items) {
+    try {
+      const ownerEmail = await io.emailOf(item.ownerId);
+      const to = [...new Set([...(ownerEmail ? [ownerEmail] : []), ...escalationEmails])];
+      const { subject, html } = reminderHtml(item, 'overdue');
+      if (await io.send(to, subject, html)) {
+        escalated += 1;
+        await io.audit({
+          organizationId: io.organizationId, actor: null, action: 'risk.remediation_escalated',
+          targetType: 'risk', targetId: item.id,
+          metadata: { arrangementId: item.arrangementId, daysToDue: item.daysToDue, severity: item.severity, escalatedTo: ESCALATION_ROLE, recipients: to.length },
+        });
+      }
+    } catch (err) {
+      io.logger.warn('remediation.escalation.failed', { service: 'remediation-sla', riskId: item.id, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return escalated;
+}
+
 /**
  * Run the remediation-SLA sweep for one org. Reminds each due-soon risk's owner; escalates each overdue
  * risk to the management-body delegate (group_risk). Audits every send. Returns a summary.
@@ -99,7 +155,7 @@ export async function runRemediationReminders(
   const audit = deps.recordAudit || defaultRecordAudit;
   const logger = deps.logger || defaultLogger;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- persisted rows are heterogeneous
+   
   const rows: any[] = await riskRepo.listInLoopByOrg(organizationId);
   const risksIn: RemediationRisk[] = rows.map((r) => ({
     id: r.id,
@@ -124,48 +180,17 @@ export async function runRemediationReminders(
     return true;
   };
 
+  const io: SweepIo = { emailOf, send, audit, logger, organizationId };
+
   // ── due-soon → nudge the owner ──
-  let reminded = 0;
-  for (const item of sla.dueSoon) {
-    try {
-      const to = await emailOf(item.ownerId);
-      const { subject, html } = reminderHtml(item, 'due_soon');
-      if (to && (await send([to], subject, html))) {
-        reminded += 1;
-        await audit({
-          organizationId, actor: null, action: 'risk.remediation_reminder',
-          targetType: 'risk', targetId: item.id,
-          metadata: { arrangementId: item.arrangementId, daysToDue: item.daysToDue, severity: item.severity, kind: 'due_soon' },
-        });
-      }
-    } catch (err) {
-      logger.warn('remediation.reminder.failed', { service: 'remediation-sla', riskId: item.id, error: err instanceof Error ? err.message : String(err) });
-    }
-  }
+  const reminded = await remindDueSoon(sla.dueSoon, io);
 
   // ── overdue → escalate to the management-body delegate (group_risk) + notify the owner ──
-  let escalated = 0;
   // one role lookup per run (escalation target holders in the entity)
   const assignments = await roleRepo.findByScope('entity', organizationId).catch(() => []);
   const escalationIds = recipientIdsForRole(assignments, ESCALATION_ROLE);
   const escalationEmails = (await Promise.all(escalationIds.map((id: string) => emailOf(id)))).filter((e): e is string => !!e);
-  for (const item of sla.overdue) {
-    try {
-      const ownerEmail = await emailOf(item.ownerId);
-      const to = [...new Set([...(ownerEmail ? [ownerEmail] : []), ...escalationEmails])];
-      const { subject, html } = reminderHtml(item, 'overdue');
-      if (await send(to, subject, html)) {
-        escalated += 1;
-        await audit({
-          organizationId, actor: null, action: 'risk.remediation_escalated',
-          targetType: 'risk', targetId: item.id,
-          metadata: { arrangementId: item.arrangementId, daysToDue: item.daysToDue, severity: item.severity, escalatedTo: ESCALATION_ROLE, recipients: to.length },
-        });
-      }
-    } catch (err) {
-      logger.warn('remediation.escalation.failed', { service: 'remediation-sla', riskId: item.id, error: err instanceof Error ? err.message : String(err) });
-    }
-  }
+  const escalated = await escalateOverdue(sla.overdue, escalationEmails, io);
 
   logger.info('remediation.sla.swept', {
     service: 'remediation-sla', organizationId,

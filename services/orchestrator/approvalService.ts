@@ -23,7 +23,7 @@ export class ApprovalError extends Error {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- req.user shape (userId/organizationId)
+ 
 type Actor = any;
 
 export interface DecideDeps {
@@ -32,9 +32,9 @@ export interface DecideDeps {
     runId: string;
     organizationId: string;
     decision: { confirmed: boolean; reason?: string };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
   }) => Promise<{ run: any }>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- capability map value
+   
   can?: (user: Actor, capability: string, context?: Record<string, unknown>) => Promise<any>;
   recordAudit?: typeof defaultRecordAudit;
   /** Best-effort live notifier (socket.io). */
@@ -46,9 +46,9 @@ export interface DecideDeps {
  * pending approval already exists for this gate it is reused — safe to call on every orchestrator summarise.
  */
 export async function recordGateApproval(args: {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the assessment_runs row
+   
   run: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the interrupt() payload
+   
   interrupt: any;
   assignee?: string | null;
 }) {
@@ -109,6 +109,56 @@ export async function getApproval(approvalId: string, organizationId: string) {
   return { approval, run };
 }
 
+/** A reject/edit decision requires a justification (400 otherwise). */
+function assertJustificationPresent(decision: GateDecisionVerb, justification: string) {
+  if ((decision === 'reject' || decision === 'edit') && !justification) {
+    throw new ApprovalError(400, 'justification_required', `a ${decision} decision requires a justification`);
+  }
+}
+
+/** Load the approval + its run, enforcing: pending · run awaiting · stale-decision + version guards.
+ *  Marks the approval superseded on a row-version mismatch (the run changed since review). */
+async function loadDecidableApprovalAndRun(
+  db: ReturnType<typeof getDb>,
+  args: { approvalId: string; organizationId: string; expectedRunVersion?: number }
+) {
+  const { approvalId, organizationId, expectedRunVersion } = args;
+  const [approval] = await db
+    .select()
+    .from(assessmentRunApprovals)
+    .where(and(eq(assessmentRunApprovals.id, approvalId), eq(assessmentRunApprovals.organizationId, organizationId)));
+  if (!approval) throw new ApprovalError(404, 'not_found', 'approval not found');
+  if (approval.status !== 'pending') throw new ApprovalError(409, 'already_decided', 'this approval was already decided');
+
+  const [run] = await db.select().from(assessmentRuns).where(eq(assessmentRuns.id, approval.runId));
+  if (!run) throw new ApprovalError(404, 'run_not_found', 'run not found');
+  if (run.status !== 'waiting_human') throw new ApprovalError(409, 'run_not_waiting', 'run is not awaiting a decision');
+
+  // Stale-decision protection: the run changed since the approval was shown.
+  if (String(run.rowVersion) !== approval.runVersionAtRequest) {
+    await db.update(assessmentRunApprovals).set({ status: 'superseded' }).where(eq(assessmentRunApprovals.id, approval.id));
+    throw new ApprovalError(409, 'stale', 'the run changed since this review was shown — reload and try again');
+  }
+  if (expectedRunVersion != null && Number(expectedRunVersion) !== run.rowVersion) {
+    throw new ApprovalError(409, 'stale', 'stale run version');
+  }
+  return { approval, run };
+}
+
+/** RBAC + SoD gate (maker ≠ checker): the caller must hold finding:approve and not be the initiator. */
+async function assertCanDecide(
+  can: NonNullable<DecideDeps['can']>,
+  user: Actor,
+  run: any,
+  organizationId: string
+) {
+  const capable = await can(user, 'finding:approve', { organizationId });
+  if (!capable) throw new ApprovalError(403, 'forbidden', 'you are not authorised to decide this gate');
+  if (user?.userId && run.createdBy && user.userId === run.createdBy) {
+    throw new ApprovalError(403, 'separation_of_duties', 'the run initiator cannot approve its own gate');
+  }
+}
+
 /**
  * Apply an authorised human decision to a run gate. Enforces, in order: approval still pending · run still
  * awaiting · stale-decision protection (run unchanged since the approval was raised) · RBAC + SoD
@@ -131,39 +181,52 @@ export async function decideApproval(
   const recordAudit = deps.recordAudit ?? defaultRecordAudit;
   const db = getDb();
 
-  if ((decision === 'reject' || decision === 'edit') && !justification) {
-    throw new ApprovalError(400, 'justification_required', `a ${decision} decision requires a justification`);
-  }
+  assertJustificationPresent(decision, justification);
 
-  const [approval] = await db
-    .select()
-    .from(assessmentRunApprovals)
-    .where(and(eq(assessmentRunApprovals.id, approvalId), eq(assessmentRunApprovals.organizationId, organizationId)));
-  if (!approval) throw new ApprovalError(404, 'not_found', 'approval not found');
-  if (approval.status !== 'pending') throw new ApprovalError(409, 'already_decided', 'this approval was already decided');
+  const { approval, run } = await loadDecidableApprovalAndRun(db, {
+    approvalId,
+    organizationId,
+    expectedRunVersion: args.expectedRunVersion,
+  });
 
-  const [run] = await db.select().from(assessmentRuns).where(eq(assessmentRuns.id, approval.runId));
-  if (!run) throw new ApprovalError(404, 'run_not_found', 'run not found');
-  if (run.status !== 'waiting_human') throw new ApprovalError(409, 'run_not_waiting', 'run is not awaiting a decision');
-
-  // Stale-decision protection: the run changed since the approval was shown.
-  if (String(run.rowVersion) !== approval.runVersionAtRequest) {
-    await db.update(assessmentRunApprovals).set({ status: 'superseded' }).where(eq(assessmentRunApprovals.id, approval.id));
-    throw new ApprovalError(409, 'stale', 'the run changed since this review was shown — reload and try again');
-  }
-  if (args.expectedRunVersion != null && Number(args.expectedRunVersion) !== run.rowVersion) {
-    throw new ApprovalError(409, 'stale', 'stale run version');
-  }
-
-  // RBAC + SoD (reuse the existing capability model). Maker ≠ checker.
-  const capable = await can(user, 'finding:approve', { organizationId });
-  if (!capable) throw new ApprovalError(403, 'forbidden', 'you are not authorised to decide this gate');
-  if (user?.userId && run.createdBy && user.userId === run.createdBy) {
-    throw new ApprovalError(403, 'separation_of_duties', 'the run initiator cannot approve its own gate');
-  }
+  await assertCanDecide(can, user, run, organizationId);
 
   const confirmed = decision === 'approve' || decision === 'edit';
-  const nextApprovalStatus = decision === 'edit' ? 'edited' : confirmed ? 'approved' : 'rejected';
+  const nextApprovalStatus = nextStatusFor(decision, confirmed);
+
+  return commitDecision(
+    { db, recordAudit, resume: deps.resume, emit: deps.emit },
+    { approval, run, user, decision, justification, organizationId, confirmed, nextApprovalStatus }
+  );
+}
+
+/** Map a decision verb to the stored approval status (edit → edited; else approved/rejected). */
+function nextStatusFor(decision: GateDecisionVerb, confirmed: boolean) {
+  if (decision === 'edit') return 'edited' as const;
+  return confirmed ? ('approved' as const) : ('rejected' as const);
+}
+
+/** Persist the decision, bump the run version, audit, then resume/halt the run and notify (extracted). */
+async function commitDecision(
+  io: {
+    db: ReturnType<typeof getDb>;
+    recordAudit: typeof defaultRecordAudit;
+    resume: DecideDeps['resume'];
+    emit: DecideDeps['emit'];
+  },
+  ctx: {
+    approval: any;
+    run: any;
+    user: Actor;
+    decision: GateDecisionVerb;
+    justification: string;
+    organizationId: string;
+    confirmed: boolean;
+    nextApprovalStatus: 'edited' | 'approved' | 'rejected';
+  }
+) {
+  const { db, recordAudit, resume, emit } = io;
+  const { approval, run, user, decision, justification, organizationId, confirmed, nextApprovalStatus } = ctx;
 
   // Record the decision + bump the run version (invalidates any other stale pending decision).
   await db
@@ -192,8 +255,8 @@ export async function decideApproval(
   });
 
   // Resume (or halt) the run through the orchestrator (injected).
-  const summary = await deps.resume({ runId: run.id, organizationId, decision: { confirmed, reason: justification } });
-  deps.emit?.('run.updated', { runId: run.id, status: summary.run?.status, approvalId: approval.id });
+  const summary = await resume({ runId: run.id, organizationId, decision: { confirmed, reason: justification } });
+  emit?.('run.updated', { runId: run.id, status: summary.run?.status, approvalId: approval.id });
   logger.info('run gate decided', { service: 'approval-service', runId: run.id, gate: approval.gate, decision });
 
   return { approvalId: approval.id, decision, status: nextApprovalStatus, run: summary.run };

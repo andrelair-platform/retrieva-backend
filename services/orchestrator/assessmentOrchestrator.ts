@@ -53,7 +53,7 @@ async function updateRun(runId: string, patch: RunPatch): Promise<void> {
 function span(runId: string, name: string, input?: Record<string, unknown>): SpanHandle | null {
   const t = traces.get(runId);
   if (!t) return null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Langfuse span object
+   
   const s: any = t.span({ name, input });
   return {
     end: (payload) => {
@@ -204,47 +204,65 @@ export const defaultDeps: AssessmentGraphDeps = {
 };
 
 export interface RunSummary {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the assessment_runs row
+   
   run: any;
   waiting: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the interrupt payload shown to the human
+   
   interrupt: any | null;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- compiled graph + config are LangGraph generics
+ 
 async function summarize(runId: string, graph: any, config: any): Promise<RunSummary> {
   const state = await graph.getState(config);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- StateSnapshot.tasks[].interrupts
-  const interrupts = (state?.tasks ?? []).flatMap((t: any) => t.interrupts ?? []);
+
+  const interrupts = collectInterrupts(state);
   const waiting = interrupts.length > 0;
+  const interrupt = waiting ? interrupts[0]?.value ?? null : null;
   const [run] = await getDb().select().from(assessmentRuns).where(eq(assessmentRuns.id, runId));
-  // A suspended run persists a first-class, pending gate approval (RTV-85) — idempotent per (run, gate),
-  // so re-summarising is safe. The human acts on it via the approval service (SoD + audit + resume).
+
   if (waiting && run) {
-    try {
-      await recordGateApproval({ run, interrupt: interrupts[0]?.value ?? null });
-    } catch (e) {
-      logger.warn('recordGateApproval failed (non-fatal)', {
-        service: 'assessment-orchestrator',
-        runId,
-        error: e instanceof Error ? e.message : String(e),
-      });
-    }
+    await persistPendingGateApproval(runId, run, interrupt);
   }
-  // Terminal → flush + release the trace.
-  if (run && (run.status === 'done' || run.status === 'blocked')) {
-    const t = traces.get(runId);
-    if (t) {
-      try {
-        t.update?.({ output: { status: run.status, statusMessage: run.statusMessage } });
-        await t.flush?.();
-      } catch {
-        /* non-fatal */
-      }
-      traces.delete(runId);
-    }
+  if (run && isTerminalStatus(run.status)) {
+    await releaseTerminalTrace(runId, run);
   }
-  return { run, waiting, interrupt: waiting ? interrupts[0]?.value ?? null : null };
+  return { run, waiting, interrupt };
+}
+
+/** Flatten any pending human-gate interrupts out of the graph state. */
+function collectInterrupts(state: any): any[] {
+  return (state?.tasks ?? []).flatMap((t: any) => t.interrupts ?? []);
+}
+
+const isTerminalStatus = (status: unknown) => status === 'done' || status === 'blocked';
+
+/**
+ * A suspended run persists a first-class, pending gate approval (RTV-85) — idempotent per (run, gate),
+ * so re-summarising is safe. The human acts on it via the approval service (SoD + audit + resume).
+ */
+async function persistPendingGateApproval(runId: string, run: any, interrupt: any) {
+  try {
+    await recordGateApproval({ run, interrupt });
+  } catch (e) {
+    logger.warn('recordGateApproval failed (non-fatal)', {
+      service: 'assessment-orchestrator',
+      runId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
+/** Terminal run → flush + release the Langfuse trace (non-fatal). */
+async function releaseTerminalTrace(runId: string, run: any) {
+  const t = traces.get(runId);
+  if (!t) return;
+  try {
+    t.update?.({ output: { status: run.status, statusMessage: run.statusMessage } });
+    await t.flush?.();
+  } catch {
+    /* non-fatal */
+  }
+  traces.delete(runId);
 }
 
 /** Start a new assessment run for an (existing) arrangement. Runs to the first human gate or terminal. */

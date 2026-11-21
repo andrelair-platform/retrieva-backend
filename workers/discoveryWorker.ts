@@ -7,6 +7,7 @@ import { Worker, type ConnectionOptions, type Job } from 'bullmq';
 import { redisConnection } from '../config/redis.js';
 import { discoveryRepository } from '../repositories/index.js';
 import { runDiscovery } from '../services/discovery/discoveryService.js';
+import type { DiscoverySource } from '../services/discovery/types.js';
 import { resolveEntityScope } from '../services/security/entityScope.js';
 import { runWithEntityScope, type EntityScope } from '../db/entityContext.js';
 import { connectPg } from '../config/db.js';
@@ -35,11 +36,37 @@ export interface ProcessDiscoveryDeps {
  * Handle one `run-discovery` job. All collaborators injectable → unit-tests with no DB/Redis/LLM.
  * Writes the outcome to discovery_runs (+ the inbox for a real run); re-throws on failure so BullMQ retries.
  */
+/** Resolve the injectable collaborators against their production defaults. */
+function resolveDiscoveryDeps(deps: ProcessDiscoveryDeps) {
+  return {
+    repo: deps.repo ?? discoveryRepository,
+    run: deps.runDiscoveryFn ?? runDiscovery,
+    resolveScope: deps.resolveEntityScopeFn ?? resolveEntityScope,
+    withScope: deps.runWithEntityScopeFn ?? runWithEntityScope,
+  };
+}
+
+/** Persist a real run's proposals to the inbox (skipped for dry runs / empty results). */
+async function saveDiscoveryProposals(
+  repo: typeof discoveryRepository,
+  result: Awaited<ReturnType<typeof runDiscovery>>,
+  ctx: { organizationId: string; runId: string; source: DiscoverySource; dryRun: boolean }
+) {
+  if (ctx.dryRun || !result.proposals.length) return;
+  await repo.saveProposals(
+    result.proposals.map((p) => ({
+      organizationId: ctx.organizationId,
+      runId: ctx.runId,
+      source: ctx.source,
+      externalId: p.provenance.externalId,
+      externalName: p.provenance.externalName,
+      proposal: p.proposal,
+    }))
+  );
+}
+
 export async function processDiscoveryJob(job: Job<DiscoveryRunJobData>, deps: ProcessDiscoveryDeps = {}) {
-  const repo = deps.repo ?? discoveryRepository;
-  const run = deps.runDiscoveryFn ?? runDiscovery;
-  const resolveScope = deps.resolveEntityScopeFn ?? resolveEntityScope;
-  const withScope = deps.runWithEntityScopeFn ?? runWithEntityScope;
+  const { repo, run, resolveScope, withScope } = resolveDiscoveryDeps(deps);
 
   const { runId, organizationId, source, userId = null, dryRun = false, apps } = job.data;
   logger.info('discovery.job.started', { service: 'discovery-worker', runId, source, dryRun, jobId: job.id });
@@ -69,18 +96,7 @@ export async function processDiscoveryJob(job: Job<DiscoveryRunJobData>, deps: P
       preview: dryRun ? result.proposals : null,
     });
 
-    if (!dryRun && result.proposals.length) {
-      await repo.saveProposals(
-        result.proposals.map((p) => ({
-          organizationId,
-          runId,
-          source,
-          externalId: p.provenance.externalId,
-          externalName: p.provenance.externalName,
-          proposal: p.proposal,
-        }))
-      );
-    }
+    await saveDiscoveryProposals(repo, result, { organizationId, runId, source, dryRun });
 
     logger.info('discovery.job.completed', {
       service: 'discovery-worker', runId, source, dryRun,

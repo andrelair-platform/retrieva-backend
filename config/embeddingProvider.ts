@@ -278,52 +278,57 @@ export function selectProvider(context: EmbeddingContext): 'local' | 'cloud' {
  * @param {EmbeddingContext} context - Embedding context
  * @returns {Promise<Object>} Embedding result with metadata
  */
-export async function embedTexts(texts: string[], context: EmbeddingContext) {
-  const startTime = Date.now();
-  const selectedProvider = selectProvider(context);
-  let usedProvider: 'local' | 'cloud' = selectedProvider;
-  let embeddings: number[][] = [];
-  let error: Error | null = null;
-
-  try {
-    if (selectedProvider === EmbeddingProvider.CLOUD) {
-      embeddings = await embedWithCloud(texts, context);
-    } else {
-      embeddings = await embedWithLocal(texts, context);
-    }
-  } catch (err) {
-    error = err as Error;
-
-    // Fallback logic
-    if (
-      selectedProvider === EmbeddingProvider.LOCAL &&
-      context.fallbackToCloud &&
+// Can a failed LOCAL embed fall back to cloud? (consent + non-regulated + cloud reachable).
+function canFallbackToCloud(context: EmbeddingContext): boolean {
+  return Boolean(
+    context.fallbackToCloud &&
       context.trustLevel !== TrustLevel.REGULATED &&
       isCloudAvailable()
-    ) {
+  );
+}
+
+/**
+ * Embed with the selected provider, applying the one-hop fallback (local↔cloud) on failure. Returns the
+ * provider actually used + any surviving error (null once a fallback succeeded). Rethrows when no
+ * fallback applies — byte-identical to the former inline try/catch.
+ */
+async function embedWithFallback(
+  texts: string[],
+  context: EmbeddingContext,
+  selectedProvider: 'local' | 'cloud'
+): Promise<{ embeddings: number[][]; usedProvider: 'local' | 'cloud'; error: Error | null }> {
+  try {
+    const embeddings =
+      selectedProvider === EmbeddingProvider.CLOUD
+        ? await embedWithCloud(texts, context)
+        : await embedWithLocal(texts, context);
+    return { embeddings, usedProvider: selectedProvider, error: null };
+  } catch (err) {
+    if (selectedProvider === EmbeddingProvider.LOCAL && canFallbackToCloud(context)) {
       logger.warn('Local embedding failed, falling back to cloud', {
         service: 'embedding-router',
         workspaceId: context.workspaceId,
         error: (err as Error).message,
       });
-
-      usedProvider = EmbeddingProvider.CLOUD;
-      embeddings = await embedWithCloud(texts, context);
-      error = null;
-    } else if (selectedProvider === EmbeddingProvider.CLOUD && context.fallbackToCloud !== false) {
+      return { embeddings: await embedWithCloud(texts, context), usedProvider: EmbeddingProvider.CLOUD, error: null };
+    }
+    if (selectedProvider === EmbeddingProvider.CLOUD && context.fallbackToCloud !== false) {
       logger.warn('Cloud embedding failed, falling back to local', {
         service: 'embedding-router',
         workspaceId: context.workspaceId,
         error: (err as Error).message,
       });
-
-      usedProvider = EmbeddingProvider.LOCAL;
-      embeddings = await embedWithLocal(texts, context);
-      error = null;
-    } else {
-      throw err;
+      return { embeddings: await embedWithLocal(texts, context), usedProvider: EmbeddingProvider.LOCAL, error: null };
     }
+    throw err;
   }
+}
+
+export async function embedTexts(texts: string[], context: EmbeddingContext) {
+  const startTime = Date.now();
+  const selectedProvider = selectProvider(context);
+
+  const { embeddings, usedProvider, error } = await embedWithFallback(texts, context, selectedProvider);
 
   const totalTime = Date.now() - startTime;
 

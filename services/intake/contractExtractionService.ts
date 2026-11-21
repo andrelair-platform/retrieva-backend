@@ -22,7 +22,7 @@ const strArray = (v: unknown) =>
 const oneOf = (v: unknown, allowed: string[]) => (allowed.includes(v as string) ? v : null);
 
 /** Pure: clamp a raw model object to a valid, safe proposal (unknown → null, enums clamped). */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw model output is untyped
+ 
 export function normalizeProposal(raw: any = {}) {
   const confidence = Number(raw.confidence);
   return {

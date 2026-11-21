@@ -16,7 +16,7 @@ export interface WorkspaceContext {
 // Declaration merging: augment Express's Request with the custom props set by
 // our middleware (auth.js, loadWorkspace.js, app.js request-id, validate.js).
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
+   
   namespace Express {
     interface Request {
       user?: AuthenticatedUser;

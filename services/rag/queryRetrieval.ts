@@ -4,8 +4,7 @@
  * @module services/rag/queryRetrieval
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any -- retrieval works over dynamic user filters,
-   Qdrant filter clauses, and external retriever/vector-store instances (all heterogeneous). */
+ 
 import { expandQuery, generateHypotheticalDocument } from './retrievalEnhancements.js';
 import { deduplicateDocuments } from '../../utils/rag/contextFormatter.js';
 
@@ -116,6 +115,194 @@ const FILTER_LIMITS = {
   tags: { maxCount: 10, maxLength: 50 },
 };
 
+function validatePageFilter(value: any) {
+  const page = parseInt(value, 10);
+  if (isNaN(page)) {
+    return { valid: false, error: 'Page must be a number' };
+  }
+  if (page < FILTER_LIMITS.page.min || page > FILTER_LIMITS.page.max) {
+    return {
+      valid: false,
+      error: `Page must be between ${FILTER_LIMITS.page.min} and ${FILTER_LIMITS.page.max}`,
+    };
+  }
+  return { valid: true, value: page };
+}
+
+function validateSectionFilter(value: any) {
+  if (typeof value !== 'string') {
+    return { valid: false, error: 'Section must be a string' };
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return { valid: false, error: 'Section cannot be empty' };
+  }
+  if (trimmed.length > FILTER_LIMITS.section.maxLength) {
+    return {
+      valid: false,
+      error: `Section must be under ${FILTER_LIMITS.section.maxLength} characters`,
+    };
+  }
+  // SECURITY: Only allow safe characters to prevent injection
+  if (!FILTER_LIMITS.section.pattern.test(trimmed)) {
+    return { valid: false, error: 'Section contains invalid characters' };
+  }
+  return { valid: true, value: trimmed };
+}
+
+function validatePageRangeFilter(value: any) {
+  if (!value || typeof value !== 'object') {
+    return { valid: false, error: 'Page range must be an object with min and max' };
+  }
+  const min = parseInt(value.min, 10);
+  const max = parseInt(value.max, 10);
+  if (isNaN(min) || isNaN(max)) {
+    return { valid: false, error: 'Page range min/max must be numbers' };
+  }
+  if (min < FILTER_LIMITS.page.min || max > FILTER_LIMITS.page.max) {
+    return {
+      valid: false,
+      error: `Page range must be between ${FILTER_LIMITS.page.min} and ${FILTER_LIMITS.page.max}`,
+    };
+  }
+  if (min > max) {
+    return { valid: false, error: 'Page range min cannot be greater than max' };
+  }
+  if (max - min > FILTER_LIMITS.pageRange.maxSpan) {
+    return {
+      valid: false,
+      error: `Page range cannot span more than ${FILTER_LIMITS.pageRange.maxSpan} pages`,
+    };
+  }
+  return { valid: true, value: { min, max } };
+}
+
+function validateDateRangeFilter(value: any) {
+  if (!value || typeof value !== 'object') {
+    return { valid: false, error: 'Date range must be an object with from and to' };
+  }
+  const from = new Date(value.from);
+  const to = new Date(value.to);
+  if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+    return { valid: false, error: 'Date range from/to must be valid dates' };
+  }
+  if (from > to) {
+    return { valid: false, error: 'Date range from cannot be after to' };
+  }
+  const daysDiff = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24);
+  if (daysDiff > FILTER_LIMITS.dateRange.maxSpanDays) {
+    return {
+      valid: false,
+      error: `Date range cannot span more than ${FILTER_LIMITS.dateRange.maxSpanDays} days`,
+    };
+  }
+  // Return as Unix timestamps for Qdrant
+  return { valid: true, value: { from: from.getTime(), to: to.getTime() } };
+}
+
+function validateAuthorFilter(value: any) {
+  if (typeof value !== 'string') {
+    return { valid: false, error: 'Author must be a string' };
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return { valid: false, error: 'Author cannot be empty' };
+  }
+  if (trimmed.length > FILTER_LIMITS.author.maxLength) {
+    return {
+      valid: false,
+      error: `Author must be under ${FILTER_LIMITS.author.maxLength} characters`,
+    };
+  }
+  if (!FILTER_LIMITS.author.pattern.test(trimmed)) {
+    return { valid: false, error: 'Author contains invalid characters' };
+  }
+  return { valid: true, value: trimmed };
+}
+
+function validateDocumentTypeFilter(value: any) {
+  if (typeof value !== 'string') {
+    return { valid: false, error: 'Document type must be a string' };
+  }
+  const trimmed = value.trim().toLowerCase();
+  if (!FILTER_LIMITS.documentType.allowed.includes(trimmed)) {
+    return {
+      valid: false,
+      error: `Document type must be one of: ${FILTER_LIMITS.documentType.allowed.join(', ')}`,
+    };
+  }
+  return { valid: true, value: trimmed };
+}
+
+function validateClassificationFilter(value: any) {
+  if (typeof value !== 'string') {
+    return { valid: false, error: 'Classification must be a string' };
+  }
+  const trimmed = value.trim().toLowerCase();
+  if (!FILTER_LIMITS.classification.allowed.includes(trimmed)) {
+    return {
+      valid: false,
+      error: `Classification must be one of: ${FILTER_LIMITS.classification.allowed.join(', ')}`,
+    };
+  }
+  return { valid: true, value: trimmed };
+}
+
+function validateClassificationLevelFilter(value: any) {
+  // Filter by classification level (includes all classifications at or below the specified level)
+  // Order: public < internal < confidential < restricted
+  if (typeof value !== 'string') {
+    return { valid: false, error: 'Classification level must be a string' };
+  }
+  const trimmed = value.trim().toLowerCase();
+  if (!FILTER_LIMITS.classification.allowed.includes(trimmed)) {
+    return {
+      valid: false,
+      error: `Classification level must be one of: ${FILTER_LIMITS.classification.allowed.join(', ')}`,
+    };
+  }
+  // Return all classifications at or below this level
+  const levels = FILTER_LIMITS.classification.allowed;
+  const levelIndex = levels.indexOf(trimmed);
+  return { valid: true, value: levels.slice(0, levelIndex + 1) };
+}
+
+function validateTagsFilter(value: any) {
+  if (!Array.isArray(value)) {
+    return { valid: false, error: 'Tags must be an array' };
+  }
+  if (value.length > FILTER_LIMITS.tags.maxCount) {
+    return {
+      valid: false,
+      error: `Cannot filter by more than ${FILTER_LIMITS.tags.maxCount} tags`,
+    };
+  }
+  const validTags = [];
+  for (const tag of value) {
+    if (typeof tag !== 'string') continue;
+    const trimmed = tag.trim();
+    if (trimmed.length > 0 && trimmed.length <= FILTER_LIMITS.tags.maxLength) {
+      validTags.push(trimmed);
+    }
+  }
+  if (validTags.length === 0) {
+    return { valid: false, error: 'At least one valid tag is required' };
+  }
+  return { valid: true, value: validTags };
+}
+
+const FILTER_VALIDATORS: Record<string, (value: any) => any> = {
+  page: validatePageFilter,
+  section: validateSectionFilter,
+  pageRange: validatePageRangeFilter,
+  dateRange: validateDateRangeFilter,
+  author: validateAuthorFilter,
+  documentType: validateDocumentTypeFilter,
+  classification: validateClassificationFilter,
+  classificationLevel: validateClassificationLevelFilter,
+  tags: validateTagsFilter,
+};
+
 /**
  * Validate and sanitize a filter value
  * @param {'page'|'section'|'pageRange'} type - Type of filter
@@ -124,186 +311,11 @@ const FILTER_LIMITS = {
  * @private
  */
 function validateFilterValue(type: string, value: any) {
-  switch (type) {
-    case 'page': {
-      const page = parseInt(value, 10);
-      if (isNaN(page)) {
-        return { valid: false, error: 'Page must be a number' };
-      }
-      if (page < FILTER_LIMITS.page.min || page > FILTER_LIMITS.page.max) {
-        return {
-          valid: false,
-          error: `Page must be between ${FILTER_LIMITS.page.min} and ${FILTER_LIMITS.page.max}`,
-        };
-      }
-      return { valid: true, value: page };
-    }
-
-    case 'section': {
-      if (typeof value !== 'string') {
-        return { valid: false, error: 'Section must be a string' };
-      }
-      const trimmed = value.trim();
-      if (trimmed.length === 0) {
-        return { valid: false, error: 'Section cannot be empty' };
-      }
-      if (trimmed.length > FILTER_LIMITS.section.maxLength) {
-        return {
-          valid: false,
-          error: `Section must be under ${FILTER_LIMITS.section.maxLength} characters`,
-        };
-      }
-      // SECURITY: Only allow safe characters to prevent injection
-      if (!FILTER_LIMITS.section.pattern.test(trimmed)) {
-        return { valid: false, error: 'Section contains invalid characters' };
-      }
-      return { valid: true, value: trimmed };
-    }
-
-    case 'pageRange': {
-      if (!value || typeof value !== 'object') {
-        return { valid: false, error: 'Page range must be an object with min and max' };
-      }
-      const min = parseInt(value.min, 10);
-      const max = parseInt(value.max, 10);
-      if (isNaN(min) || isNaN(max)) {
-        return { valid: false, error: 'Page range min/max must be numbers' };
-      }
-      if (min < FILTER_LIMITS.page.min || max > FILTER_LIMITS.page.max) {
-        return {
-          valid: false,
-          error: `Page range must be between ${FILTER_LIMITS.page.min} and ${FILTER_LIMITS.page.max}`,
-        };
-      }
-      if (min > max) {
-        return { valid: false, error: 'Page range min cannot be greater than max' };
-      }
-      if (max - min > FILTER_LIMITS.pageRange.maxSpan) {
-        return {
-          valid: false,
-          error: `Page range cannot span more than ${FILTER_LIMITS.pageRange.maxSpan} pages`,
-        };
-      }
-      return { valid: true, value: { min, max } };
-    }
-
-    case 'dateRange': {
-      if (!value || typeof value !== 'object') {
-        return { valid: false, error: 'Date range must be an object with from and to' };
-      }
-      const from = new Date(value.from);
-      const to = new Date(value.to);
-      if (isNaN(from.getTime()) || isNaN(to.getTime())) {
-        return { valid: false, error: 'Date range from/to must be valid dates' };
-      }
-      if (from > to) {
-        return { valid: false, error: 'Date range from cannot be after to' };
-      }
-      const daysDiff = (to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24);
-      if (daysDiff > FILTER_LIMITS.dateRange.maxSpanDays) {
-        return {
-          valid: false,
-          error: `Date range cannot span more than ${FILTER_LIMITS.dateRange.maxSpanDays} days`,
-        };
-      }
-      // Return as Unix timestamps for Qdrant
-      return { valid: true, value: { from: from.getTime(), to: to.getTime() } };
-    }
-
-    case 'author': {
-      if (typeof value !== 'string') {
-        return { valid: false, error: 'Author must be a string' };
-      }
-      const trimmed = value.trim();
-      if (trimmed.length === 0) {
-        return { valid: false, error: 'Author cannot be empty' };
-      }
-      if (trimmed.length > FILTER_LIMITS.author.maxLength) {
-        return {
-          valid: false,
-          error: `Author must be under ${FILTER_LIMITS.author.maxLength} characters`,
-        };
-      }
-      if (!FILTER_LIMITS.author.pattern.test(trimmed)) {
-        return { valid: false, error: 'Author contains invalid characters' };
-      }
-      return { valid: true, value: trimmed };
-    }
-
-    case 'documentType': {
-      if (typeof value !== 'string') {
-        return { valid: false, error: 'Document type must be a string' };
-      }
-      const trimmed = value.trim().toLowerCase();
-      if (!FILTER_LIMITS.documentType.allowed.includes(trimmed)) {
-        return {
-          valid: false,
-          error: `Document type must be one of: ${FILTER_LIMITS.documentType.allowed.join(', ')}`,
-        };
-      }
-      return { valid: true, value: trimmed };
-    }
-
-    case 'classification': {
-      if (typeof value !== 'string') {
-        return { valid: false, error: 'Classification must be a string' };
-      }
-      const trimmed = value.trim().toLowerCase();
-      if (!FILTER_LIMITS.classification.allowed.includes(trimmed)) {
-        return {
-          valid: false,
-          error: `Classification must be one of: ${FILTER_LIMITS.classification.allowed.join(', ')}`,
-        };
-      }
-      return { valid: true, value: trimmed };
-    }
-
-    case 'classificationLevel': {
-      // Filter by classification level (includes all classifications at or below the specified level)
-      // Order: public < internal < confidential < restricted
-      if (typeof value !== 'string') {
-        return { valid: false, error: 'Classification level must be a string' };
-      }
-      const trimmed = value.trim().toLowerCase();
-      if (!FILTER_LIMITS.classification.allowed.includes(trimmed)) {
-        return {
-          valid: false,
-          error: `Classification level must be one of: ${FILTER_LIMITS.classification.allowed.join(', ')}`,
-        };
-      }
-      // Return all classifications at or below this level
-      const levels = FILTER_LIMITS.classification.allowed;
-      const levelIndex = levels.indexOf(trimmed);
-      return { valid: true, value: levels.slice(0, levelIndex + 1) };
-    }
-
-    case 'tags': {
-      if (!Array.isArray(value)) {
-        return { valid: false, error: 'Tags must be an array' };
-      }
-      if (value.length > FILTER_LIMITS.tags.maxCount) {
-        return {
-          valid: false,
-          error: `Cannot filter by more than ${FILTER_LIMITS.tags.maxCount} tags`,
-        };
-      }
-      const validTags = [];
-      for (const tag of value) {
-        if (typeof tag !== 'string') continue;
-        const trimmed = tag.trim();
-        if (trimmed.length > 0 && trimmed.length <= FILTER_LIMITS.tags.maxLength) {
-          validTags.push(trimmed);
-        }
-      }
-      if (validTags.length === 0) {
-        return { valid: false, error: 'At least one valid tag is required' };
-      }
-      return { valid: true, value: validTags };
-    }
-
-    default:
-      return { valid: false, error: `Unknown filter type: ${type}` };
+  const validator = FILTER_VALIDATORS[type];
+  if (!validator) {
+    return { valid: false, error: `Unknown filter type: ${type}` };
   }
+  return validator(value);
 }
 
 /**
@@ -316,6 +328,88 @@ function validateFilterValue(type: string, value: any) {
  * @returns {QdrantFilter} Qdrant filter object (always includes workspaceId)
  * @throws {Error} If workspaceId is missing or filter validation fails
  */
+// Accumulates the built filter + any validation errors; threaded through the
+// per-filter appliers so each stays within the param budget.
+type FilterBuildCtx = { qdrantFilter: { must: any[]; should?: any[] }; errors: string[] };
+
+/** Apply a single exact-match filter: validate → push {key, match:{value}}. */
+function applyMatchFilter(filters: any, name: string, key: string, ctx: FilterBuildCtx) {
+  if (filters[name] === undefined) return;
+  const result = validateFilterValue(name, filters[name]);
+  if (!result.valid) {
+    ctx.errors.push(result.error!);
+  } else {
+    ctx.qdrantFilter.must.push({ key, match: { value: result.value } });
+  }
+}
+
+/** Apply a range filter (pageRange/dateRange) mapping min/max → gte/lte. */
+function applyRangeFilter(
+  filters: any,
+  name: string,
+  mapping: { key: string; loField: string; hiField: string },
+  ctx: FilterBuildCtx
+) {
+  if (filters[name] === undefined) return;
+  const result = validateFilterValue(name, filters[name]);
+  if (!result.valid) {
+    ctx.errors.push(result.error!);
+    return;
+  }
+  ctx.qdrantFilter.must.push({
+    key: mapping.key,
+    range: {
+      gte: (result.value as any)[mapping.loField],
+      lte: (result.value as any)[mapping.hiField],
+    },
+  });
+}
+
+/** Apply the classification-level filter (includes all at or below level). */
+function applyClassificationLevelFilter(filters: any, ctx: FilterBuildCtx) {
+  if (filters.classificationLevel === undefined) return;
+  const result = validateFilterValue('classificationLevel', filters.classificationLevel);
+  if (!result.valid) {
+    ctx.errors.push(result.error!);
+    return;
+  }
+  // Use "should" with minimum_should_match for OR logic
+  const classificationConditions = (result.value as string[]).map((level) => ({
+    key: 'metadata.classification',
+    match: { value: level },
+  }));
+
+  // Add as a nested should clause
+  if (classificationConditions.length === 1) {
+    ctx.qdrantFilter.must.push(classificationConditions[0]);
+  } else {
+    // For multiple levels, we need to wrap in should
+    ctx.qdrantFilter.must.push({
+      should: classificationConditions,
+    });
+  }
+}
+
+/** Apply the tags filter (any match → OR via should). */
+function applyTagsFilter(filters: any, ctx: FilterBuildCtx) {
+  if (filters.tags === undefined) return;
+  const result = validateFilterValue('tags', filters.tags);
+  if (!result.valid) {
+    ctx.errors.push(result.error!);
+    return;
+  }
+  // Use "should" for OR logic - document must match at least one tag
+  if (!ctx.qdrantFilter.should) {
+    ctx.qdrantFilter.should = [];
+  }
+  for (const tag of result.value as string[]) {
+    ctx.qdrantFilter.should.push({
+      key: 'metadata.tags',
+      match: { value: tag },
+    });
+  }
+}
+
 export function buildQdrantFilter(filters: any, workspaceId: string) {
   // CRITICAL: workspaceId is REQUIRED for multi-tenant isolation
   if (!workspaceId || typeof workspaceId !== 'string') {
@@ -332,148 +426,24 @@ export function buildQdrantFilter(filters: any, workspaceId: string) {
     match: { value: workspaceId },
   });
 
-  // Process optional user-provided filters
+  // Process optional user-provided filters (order preserved from original impl
+  // so the `must` array + any joined validation-error message stay identical).
   if (filters && typeof filters === 'object') {
-    // Validate and add page filter
-    if (filters.page !== undefined) {
-      const result = validateFilterValue('page', filters.page);
-      if (!result.valid) {
-        errors.push(result.error!);
-      } else {
-        qdrantFilter.must.push({
-          key: 'metadata.page',
-          match: { value: result.value },
-        });
-      }
-    }
-
-    // Validate and add section filter
-    if (filters.section !== undefined) {
-      const result = validateFilterValue('section', filters.section);
-      if (!result.valid) {
-        errors.push(result.error!);
-      } else {
-        qdrantFilter.must.push({
-          key: 'metadata.section',
-          match: { value: result.value },
-        });
-      }
-    }
-
-    // Validate and add page range filter
-    if (filters.pageRange !== undefined) {
-      const result = validateFilterValue('pageRange', filters.pageRange);
-      if (!result.valid) {
-        errors.push(result.error!);
-      } else {
-        qdrantFilter.must.push({
-          key: 'metadata.page',
-          range: {
-            gte: (result.value as any).min,
-            lte: (result.value as any).max,
-          },
-        });
-      }
-    }
-
-    // Validate and add date range filter (lastModified)
-    if (filters.dateRange !== undefined) {
-      const result = validateFilterValue('dateRange', filters.dateRange);
-      if (!result.valid) {
-        errors.push(result.error!);
-      } else {
-        qdrantFilter.must.push({
-          key: 'metadata.lastModified',
-          range: {
-            gte: (result.value as any).from,
-            lte: (result.value as any).to,
-          },
-        });
-      }
-    }
-
-    // Validate and add author filter
-    if (filters.author !== undefined) {
-      const result = validateFilterValue('author', filters.author);
-      if (!result.valid) {
-        errors.push(result.error!);
-      } else {
-        qdrantFilter.must.push({
-          key: 'metadata.author',
-          match: { value: result.value },
-        });
-      }
-    }
-
-    // Validate and add document type filter
-    if (filters.documentType !== undefined) {
-      const result = validateFilterValue('documentType', filters.documentType);
-      if (!result.valid) {
-        errors.push(result.error!);
-      } else {
-        qdrantFilter.must.push({
-          key: 'metadata.documentType',
-          match: { value: result.value },
-        });
-      }
-    }
-
-    // Validate and add classification filter (exact match)
-    if (filters.classification !== undefined) {
-      const result = validateFilterValue('classification', filters.classification);
-      if (!result.valid) {
-        errors.push(result.error!);
-      } else {
-        qdrantFilter.must.push({
-          key: 'metadata.classification',
-          match: { value: result.value },
-        });
-      }
-    }
-
-    // Validate and add classification level filter (includes all at or below level)
-    // Useful for RBAC: user with 'confidential' access can see public, internal, and confidential
-    if (filters.classificationLevel !== undefined) {
-      const result = validateFilterValue('classificationLevel', filters.classificationLevel);
-      if (!result.valid) {
-        errors.push(result.error!);
-      } else {
-        // Use "should" with minimum_should_match for OR logic
-        const classificationConditions = (result.value as string[]).map((level) => ({
-          key: 'metadata.classification',
-          match: { value: level },
-        }));
-
-        // Add as a nested should clause
-        if (classificationConditions.length === 1) {
-          qdrantFilter.must.push(classificationConditions[0]);
-        } else {
-          // For multiple levels, we need to wrap in should
-          qdrantFilter.must.push({
-            should: classificationConditions,
-          });
-        }
-      }
-    }
-
-    // Validate and add tags filter (any match)
-    if (filters.tags !== undefined) {
-      const result = validateFilterValue('tags', filters.tags);
-      if (!result.valid) {
-        errors.push(result.error!);
-      } else {
-        // Use "should" for OR logic - document must match at least one tag
-        if (!qdrantFilter.should) {
-          qdrantFilter.should = [];
-        }
-        for (const tag of result.value as string[]) {
-          qdrantFilter.should.push({
-            key: 'metadata.tags',
-            match: { value: tag },
-          });
-        }
-      }
-    }
+    const ctx: FilterBuildCtx = { qdrantFilter, errors };
+    applyMatchFilter(filters, 'page', 'metadata.page', ctx);
+    applyMatchFilter(filters, 'section', 'metadata.section', ctx);
+    applyRangeFilter(filters, 'pageRange', { key: 'metadata.page', loField: 'min', hiField: 'max' }, ctx);
+    applyRangeFilter(
+      filters,
+      'dateRange',
+      { key: 'metadata.lastModified', loField: 'from', hiField: 'to' },
+      ctx
+    );
+    applyMatchFilter(filters, 'author', 'metadata.author', ctx);
+    applyMatchFilter(filters, 'documentType', 'metadata.documentType', ctx);
+    applyMatchFilter(filters, 'classification', 'metadata.classification', ctx);
+    applyClassificationLevelFilter(filters, ctx);
+    applyTagsFilter(filters, ctx);
   }
 
   // If there are validation errors, throw
@@ -496,13 +466,14 @@ export function buildQdrantFilter(filters: any, workspaceId: string) {
  * @param {Document[]} existingDocs - Already retrieved documents
  * @returns {Promise<Document[]>} Combined unique documents (existing + additional)
  */
-export async function retrieveAdditionalDocuments(
-  allQueries: string[],
-  retriever: any,
-  vectorStore: any,
-  qdrantFilter: any,
-  existingDocs: any[]
-) {
+export async function retrieveAdditionalDocuments(opts: {
+  allQueries: string[];
+  retriever: any;
+  vectorStore: any;
+  qdrantFilter: any;
+  existingDocs: any[];
+}) {
+  const { allQueries, retriever, vectorStore, qdrantFilter, existingDocs } = opts;
   const additionalDocs: any[] = [];
 
   for (const qVariation of allQueries.slice(0, 2)) {

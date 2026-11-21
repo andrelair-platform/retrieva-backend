@@ -45,22 +45,57 @@ const NOSQL_INJECTION_PATTERNS = [
  * @param {string} path - Current path for logging
  * @returns {any} Sanitized object
  */
+// A key is a NoSQL-injection vector if it's a raw MongoDB operator ($…) or matches a known pattern.
+// Logs the block and returns true; returns false for a safe key (keeps the loop body flat).
+function isBlockedNoSQLKey(key: string, path: string): boolean {
+  if (key.startsWith('$')) {
+    logger.warn('NoSQL injection attempt blocked', {
+      service: 'security',
+      path: `${path}.${key}`,
+      operator: key,
+    });
+    return true;
+  }
+  if (NOSQL_INJECTION_PATTERNS.some((pattern) => pattern.test(key))) {
+    logger.warn('NoSQL injection pattern blocked', {
+      service: 'security',
+      path: `${path}.${key}`,
+    });
+    return true;
+  }
+  return false;
+}
+
+// Sanitize a plain-object's entries: drop injection-vector keys, recurse into the rest.
+function sanitizeObjectEntries(obj: Record<string, any>, path: string): Record<string, any> {
+  const sanitized: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (isBlockedNoSQLKey(key, path)) continue;
+    sanitized[key] = sanitizeNoSQL(value, `${path}.${key}`);
+  }
+  return sanitized;
+}
+
+// Sanitize a string value: a leading `$` makes it a MongoDB operator → block (→ '').
+function sanitizeNoSQLString(obj: string, path: string): string {
+  if (obj.startsWith('$')) {
+    logger.warn('NoSQL injection attempt blocked', {
+      service: 'security',
+      path,
+      value: obj.substring(0, 50),
+    });
+    return '';
+  }
+  return obj;
+}
+
 function sanitizeNoSQL(obj: any, path = ""): any {
   if (obj === null || obj === undefined) {
     return obj;
   }
 
   if (typeof obj === 'string') {
-    // Check for $ operators in string values
-    if (obj.startsWith('$')) {
-      logger.warn('NoSQL injection attempt blocked', {
-        service: 'security',
-        path,
-        value: obj.substring(0, 50),
-      });
-      return '';
-    }
-    return obj;
+    return sanitizeNoSQLString(obj, path);
   }
 
   if (Array.isArray(obj)) {
@@ -68,33 +103,7 @@ function sanitizeNoSQL(obj: any, path = ""): any {
   }
 
   if (typeof obj === 'object') {
-    const sanitized: Record<string, any> = {};
-
-    for (const [key, value] of Object.entries(obj)) {
-      // Block keys starting with $ (MongoDB operators)
-      if (key.startsWith('$')) {
-        logger.warn('NoSQL injection attempt blocked', {
-          service: 'security',
-          path: `${path}.${key}`,
-          operator: key,
-        });
-        continue; // Skip this key entirely
-      }
-
-      // Check if key matches known injection patterns
-      const isInjection = NOSQL_INJECTION_PATTERNS.some((pattern) => pattern.test(key));
-      if (isInjection) {
-        logger.warn('NoSQL injection pattern blocked', {
-          service: 'security',
-          path: `${path}.${key}`,
-        });
-        continue;
-      }
-
-      sanitized[key] = sanitizeNoSQL(value, `${path}.${key}`);
-    }
-
-    return sanitized;
+    return sanitizeObjectEntries(obj, path);
   }
 
   return obj;

@@ -56,10 +56,10 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 // Handle uncaught errors
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception:', error);
-  gracefulShutdown('uncaughtException');
+  void gracefulShutdown('uncaughtException');
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', { promise, reason });
-  gracefulShutdown('unhandledRejection');
+  void gracefulShutdown('unhandledRejection');
 });

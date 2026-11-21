@@ -55,7 +55,7 @@ export function initRealtime(httpServer: HttpServer): IOServer {
 
   io.on('connection', (socket) => {
     const org = socket.data.organizationId as string;
-    socket.join(`org:${org}`); // tenant isolation — a client only receives its org's events
+    void socket.join(`org:${org}`); // tenant isolation — a client only receives its org's events
     logger.info('realtime client connected', { service: 'realtime', organizationId: org });
   });
 
@@ -71,6 +71,6 @@ export function emitToOrg(organizationId: string | null | undefined, event: stri
 
 /** Test/shutdown helper. */
 export function closeRealtime(): void {
-  io?.close();
+  void io?.close();
   io = null;
 }

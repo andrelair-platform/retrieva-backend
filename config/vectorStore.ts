@@ -48,11 +48,11 @@ function getQdrantClient(): QdrantClient {
  * @param {Object} options - Options including workspace for hybrid embeddings
  * @returns {Promise<Object>} Tenant-isolated vector store
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- LangChain document / progress shapes
+ 
 type IndexOptions = { onProgress?: (p: any) => void; workspace?: any };
 
 export const getVectorStore = async (
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- LangChain documents
+   
   docs?: any[],
   options: IndexOptions = {}
 ) => {
@@ -65,7 +65,7 @@ export const getVectorStore = async (
   // Return existing store for queries - wrapped with tenant isolation
   // IMPORTANT: contentPayloadKey must match how we store documents (payload.pageContent)
   // ISSUE #10 FIX: Wrap in try-catch with meaningful error handling
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain vector store
+
   let vectorStore: any;
   try {
     vectorStore = await QdrantVectorStore.fromExistingCollection(embeddings, {
@@ -75,39 +75,8 @@ export const getVectorStore = async (
       contentPayloadKey: 'pageContent', // Match the key used during indexing
     });
   } catch (error) {
-    const err = error as Error & { code?: string };
-    // Provide meaningful error messages for common issues
-    if (err.message?.includes('Not found') || err.message?.includes("doesn't exist")) {
-      logger.error('Qdrant collection not found', {
-        service: 'vector-store',
-        collection: COLLECTION_NAME,
-        qdrantUrl: QDRANT_URL,
-        error: err.message,
-      });
-      throw new Error(
-        `Vector store collection "${COLLECTION_NAME}" not found. ` +
-          `Ensure Qdrant is running at ${QDRANT_URL} and documents have been indexed.`
-      );
-    }
-
-    if (err.code === 'ECONNREFUSED' || err.message?.includes('ECONNREFUSED')) {
-      logger.error('Qdrant connection refused', {
-        service: 'vector-store',
-        qdrantUrl: QDRANT_URL,
-        error: err.message,
-      });
-      throw new Error(
-        `Cannot connect to Qdrant at ${QDRANT_URL}. ` + `Ensure Qdrant is running and accessible.`
-      );
-    }
-
-    // Re-throw with context for other errors
-    logger.error('Failed to connect to vector store', {
-      service: 'vector-store',
-      collection: COLLECTION_NAME,
-      error: err.message,
-    });
-    throw new Error(`Vector store connection failed: ${err.message}`);
+    // Re-throws with a meaningful, context-specific message (never returns).
+    throw mapVectorStoreConnectError(error);
   }
 
   // DEFENSE-IN-DEPTH: Wrap with tenant isolation enforcement
@@ -123,6 +92,46 @@ export const getVectorStore = async (
 };
 
 /**
+ * Translate a raw vector-store connection error into a meaningful, user-facing
+ * Error, logging context along the way. Always returns an Error to throw.
+ */
+function mapVectorStoreConnectError(error: unknown): Error {
+  const err = error as Error & { code?: string };
+  // Provide meaningful error messages for common issues
+  if (err.message?.includes('Not found') || err.message?.includes("doesn't exist")) {
+    logger.error('Qdrant collection not found', {
+      service: 'vector-store',
+      collection: COLLECTION_NAME,
+      qdrantUrl: QDRANT_URL,
+      error: err.message,
+    });
+    return new Error(
+      `Vector store collection "${COLLECTION_NAME}" not found. ` +
+        `Ensure Qdrant is running at ${QDRANT_URL} and documents have been indexed.`
+    );
+  }
+
+  if (err.code === 'ECONNREFUSED' || err.message?.includes('ECONNREFUSED')) {
+    logger.error('Qdrant connection refused', {
+      service: 'vector-store',
+      qdrantUrl: QDRANT_URL,
+      error: err.message,
+    });
+    return new Error(
+      `Cannot connect to Qdrant at ${QDRANT_URL}. ` + `Ensure Qdrant is running and accessible.`
+    );
+  }
+
+  // Re-throw with context for other errors
+  logger.error('Failed to connect to vector store', {
+    service: 'vector-store',
+    collection: COLLECTION_NAME,
+    error: err.message,
+  });
+  return new Error(`Vector store connection failed: ${err.message}`);
+}
+
+/**
  * Index documents with optimized batched embeddings
  *
  * This is the key optimization:
@@ -136,39 +145,18 @@ export const getVectorStore = async (
  * @param {Object} options.workspace - Workspace for hybrid embedding routing
  * @returns {Promise<Object>} Indexing results
  */
-// Internal (de-exported, AUD-P1): called only by indexDocuments in this module.
-async function indexDocumentsBatched(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- LangChain documents
-  docs: any[],
-  options: IndexOptions = {}
-) {
-  const { onProgress, workspace } = options;
-  const startTime = Date.now();
-
-  if (!docs || docs.length === 0) {
-    logger.warn('No documents to index', { service: 'vector-store' });
-    return { indexed: 0, timeMs: 0 };
-  }
-
-  logger.info('Starting batched document indexing', {
-    service: 'vector-store',
-    documentCount: docs.length,
-    batchConfig: {
-      maxChunks: BATCH_CONFIG.maxChunks,
-      maxTokens: BATCH_CONFIG.maxTokens,
-    },
-  });
-
-  // Extract texts for embedding
-  const texts = docs.map((doc) => doc.pageContent);
-
-  // Phase 1: Batch embed all texts
-  // Pass workspace for hybrid embedding (local/cloud) routing
-  // ISSUE #11 FIX: Add timeout to prevent indefinite hangs
-  const embedStartTime = Date.now();
-  let vectors: number[][];
+/**
+ * Phase 1: batch-embed all texts (with timeout + progress). Extracted from
+ * indexDocumentsBatched to keep that orchestrator small. Re-throws with context.
+ */
+async function embedDocumentTexts(
+  texts: string[],
+  docCount: number,
+  workspace: any,
+  onProgress?: (p: any) => void
+): Promise<number[][]> {
   try {
-    vectors = await promiseWithTimeout(
+    return await promiseWithTimeout(
       embeddings.embedDocuments(texts, {
         workspace, // Pass workspace for hybrid embedding system
         onProgress: (batchNum: number, totalBatches: number, chunksProcessed: number) => {
@@ -192,39 +180,31 @@ async function indexDocumentsBatched(
     // Log and re-throw with context
     logger.error('Embedding operation failed', {
       service: 'vector-store',
-      documentCount: docs.length,
+      documentCount: docCount,
       timeoutMs: EMBEDDING_TIMEOUT_MS,
       error: message,
       isTimeout: message?.includes('timed out'),
     });
     throw error;
   }
-  const embedTime = Date.now() - embedStartTime;
+}
 
-  // Determine which provider was used for metrics tracking
-  let usedProvider = 'local';
-  if (workspace && isCloudAvailable()) {
-    const context = createEmbeddingContext(workspace);
-    usedProvider = selectProvider(context);
-  }
-
-  logger.info('Embedding phase complete', {
-    service: 'vector-store',
-    chunksEmbedded: vectors.length,
-    embedTimeMs: embedTime,
-    chunksPerSec: ((vectors.length / embedTime) * 1000).toFixed(1),
-    provider: usedProvider,
-  });
-
-  // Phase 2: Batch upsert to Qdrant
-  const upsertStartTime = Date.now();
+/**
+ * Phase 2: build sanitized points and batch-upsert them to Qdrant. Returns the
+ * number of points created. Extracted from indexDocumentsBatched.
+ */
+async function upsertDocumentPoints(
+  docs: any[],
+  vectors: number[][],
+  onProgress?: (p: any) => void
+): Promise<number> {
   const client = getQdrantClient();
 
   // Ensure collection exists
   await ensureCollection(client, vectors[0].length);
 
   // Sanitize text to remove invalid Unicode surrogates
-  const sanitizeText = (text: unknown) => {
+  const sanitizeContent = (text: unknown) => {
     if (typeof text !== 'string') return text;
     // Remove lone surrogates that cause JSON encoding issues
     return text.replace(
@@ -238,7 +218,7 @@ async function indexDocumentsBatched(
     id: generatePointId(),
     vector: vectors[i],
     payload: {
-      pageContent: sanitizeText(doc.pageContent),
+      pageContent: sanitizeContent(doc.pageContent),
       metadata: doc.metadata,
     },
   }));
@@ -266,6 +246,61 @@ async function indexDocumentsBatched(
     }
   }
 
+  return points.length;
+}
+
+// Internal (de-exported, AUD-P1): called only by indexDocuments in this module.
+async function indexDocumentsBatched(
+
+  docs: any[],
+  options: IndexOptions = {}
+) {
+  const { onProgress, workspace } = options;
+  const startTime = Date.now();
+
+  if (!docs || docs.length === 0) {
+    logger.warn('No documents to index', { service: 'vector-store' });
+    return { indexed: 0, timeMs: 0 };
+  }
+
+  logger.info('Starting batched document indexing', {
+    service: 'vector-store',
+    documentCount: docs.length,
+    batchConfig: {
+      maxChunks: BATCH_CONFIG.maxChunks,
+      maxTokens: BATCH_CONFIG.maxTokens,
+    },
+  });
+
+  // Extract texts for embedding
+  const texts = docs.map((doc) => doc.pageContent);
+
+  // Phase 1: Batch embed all texts
+  // Pass workspace for hybrid embedding (local/cloud) routing
+  // ISSUE #11 FIX: Add timeout to prevent indefinite hangs
+  const embedStartTime = Date.now();
+  const vectors = await embedDocumentTexts(texts, docs.length, workspace, onProgress);
+  const embedTime = Date.now() - embedStartTime;
+
+  // Determine which provider was used for metrics tracking
+  let usedProvider = 'local';
+  if (workspace && isCloudAvailable()) {
+    const context = createEmbeddingContext(workspace);
+    usedProvider = selectProvider(context);
+  }
+
+  logger.info('Embedding phase complete', {
+    service: 'vector-store',
+    chunksEmbedded: vectors.length,
+    embedTimeMs: embedTime,
+    chunksPerSec: ((vectors.length / embedTime) * 1000).toFixed(1),
+    provider: usedProvider,
+  });
+
+  // Phase 2: Batch upsert to Qdrant
+  const upsertStartTime = Date.now();
+  await upsertDocumentPoints(docs, vectors, onProgress);
+
   const upsertTime = Date.now() - upsertStartTime;
   const totalTime = Date.now() - startTime;
 
@@ -285,7 +320,7 @@ async function indexDocumentsBatched(
 
   // Return a vector store instance for compatibility
   // IMPORTANT: contentPayloadKey must match how we store documents (payload.pageContent)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain vector store
+   
   let vectorStore: any = await QdrantVectorStore.fromExistingCollection(embeddings, {
     url: QDRANT_URL,
     apiKey: QDRANT_API_KEY,

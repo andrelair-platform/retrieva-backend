@@ -50,7 +50,7 @@ const ms = (d: unknown) => (d ? new Date(d as string).getTime() : NaN);
  */
 export function buildEvidenceChecklist(
   expected: EvidenceCategory[],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous evidence rows
+   
   records: any[],
   now: Date = new Date()
 ): EvidenceChecklist {

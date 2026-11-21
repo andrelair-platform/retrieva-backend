@@ -74,22 +74,19 @@ export interface DashboardResult {
 /** Is this arrangement in a state where the cadence applies? (active work; not prospect/exited). */
 const ACTIVE = new Set(['active', 'under_review']);
 
-export function buildAuditDashboard(
-  arrangements: DashboardArrangement[],
-  cfg: DashboardConfig = {}
-): DashboardResult {
-  const now = cfg.now ?? new Date();
-  const std = num(cfg.intervalDays, 180);
-  const cif = num(cfg.cifIntervalDays, 90);
-  const win = num(cfg.deadlineWindowDays, 30);
+interface Cadences {
+  now: Date;
+  std: number;
+  cif: number;
+  win: number;
+}
 
-  const active = arrangements.filter((a) => ACTIVE.has(a.lifecycleStatus));
-
-  // ── overdue reassessments ──
+/** ── overdue reassessments ── (active arrangements past their cadence). */
+function computeOverdueItems(active: DashboardArrangement[], c: Cadences): OverdueItem[] {
   const overdueItems: OverdueItem[] = [];
   for (const a of active) {
-    const cadence = cadenceFor(a, std, cif);
-    const age = ageDays(a.lastAssessedAt, now);
+    const cadence = cadenceFor(a, c.std, c.cif);
+    const age = ageDays(a.lastAssessedAt, c.now);
     const never = age === null;
     const overdueBy = never ? Number.POSITIVE_INFINITY : age - cadence;
     if (never || overdueBy > 0) {
@@ -106,47 +103,60 @@ export function buildAuditDashboard(
     if (x.neverAssessed !== y.neverAssessed) return x.neverAssessed ? -1 : 1; // never-assessed first
     return y.overdueByDays - x.overdueByDays; // then most overdue first
   });
+  return overdueItems;
+}
 
-  // ── evidence freshness (active only) ──
+/** ── evidence freshness (active only) ──. */
+function computeFreshness(active: DashboardArrangement[], c: Cadences) {
   const freshness = { fresh: 0, aging: 0, stale: 0, neverAssessed: 0 };
   for (const a of active) {
-    const cadence = cadenceFor(a, std, cif);
-    const age = ageDays(a.lastAssessedAt, now);
+    const cadence = cadenceFor(a, c.std, c.cif);
+    const age = ageDays(a.lastAssessedAt, c.now);
     if (age === null) freshness.neverAssessed += 1;
     else if (age <= cadence / 2) freshness.fresh += 1;
     else if (age <= cadence) freshness.aging += 1;
     else freshness.stale += 1;
   }
+  return freshness;
+}
 
-  // ── register coverage (all arrangements) ──
+/** ── register coverage (all arrangements) ──. */
+function computeCoverage(arrangements: DashboardArrangement[]) {
   const withGaps = arrangements.filter((a) => a.hasOpenRegisterGap).length;
   const total = arrangements.length;
   const complete = total - withGaps;
   const percent = total === 0 ? 100 : Math.round((complete / total) * 100);
+  return { total, complete, withGaps, percent };
+}
 
-  // ── upcoming deadlines ──
+/** ── upcoming deadlines ── (expiring contracts + reassessments falling due). */
+function computeUpcomingDeadlines(
+  arrangements: DashboardArrangement[],
+  active: DashboardArrangement[],
+  c: Cadences
+): DashboardResult['upcomingDeadlines'] {
   const deadlineItems: DashboardResult['upcomingDeadlines']['items'] = [];
   let contractsExpired = 0;
   let contractsExpiringSoon = 0;
   for (const a of arrangements) {
-    const due = ageDays(a.contractValidUntil, now);
+    const due = ageDays(a.contractValidUntil, c.now);
     if (due === null) continue;
     const dueInDays = -due; // positive = days until expiry; negative = already expired
     if (dueInDays < 0) {
       contractsExpired += 1;
       deadlineItems.push({ id: a.id, label: a.label, kind: 'contract', dueInDays });
-    } else if (dueInDays <= win) {
+    } else if (dueInDays <= c.win) {
       contractsExpiringSoon += 1;
       deadlineItems.push({ id: a.id, label: a.label, kind: 'contract', dueInDays });
     }
   }
   let reassessmentsDueSoon = 0;
   for (const a of active) {
-    const cadence = cadenceFor(a, std, cif);
-    const age = ageDays(a.lastAssessedAt, now);
+    const cadence = cadenceFor(a, c.std, c.cif);
+    const age = ageDays(a.lastAssessedAt, c.now);
     if (age === null) continue; // never-assessed is counted in overdue, not "due soon"
     const dueInDays = cadence - age; // days until the next reassessment is due
-    if (dueInDays >= 0 && dueInDays <= win) {
+    if (dueInDays >= 0 && dueInDays <= c.win) {
       reassessmentsDueSoon += 1;
       deadlineItems.push({ id: a.id, label: a.label, kind: 'reassessment', dueInDays });
     }
@@ -154,8 +164,35 @@ export function buildAuditDashboard(
   deadlineItems.sort((x, y) => x.dueInDays - y.dueInDays); // most urgent (expired/soonest) first
 
   return {
-    generatedAt: now.toISOString(),
-    totals: { arrangements: total, active: active.length },
+    windowDays: c.win,
+    contractsExpired,
+    contractsExpiringSoon,
+    reassessmentsDueSoon,
+    items: deadlineItems,
+  };
+}
+
+export function buildAuditDashboard(
+  arrangements: DashboardArrangement[],
+  cfg: DashboardConfig = {}
+): DashboardResult {
+  const c: Cadences = {
+    now: cfg.now ?? new Date(),
+    std: num(cfg.intervalDays, 180),
+    cif: num(cfg.cifIntervalDays, 90),
+    win: num(cfg.deadlineWindowDays, 30),
+  };
+
+  const active = arrangements.filter((a) => ACTIVE.has(a.lifecycleStatus));
+
+  const overdueItems = computeOverdueItems(active, c);
+  const freshness = computeFreshness(active, c);
+  const coverage = computeCoverage(arrangements);
+  const upcomingDeadlines = computeUpcomingDeadlines(arrangements, active, c);
+
+  return {
+    generatedAt: c.now.toISOString(),
+    totals: { arrangements: coverage.total, active: active.length },
     overdueReassessments: {
       total: overdueItems.length,
       cif: overdueItems.filter((i) => isCif(i.criticality)).length,
@@ -163,13 +200,7 @@ export function buildAuditDashboard(
       items: overdueItems,
     },
     freshness,
-    coverage: { total, complete, withGaps, percent },
-    upcomingDeadlines: {
-      windowDays: win,
-      contractsExpired,
-      contractsExpiringSoon,
-      reassessmentsDueSoon,
-      items: deadlineItems,
-    },
+    coverage,
+    upcomingDeadlines,
   };
 }

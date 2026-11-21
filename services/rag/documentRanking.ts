@@ -9,7 +9,7 @@ import { normalizeText, calculateTitleSimilarity, calculateHeadingPathSimilarity
 
 interface DocLike {
   pageContent: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous RAG doc metadata
+   
   metadata?: Record<string, any>;
   rrfScore?: number;
 }
@@ -91,10 +91,9 @@ export function buildDocFrequencyMap(docs: DocLike[]) {
 export function calculateBM25Score(
   query: string,
   document: string,
-  avgDocLength = 800,
-  dfMap: Map<string, number> | null = null,
-  totalDocs = 1
+  opts: { avgDocLength?: number; dfMap?: Map<string, number> | null; totalDocs?: number } = {}
 ) {
+  const { avgDocLength = 800, dfMap = null, totalDocs = 1 } = opts;
   const queryTerms = normalizeText(query).split(/\s+/);
   const docTerms = normalizeText(document).split(/\s+/);
   const docLength = docTerms.length;
@@ -135,117 +134,104 @@ function getDocId(doc: DocLike) {
  * @param {number} [topK=5] - Number of top documents to return
  * @returns {RankedDocument[]} Top K re-ranked documents with scoring details
  */
-export function rerankDocuments(docs: DocLike[], query: string, topK = 5) {
-  if (!docs || docs.length === 0) return [];
+/** Empty RRF accumulator entry for a document (all ranks/scores null). */
+function emptyRrfEntry(doc: DocLike) {
+  return {
+    doc,
+    rrfScore: 0,
+    semanticRank: null as number | null,
+    bm25Rank: null as number | null,
+    titleRank: null as number | null,
+    semanticScore: null as number | null,
+    bm25Score: null as number | null,
+    titleSimilarity: null as number | null,
+  };
+}
 
-  const avgDocLength =
-    docs.reduce((sum, doc) => sum + doc.pageContent.split(/\s+/).length, 0) / docs.length;
-  const dfMap = buildDocFrequencyMap(docs);
+/** Get (or lazily create) the RRF accumulator entry for a document. */
+function getOrCreateEntry(rrfScores: Map<string, any>, doc: DocLike) {
+  const docId = getDocId(doc);
+  if (!rrfScores.has(docId)) {
+    rrfScores.set(docId, emptyRrfEntry(doc));
+  }
+  return rrfScores.get(docId);
+}
 
-  // Step 1: Create semantic ranking (docs already come sorted by semantic similarity)
-  const semanticRanks = docs.map((doc, index) => ({
+/** Step 1: semantic ranking (docs already come sorted by semantic similarity). */
+function buildSemanticRanks(docs: DocLike[]) {
+  return docs.map((doc, index) => ({
     doc,
     rank: index + 1,
     semanticScore: doc.metadata?.score || 1 / (index + 1),
   }));
+}
 
-  // Step 2: Create BM25 keyword ranking
+/** Step 2: BM25 keyword ranking (sorted by score descending). */
+function buildBm25Ranks(docs: DocLike[], query: string, avgDocLength: number, dfMap: Map<string, number>) {
   const bm25Scored = docs.map((doc) => ({
     doc,
-    score: calculateBM25Score(query, doc.pageContent, avgDocLength, dfMap, docs.length),
+    score: calculateBM25Score(query, doc.pageContent, { avgDocLength, dfMap, totalDocs: docs.length }),
   }));
-
-  // Sort by BM25 score descending
   bm25Scored.sort((a, b) => b.score - a.score);
-  const bm25Ranks = bm25Scored.map((item, index) => ({
+  return bm25Scored.map((item, index) => ({
     doc: item.doc,
     rank: index + 1,
     bm25Score: item.score,
   }));
+}
 
-  // Step 3: Create title similarity ranking
+/** Step 3: title similarity ranking (sorted by similarity descending). */
+function buildTitleRanks(docs: DocLike[], query: string) {
   const titleScored = docs.map((doc) => ({
     doc,
     similarity: calculateTitleSimilarity(query, doc.metadata?.documentTitle),
   }));
   titleScored.sort((a, b) => b.similarity - a.similarity);
-  const titleRanks = titleScored.map((item, index) => ({
+  return titleScored.map((item, index) => ({
     doc: item.doc,
     rank: index + 1,
     titleSimilarity: item.similarity,
   }));
+}
 
-  // Step 3b: Create heading path similarity ranking
+/** Step 3b: heading path similarity ranking (sorted by similarity descending). */
+function buildHeadingRanks(docs: DocLike[], query: string) {
   const headingScored = docs.map((doc) => ({
     doc,
     similarity: calculateHeadingPathSimilarity(query, doc.metadata?.heading_path),
   }));
   headingScored.sort((a, b) => b.similarity - a.similarity);
-  const headingRanks = headingScored.map((item, index) => ({
+  return headingScored.map((item, index) => ({
     doc: item.doc,
     rank: index + 1,
     headingSimilarity: item.similarity,
   }));
+}
 
-  // Step 4: RRF Merge
-  // Formula: RRF(d) = Σ(1 / (k + rank_i))
-  const rrfScores = new Map();
-
-  // Accumulate semantic ranks
+/** Accumulate semantic-rank RRF contributions. */
+function accumulateSemantic(rrfScores: Map<string, any>, semanticRanks: ReturnType<typeof buildSemanticRanks>) {
   for (const { doc, rank, semanticScore } of semanticRanks) {
-    const docId = getDocId(doc);
-    if (!rrfScores.has(docId)) {
-      rrfScores.set(docId, {
-        doc,
-        rrfScore: 0,
-        semanticRank: rank,
-        bm25Rank: null,
-        titleRank: null,
-        semanticScore,
-        bm25Score: null,
-        titleSimilarity: null,
-      });
-    }
-    rrfScores.get(docId).rrfScore += 1 / (RRF_K + rank);
+    const entry = getOrCreateEntry(rrfScores, doc);
+    entry.semanticRank = rank;
+    entry.semanticScore = semanticScore;
+    entry.rrfScore += 1 / (RRF_K + rank);
   }
+}
 
-  // Accumulate BM25 ranks
+/** Accumulate BM25-rank RRF contributions. */
+function accumulateBm25(rrfScores: Map<string, any>, bm25Ranks: ReturnType<typeof buildBm25Ranks>) {
   for (const { doc, rank, bm25Score } of bm25Ranks) {
-    const docId = getDocId(doc);
-    if (!rrfScores.has(docId)) {
-      rrfScores.set(docId, {
-        doc,
-        rrfScore: 0,
-        semanticRank: null,
-        bm25Rank: rank,
-        titleRank: null,
-        semanticScore: null,
-        bm25Score,
-        titleSimilarity: null,
-      });
-    }
-    const entry = rrfScores.get(docId);
+    const entry = getOrCreateEntry(rrfScores, doc);
     entry.rrfScore += 1 / (RRF_K + rank);
     entry.bm25Rank = rank;
     entry.bm25Score = bm25Score;
   }
+}
 
-  // Accumulate title ranks (only for docs with meaningful title similarity)
+/** Accumulate title-similarity RRF contributions + near-exact bonus. */
+function accumulateTitle(rrfScores: Map<string, any>, titleRanks: ReturnType<typeof buildTitleRanks>) {
   for (const { doc, rank, titleSimilarity } of titleRanks) {
-    const docId = getDocId(doc);
-    if (!rrfScores.has(docId)) {
-      rrfScores.set(docId, {
-        doc,
-        rrfScore: 0,
-        semanticRank: null,
-        bm25Rank: null,
-        titleRank: rank,
-        semanticScore: null,
-        bm25Score: null,
-        titleSimilarity,
-      });
-    }
-    const entry = rrfScores.get(docId);
+    const entry = getOrCreateEntry(rrfScores, doc);
     entry.titleRank = rank;
     entry.titleSimilarity = titleSimilarity;
 
@@ -253,35 +239,37 @@ export function rerankDocuments(docs: DocLike[], query: string, topK = 5) {
     if (titleSimilarity > 0.3) {
       entry.rrfScore += 1 / (RRF_K + rank);
     }
-
     // Additive bonus for near-exact title matches
     if (titleSimilarity > 0.8) {
       entry.rrfScore += 0.05;
     }
   }
+}
 
-  // Accumulate heading path ranks (boosts documents with relevant section headings)
+/** Accumulate heading-path RRF contributions (only for already-present docs). */
+function accumulateHeading(rrfScores: Map<string, any>, headingRanks: ReturnType<typeof buildHeadingRanks>) {
   for (const { doc, rank, headingSimilarity } of headingRanks) {
     const docId = getDocId(doc);
     const entry = rrfScores.get(docId);
-    if (entry) {
-      entry.headingRank = rank;
-      entry.headingSimilarity = headingSimilarity;
+    if (!entry) continue;
 
-      // Add RRF contribution for docs with meaningful heading path match
-      if (headingSimilarity > 0.3) {
-        entry.rrfScore += 1 / (RRF_K + rank);
-      }
+    entry.headingRank = rank;
+    entry.headingSimilarity = headingSimilarity;
 
-      // Additive bonus for strong heading matches (query terms in section headers)
-      if (headingSimilarity > 0.6) {
-        entry.rrfScore += 0.03;
-      }
+    // Add RRF contribution for docs with meaningful heading path match
+    if (headingSimilarity > 0.3) {
+      entry.rrfScore += 1 / (RRF_K + rank);
+    }
+    // Additive bonus for strong heading matches (query terms in section headers)
+    if (headingSimilarity > 0.6) {
+      entry.rrfScore += 0.03;
     }
   }
+}
 
-  // Convert to array and sort by RRF score
-  const rankedDocs = Array.from(rrfScores.values())
+/** Convert the RRF accumulator to a sorted array of scored documents. */
+function toRankedDocs(rrfScores: Map<string, any>) {
+  return Array.from(rrfScores.values())
     .sort((a, b) => b.rrfScore - a.rrfScore)
     .map((entry) => ({
       ...entry.doc,
@@ -296,21 +284,49 @@ export function rerankDocuments(docs: DocLike[], query: string, topK = 5) {
       headingSimilarity: entry.headingSimilarity,
       rrfScore: entry.rrfScore,
     }));
+}
 
+/** Debug-log the top-ranked document's scoring breakdown. */
+function logTopDoc(rankedDocs: any[]) {
+  const top = rankedDocs[0] || {};
   logger.debug('RRF hybrid scoring results', {
     service: 'rag',
     topDoc: {
-      rrfScore: rankedDocs[0]?.rrfScore?.toFixed(4),
-      semanticRank: rankedDocs[0]?.semanticRank,
-      bm25Rank: rankedDocs[0]?.bm25Rank,
-      titleRank: rankedDocs[0]?.titleRank,
-      titleSimilarity: rankedDocs[0]?.titleSimilarity?.toFixed(4),
-      headingRank: rankedDocs[0]?.headingRank,
-      headingSimilarity: rankedDocs[0]?.headingSimilarity?.toFixed(4),
-      semanticScore: rankedDocs[0]?.semanticScore?.toFixed(4),
-      bm25Score: rankedDocs[0]?.keywordScore?.toFixed(4),
+      rrfScore: top.rrfScore?.toFixed(4),
+      semanticRank: top.semanticRank,
+      bm25Rank: top.bm25Rank,
+      titleRank: top.titleRank,
+      titleSimilarity: top.titleSimilarity?.toFixed(4),
+      headingRank: top.headingRank,
+      headingSimilarity: top.headingSimilarity?.toFixed(4),
+      semanticScore: top.semanticScore?.toFixed(4),
+      bm25Score: top.keywordScore?.toFixed(4),
     },
   });
+}
+
+export function rerankDocuments(docs: DocLike[], query: string, topK = 5) {
+  if (!docs || docs.length === 0) return [];
+
+  const avgDocLength =
+    docs.reduce((sum, doc) => sum + doc.pageContent.split(/\s+/).length, 0) / docs.length;
+  const dfMap = buildDocFrequencyMap(docs);
+
+  // Build the four rankings
+  const semanticRanks = buildSemanticRanks(docs);
+  const bm25Ranks = buildBm25Ranks(docs, query, avgDocLength, dfMap);
+  const titleRanks = buildTitleRanks(docs, query);
+  const headingRanks = buildHeadingRanks(docs, query);
+
+  // RRF Merge — Formula: RRF(d) = Σ(1 / (k + rank_i))
+  const rrfScores = new Map<string, any>();
+  accumulateSemantic(rrfScores, semanticRanks);
+  accumulateBm25(rrfScores, bm25Ranks);
+  accumulateTitle(rrfScores, titleRanks);
+  accumulateHeading(rrfScores, headingRanks);
+
+  const rankedDocs = toRankedDocs(rrfScores);
+  logTopDoc(rankedDocs);
 
   return rankedDocs.slice(0, topK);
 }

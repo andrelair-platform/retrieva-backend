@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- LangChain formatting chains + LLM output
-   are untyped; answer/source payloads are heterogeneous. */
+ 
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { createLLM } from '../config/llm.js';

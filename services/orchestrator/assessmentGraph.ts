@@ -41,7 +41,7 @@ export interface SpanHandle {
  */
 export interface AssessmentGraphDeps {
   /** Load the arrangement being assessed (tenant-scoped). Returns null if it doesn't exist in the org. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- arrangement row is a heterogeneous domain object
+   
   loadArrangement: (organizationId: string, arrangementId: string) => Promise<any | null>;
   /** The gap/assessment step — in-process engine, or the CrewAI crew over A2A when CREW_A2A_ENABLED (RTV-81). */
   runGap: (args: {
@@ -49,7 +49,7 @@ export interface AssessmentGraphDeps {
     organizationId: string;
     arrangementId: string;
     userId?: string | null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- findings are heterogeneous control results
+     
   }) => Promise<{ findings: unknown[]; confidence: number; [k: string]: any }>;
   /** Persist a patch to the assessment_runs projection (currentNode/status/message). */
   updateRun: (runId: string, patch: RunPatch) => Promise<void>;
@@ -72,10 +72,10 @@ export const AssessmentRunState = Annotation.Root({
   organizationId: Annotation<string>,
   arrangementId: Annotation<string>,
   userId: Annotation<string | null>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- summary shown to the human at the gate
+   
   arrangementSummary: Annotation<any | null>,
   confirmed: Annotation<boolean>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the assessment result (findings + coverage)
+   
   result: Annotation<any | null>,
   status: Annotation<'running' | 'waiting_human' | 'blocked' | 'done'>,
   statusMessage: Annotation<string>,

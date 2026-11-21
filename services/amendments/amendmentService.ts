@@ -104,6 +104,50 @@ async function llmGenerate(input: GenerateInput): Promise<Array<{ article: strin
  * (deduped against already-drafted articles) + the skipped gaps with a reason. No side effects — the
  * caller persists the inbox.
  */
+type Candidate = { gap: GapInput; clause: (typeof CONTRACT_A30_CLAUSES)[number] };
+
+/** Classify one gap → draftable candidate (clause mapped, not already drafted) or a skip reason. */
+function classifyGap(
+  gap: GapInput,
+  known: Set<string>
+): { candidate: Candidate } | { skip: DraftAmendmentsResult['skipped'][number] } {
+  if (!DRAFTABLE.has((gap.gapLevel || '').toLowerCase())) {
+    return { skip: { article: gap.article, reason: 'not-a-gap' } };
+  }
+  const clause = CLAUSE_BY_REF.get(normRef(gap.article));
+  if (!clause) {
+    return { skip: { article: gap.article, reason: 'no-template' } };
+  }
+  if (known.has(gap.article) || known.has(clause.ref)) {
+    return { skip: { article: gap.article, reason: 'already-drafted' } };
+  }
+  return { candidate: { gap, clause } };
+}
+
+/** Build one amendment draft from a candidate + the (possibly missing) generated clause. */
+function toAmendmentDraft(
+  gap: GapInput,
+  clause: Candidate['clause'],
+  g: { draftText?: string; rationale?: string } | undefined
+): AmendmentDraft {
+  const draftText = g?.draftText?.trim()
+    ? g.draftText.trim()
+    : // deterministic fallback — a template-grounded clause stub a human can complete.
+      `The Provider shall ensure, by contractual amendment, that the ICT services satisfy DORA ${clause.ref}: ${clause.text}.`;
+  const rationale = g?.rationale?.trim()
+    ? g.rationale.trim().slice(0, 200)
+    : gap.recommendation?.trim() ||
+      `Current contract is ${gap.gapLevel} on ${clause.ref} (${clause.category}); this clause closes the gap.`;
+  return {
+    article: clause.ref,
+    category: clause.category,
+    gapLevel: gap.gapLevel,
+    templateRef: clause.ref,
+    draftText,
+    rationale,
+  };
+}
+
 export async function draftAmendments(args: DraftAmendmentsArgs): Promise<DraftAmendmentsResult> {
   const { organizationId, assessmentId, deps } = args;
   const context = await deps.loadAssessment(organizationId, assessmentId);
@@ -114,22 +158,11 @@ export async function draftAmendments(args: DraftAmendmentsArgs): Promise<DraftA
 
   const skipped: DraftAmendmentsResult['skipped'] = [];
   // Candidate gaps → the clause template they map to.
-  const candidates: Array<{ gap: GapInput; clause: (typeof CONTRACT_A30_CLAUSES)[number] }> = [];
+  const candidates: Candidate[] = [];
   for (const gap of context.gaps || []) {
-    if (!DRAFTABLE.has((gap.gapLevel || '').toLowerCase())) {
-      skipped.push({ article: gap.article, reason: 'not-a-gap' });
-      continue;
-    }
-    const clause = CLAUSE_BY_REF.get(normRef(gap.article));
-    if (!clause) {
-      skipped.push({ article: gap.article, reason: 'no-template' });
-      continue;
-    }
-    if (known.has(gap.article) || known.has(clause.ref)) {
-      skipped.push({ article: gap.article, reason: 'already-drafted' });
-      continue;
-    }
-    candidates.push({ gap, clause });
+    const result = classifyGap(gap, known);
+    if ('skip' in result) skipped.push(result.skip);
+    else candidates.push(result.candidate);
   }
 
   const gapsConsidered = candidates.length;
@@ -166,25 +199,9 @@ export async function draftAmendments(args: DraftAmendmentsArgs): Promise<DraftA
   // partial) output back to each candidate; anything missing falls back to the template text.
   const genByRef = new Map(generated.map((g) => [normRef(g.article), g] as const));
 
-  const drafts: AmendmentDraft[] = candidates.map(({ gap, clause }) => {
-    const g = genByRef.get(normRef(clause.ref));
-    const draftText = g?.draftText?.trim()
-      ? g.draftText.trim()
-      : // deterministic fallback — a template-grounded clause stub a human can complete.
-        `The Provider shall ensure, by contractual amendment, that the ICT services satisfy DORA ${clause.ref}: ${clause.text}.`;
-    const rationale = g?.rationale?.trim()
-      ? g.rationale.trim().slice(0, 200)
-      : gap.recommendation?.trim() ||
-        `Current contract is ${gap.gapLevel} on ${clause.ref} (${clause.category}); this clause closes the gap.`;
-    return {
-      article: clause.ref,
-      category: clause.category,
-      gapLevel: gap.gapLevel,
-      templateRef: clause.ref,
-      draftText,
-      rationale,
-    };
-  });
+  const drafts: AmendmentDraft[] = candidates.map(({ gap, clause }) =>
+    toAmendmentDraft(gap, clause, genByRef.get(normRef(clause.ref)))
+  );
 
   return { vendorName: context.vendorName, gapsConsidered, drafts, skipped };
 }

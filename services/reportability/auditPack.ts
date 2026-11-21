@@ -11,7 +11,7 @@
  */
 import { sha256 } from '../../utils/security/crypto.js';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- persisted rows are heterogeneous dossiers
+ 
 type Rows = any[];
 
 export interface AuditPackScope {
@@ -22,7 +22,7 @@ export interface AuditPackScope {
 
 export interface AuditPackArtefacts {
   scope: AuditPackScope;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   arrangement?: any | null;
   determinations?: Rows; // reportability determination history (append-only)
   assessments?: Rows; // assessment runs

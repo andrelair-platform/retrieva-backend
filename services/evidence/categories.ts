@@ -53,7 +53,7 @@ export const VENDOR_SUPPLIABLE_CATEGORIES = ALL_EVIDENCE_CATEGORIES.filter(
  * (`criticality` of critical|important, or the business function flagged critical-or-important).
  */
 export function expectedCategoriesForArrangement(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous arrangement row
+   
   arrangement: any
 ): EvidenceCategory[] {
   const criticalOrImportant =

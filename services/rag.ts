@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- the RAG orchestrator wires LangChain chains,
-   vector store, LLM, caches + heterogeneous doc/message payloads; these are untyped boundaries. */
+ 
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
@@ -145,6 +144,11 @@ class RAGService {
   _initPromise: any;
 
   constructor(dependencies: Record<string, any> = {}) {
+    this._assignDependencies(dependencies);
+    this._initRuntimeState();
+  }
+
+  _assignDependencies(dependencies: Record<string, any>) {
     this._injectedLLM = dependencies.llm || null;
     this.llm = null; // Will be set during init()
     this.vectorStoreFactory = dependencies.vectorStoreFactory || defaultVectorStoreFactory;
@@ -157,7 +161,9 @@ class RAGService {
     const repos = dependencies.repositories || {};
     this.messageRepo = repos.messageRepository || defaultMessageRepository;
     this.conversationRepo = repos.conversationRepository || defaultConversationRepository;
+  }
 
+  _initRuntimeState() {
     this.retriever = null;
     this.rephraseChain = null;
     this.vectorStore = null;
@@ -262,13 +268,21 @@ class RAGService {
     if (!userId && !authorizedWorkspaceIds) return;
     const ws = workspaceId && workspaceId !== 'default' ? String(workspaceId) : null;
     if (ws) {
-      const allowed = (authorizedWorkspaceIds || []).map(String);
-      if (!allowed.includes(ws)) {
-        throw new AppError('You do not have access to this workspace', 403);
-      }
+      this._assertWorkspaceMembership(ws, authorizedWorkspaceIds);
       return;
     }
     // Personal / legacy conversation (no workspace): must be the owner.
+    this._assertConversationOwnership(conversationOwnerId, userId);
+  }
+
+  _assertWorkspaceMembership(ws: any, authorizedWorkspaceIds: any) {
+    const allowed = (authorizedWorkspaceIds || []).map(String);
+    if (!allowed.includes(ws)) {
+      throw new AppError('You do not have access to this workspace', 403);
+    }
+  }
+
+  _assertConversationOwnership(conversationOwnerId: any, userId: any) {
     if (userId && conversationOwnerId && String(conversationOwnerId) !== String(userId)) {
       throw new AppError('You do not have access to this conversation', 403);
     }
@@ -277,6 +291,91 @@ class RAGService {
   async _resolveQdrantWorkspaceId(workspaceId: any) {
     if (!workspaceId || workspaceId === 'default') return 'default';
     return String(workspaceId);
+  }
+
+  /**
+   * Resolve the request-scoped LLM from the managed prompt's model params.
+   * Builds a request-scoped LLM only when temperature/top_p/maxTokens differ
+   * from the base client; the model name stays env-routed. Falls back to
+   * this.llm on any creation error so a param issue never breaks answering.
+   */
+  async _resolveRequestLLM(resolved: any, metadata: any) {
+    const mp = resolved.modelParams || {};
+    if (mp.temperature === undefined && mp.topP === undefined && mp.maxTokens === undefined) {
+      return this.llm;
+    }
+    try {
+      const llm = await createLLM({ purpose: 'chat', ...mp });
+      metadata.langfuseGeneration?.update?.({ modelParameters: mp });
+      return llm;
+    } catch (e: any) {
+      this.logger.warn('Request-scoped LLM build failed — using base client', {
+        service: 'rag', error: e.message,
+      });
+      return this.llm;
+    }
+  }
+
+  /**
+   * Stream the answer with timeout protection, accumulating chunks and emitting
+   * them via metadata.onEvent. Returns the full response, or a partial response
+   * annotated with a timeout marker when a timeout occurs after some output.
+   */
+  async _streamAnswer(chain: any, invokeInput: any, callbacks: any, metadata: any) {
+    const LLM_STREAM_INITIAL_TIMEOUT = parseInt(process.env.LLM_STREAM_INITIAL_TIMEOUT || "", 10) || 30000; // 30s for first chunk
+    const LLM_STREAM_CHUNK_TIMEOUT = parseInt(process.env.LLM_STREAM_CHUNK_TIMEOUT || "", 10) || 10000; // 10s between chunks
+
+    let fullResponse = '';
+    try {
+      const stream = streamWithTimeout(
+        chain,
+        invokeInput,
+        { callbacks },
+        { initialTimeoutMs: LLM_STREAM_INITIAL_TIMEOUT, chunkTimeoutMs: LLM_STREAM_CHUNK_TIMEOUT }
+      );
+      for await (const chunk of stream) {
+        fullResponse += chunk;
+        metadata.onEvent('chunk', { text: chunk });
+      }
+      return fullResponse;
+    } catch (error: any) {
+      if (error instanceof LLMTimeoutError) {
+        this.logger.error('LLM stream timed out', {
+          service: 'rag',
+          operation: error.operation,
+          timeoutMs: error.timeoutMs,
+          partialResponse: fullResponse.length > 0,
+        });
+        // Return partial response if we have one, otherwise throw
+        if (fullResponse.length > 0) {
+          this.logger.warn('Returning partial response after timeout', {
+            service: 'rag',
+            responseLength: fullResponse.length,
+          });
+          return fullResponse + '\n\n[Response interrupted due to timeout]';
+        }
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Non-streaming invoke with timeout protection.
+   */
+  async _invokeAnswer(chain: any, invokeInput: any, callbacks: any) {
+    const LLM_INVOKE_TIMEOUT = parseInt(process.env.LLM_INVOKE_TIMEOUT || "", 10) || 60000; // 60s default
+    try {
+      return await invokeWithTimeout(chain, invokeInput, { callbacks }, LLM_INVOKE_TIMEOUT);
+    } catch (error: any) {
+      if (error instanceof LLMTimeoutError) {
+        this.logger.error('LLM invoke timed out', {
+          service: 'rag',
+          operation: error.operation,
+          timeoutMs: error.timeoutMs,
+        });
+      }
+      throw error;
+    }
   }
 
   async _generateAnswer(question: any, context: any, history: any, metadata: any = {}) {
@@ -292,24 +391,7 @@ class RAGService {
     if (resolved.langfusePrompt && metadata.langfuseGeneration) {
       metadata.langfuseGeneration.update?.({ prompt: resolved.langfusePrompt });
     }
-    // Guarded-dynamic model params (temperature/top_p/maxTokens) from the managed
-    // prompt config, already clamped to safe bounds by the prompt manager. Build a
-    // request-scoped LLM only when they differ from the base client; the model name
-    // stays env-routed (never taken from the prompt). Falls back to this.llm on any
-    // creation error so a param issue never breaks answering.
-    let llm = this.llm;
-    const mp = resolved.modelParams || {};
-    if (mp.temperature !== undefined || mp.topP !== undefined || mp.maxTokens !== undefined) {
-      try {
-        llm = await createLLM({ purpose: 'chat', ...mp });
-        metadata.langfuseGeneration?.update?.({ modelParameters: mp });
-      } catch (e: any) {
-        this.logger.warn('Request-scoped LLM build failed — using base client', {
-          service: 'rag', error: e.message,
-        });
-        llm = this.llm;
-      }
-    }
+    const llm = await this._resolveRequestLLM(resolved, metadata);
     const ragChatPrompt = buildRagChatPrompt(resolved.systemText);
     const chain = ragChatPrompt.pipe(llm).pipe(new StringOutputParser());
     const callbacks = getCallbacks({
@@ -326,61 +408,12 @@ class RAGService {
       chat_history: history,
     };
 
-    // Timeout configuration (in ms)
-    const LLM_INVOKE_TIMEOUT = parseInt(process.env.LLM_INVOKE_TIMEOUT || "", 10) || 60000; // 60s default
-    const LLM_STREAM_INITIAL_TIMEOUT = parseInt(process.env.LLM_STREAM_INITIAL_TIMEOUT || "", 10) || 30000; // 30s for first chunk
-    const LLM_STREAM_CHUNK_TIMEOUT = parseInt(process.env.LLM_STREAM_CHUNK_TIMEOUT || "", 10) || 10000; // 10s between chunks
-
     // If onEvent callback is provided, stream with timeout protection
     if (metadata.onEvent) {
-      let fullResponse = '';
-      try {
-        const stream = streamWithTimeout(
-          chain,
-          invokeInput,
-          { callbacks },
-          LLM_STREAM_INITIAL_TIMEOUT,
-          LLM_STREAM_CHUNK_TIMEOUT
-        );
-        for await (const chunk of stream) {
-          fullResponse += chunk;
-          metadata.onEvent('chunk', { text: chunk });
-        }
-        return fullResponse;
-      } catch (error: any) {
-        if (error instanceof LLMTimeoutError) {
-          this.logger.error('LLM stream timed out', {
-            service: 'rag',
-            operation: error.operation,
-            timeoutMs: error.timeoutMs,
-            partialResponse: fullResponse.length > 0,
-          });
-          // Return partial response if we have one, otherwise throw
-          if (fullResponse.length > 0) {
-            this.logger.warn('Returning partial response after timeout', {
-              service: 'rag',
-              responseLength: fullResponse.length,
-            });
-            return fullResponse + '\n\n[Response interrupted due to timeout]';
-          }
-        }
-        throw error;
-      }
+      return this._streamAnswer(chain, invokeInput, callbacks, metadata);
     }
 
-    // Non-streaming invoke with timeout protection
-    try {
-      return await invokeWithTimeout(chain, invokeInput, { callbacks }, LLM_INVOKE_TIMEOUT);
-    } catch (error: any) {
-      if (error instanceof LLMTimeoutError) {
-        this.logger.error('LLM invoke timed out', {
-          service: 'rag',
-          operation: error.operation,
-          timeoutMs: error.timeoutMs,
-        });
-      }
-      throw error;
-    }
+    return this._invokeAnswer(chain, invokeInput, callbacks);
   }
 
   async _processAnswer(response: any, sources: any, question: any, context = "") {
@@ -400,20 +433,10 @@ class RAGService {
     return { validation, citedSources };
   }
 
-  async _buildAndCacheResult({
-    answer,
-    sources,
-    validation,
-    citedSources,
-    question,
-    requestId,
-    conversationId = null,
-    workspaceId = null,
-    retrievalMetrics = null,
-    startTime,
-    extraData = {},
-  }: any) {
-    // FIX #2: Output schema validation - ensure answer meets quality standards
+  /**
+   * FIX #2: Output schema validation — ensure answer meets quality standards.
+   */
+  _validateOutputSchema(answer: any, requestId: any) {
     const outputValidation = processOutput(answer, {
       strict: false,
       minLength: 10,
@@ -427,15 +450,20 @@ class RAGService {
         warnings: outputValidation.warnings,
       });
     }
+    return outputValidation;
+  }
 
-    let processedAnswer = outputValidation.content;
-
-    // FIX #1: Citation validation - ensure [Source N] references are valid
+  /**
+   * FIX #1: Citation validation — ensure [Source N] references are valid.
+   * Returns the (possibly corrected) answer text plus the validation result.
+   */
+  _validateCitations(processedAnswer: any, sources: any, requestId: any) {
     const citationValidation = processCitations(processedAnswer, sources, {
       removeInvalid: true,
       logWarnings: true,
     });
 
+    let text = processedAnswer;
     if (!citationValidation.valid) {
       this.logger.warn('Invalid citations detected and corrected', {
         service: 'rag',
@@ -443,21 +471,21 @@ class RAGService {
         invalidCitations: citationValidation.invalidCitations,
         validCitations: citationValidation.validCitations,
       });
-      processedAnswer = citationValidation.text;
+      text = citationValidation.text;
     }
+    return { citationValidation, text };
+  }
 
-    // Analyze citation coverage for quality metrics
-    const coverageAnalysis = analyzeCitationCoverage(processedAnswer);
-
-    // SECURITY FIX (LLM02): Sanitize LLM output before formatting/rendering
+  /**
+   * SECURITY FIX (LLM02): Sanitize LLM output before formatting/rendering.
+   */
+  _sanitizeOutput(processedAnswer: any, requestId: any) {
     const sanitization = sanitizeLLMOutput(processedAnswer, {
       encodeHtml: true,
       removeDangerous: true,
       detectSuspicious: true,
       preserveMarkdown: true,
     });
-
-    let sanitizedAnswer = sanitization.text;
 
     if (sanitization.modified) {
       this.logger.warn('LLM output was sanitized', {
@@ -467,14 +495,21 @@ class RAGService {
         categories: sanitization.categories,
       });
     }
+    return sanitization;
+  }
 
-    // SECURITY FIX (LLM06): Scan output for PII and sensitive information
+  /**
+   * SECURITY FIX (LLM06): Scan output for PII and sensitive information.
+   * Returns the scan result plus the (possibly masked) answer text.
+   */
+  _scanForSensitiveInfo(sanitizedAnswer: any, requestId: any) {
     const sensitiveInfoScan = scanOutputForSensitiveInfo(sanitizedAnswer, {
       maskSensitive: true,
       logDetections: true,
       strictMode: process.env.GUARDRAIL_STRICT_MODE === 'true',
     });
 
+    let text = sanitizedAnswer;
     if (!sensitiveInfoScan.clean) {
       this.logger.warn('Sensitive information detected and masked in output', {
         service: 'rag',
@@ -483,8 +518,41 @@ class RAGService {
         promptLeakDetected: sensitiveInfoScan.promptLeakDetected,
         hasCriticalLeak: sensitiveInfoScan.hasCriticalLeak,
       });
-      sanitizedAnswer = sensitiveInfoScan.text as string;
+      text = sensitiveInfoScan.text as string;
     }
+    return { sensitiveInfoScan, text };
+  }
+
+  async _buildAndCacheResult({
+    answer,
+    sources,
+    validation,
+    citedSources,
+    question,
+    requestId,
+    conversationId = null,
+    workspaceId = null,
+    retrievalMetrics = null,
+    startTime,
+    extraData = {},
+  }: any) {
+    const outputValidation = this._validateOutputSchema(answer, requestId);
+
+    const { citationValidation, text: processedAnswer } = this._validateCitations(
+      outputValidation.content,
+      sources,
+      requestId
+    );
+
+    // Analyze citation coverage for quality metrics
+    const coverageAnalysis = analyzeCitationCoverage(processedAnswer);
+
+    const sanitization = this._sanitizeOutput(processedAnswer, requestId);
+
+    const { sensitiveInfoScan, text: sanitizedAnswer } = this._scanForSensitiveInfo(
+      sanitization.text,
+      requestId
+    );
 
     const formattedAnswer = await this.answerFormatter.format(sanitizedAnswer, question);
 
@@ -531,103 +599,33 @@ class RAGService {
     return cached;
   }
 
-  async askWithConversation(question: any, options: any = {}) {
-    const {
-      conversationId,
-      filters = null,
-      onEvent = null,
-      responseInstruction: callerInstruction = '',
-      // SECURITY (tenant isolation): supplied by the HTTP layer so retrieval can
-      // be authorized against the caller's real workspace memberships.
-      userId = null,
-      authorizedWorkspaceIds = null,
-    } = options;
-
-    if (!conversationId) {
-      throw new Error('conversationId is required');
+  /**
+   * Stream a cached answer out over the emit channel (char-by-char), matching
+   * the streamed shape the frontend expects for a fresh answer.
+   */
+  _emitCachedAnswer(cached: any, emit: any) {
+    emit('status', { message: 'Found cached answer...' });
+    for (const char of cached.answer || '') {
+      emit('chunk', { text: char });
     }
+    if (cached.sources) emit('sources', { sources: cached.sources });
+    emit('done', { message: 'Streaming complete' });
+  }
 
-    // ISSUE #31 FIX: Validated emit wrapper for streaming events
-    const rawEmit = onEvent || (() => {});
-    const emit = this._createValidatedEmit(rawEmit);
-    await this._ensureInitialized();
-
-    const startTime = Date.now();
-    const requestId = randomUUID();
-
-    // SECURITY: Get conversation and workspaceId BEFORE cache check for tenant isolation
-    const conversation = await this.conversationRepo.findById(conversationId);
-    if (!conversation) throw new Error(`Conversation ${conversationId} not found`);
-
-    const workspaceId = conversation.workspaceId || null;
-
-    // App-level LLMOps trace (Langfuse) — one trace per RAG query, with session + user, holding
-    // the retrieval span and the answer generation. No-op when Langfuse isn't configured.
-    const trace = startTrace({
-      name: 'rag.askWithConversation',
-      sessionId: conversationId,
-      userId,
-      input: question,
-      tags: ['feature:rag-chat'],
-      metadata: { workspaceId, requestId },
-    });
-
-    // SECURITY (tenant isolation): the retrieval workspace IS the conversation's
-    // workspace. Authorize it against the caller's real memberships so a user
-    // cannot read another workspace's documents via a spoofed X-Workspace-Id or
-    // a conversation id they do not own.
-    this._assertWorkspaceAuthorized(workspaceId, conversation.userId, {
-      userId,
-      authorizedWorkspaceIds,
-    });
-
-    this.logger.info('Processing RAG question', {
-      service: 'rag',
-      conversationId,
-      workspaceId,
-      questionLength: question.length,
-      requestId,
-      streaming: !!onEvent,
-    });
-
-    // Check cache (SECURITY: workspaceId included for tenant isolation)
-    const cached = await this.cache.get(question, workspaceId, conversationId);
-    if (cached) {
-      if (onEvent) {
-        emit('status', { message: 'Found cached answer...' });
-        for (const char of cached.answer || '') {
-          emit('chunk', { text: char });
-        }
-        if (cached.sources) emit('sources', { sources: cached.sources });
-        emit('done', { message: 'Streaming complete' });
-      }
-      return this._handleCacheHit(cached, requestId, workspaceId);
-    }
-
-    const messages = await this.messageRepo.getRecentMessages(conversationId, 20);
-    const history = this._convertToHistory(messages);
-
-    const memoryContext = { entityContext: '', summaryContext: '' };
-
-    emit('status', { message: 'Retrieving context...', queryId: requestId });
-
-    const retrievalSpan = trace.span({ name: 'retrieval', input: { question } });
-    const rephraseSpan = retrievalSpan.span({ name: 'rephrase-query', input: { question } });
-    const searchQuery = await this._rephraseQuery(question, history);
-    rephraseSpan.end({ output: { searchQuery } });
-
-    // Resolve workspace UUID for Qdrant filtering
-    const qdrantWorkspaceId = await this._resolveQdrantWorkspaceId(workspaceId);
-
-    let qdrantFilter = null;
+  /**
+   * Build the Qdrant filter with workspace isolation. Rethrows filter-validation
+   * failures as a 400 validation error (preserving the original behavior).
+   */
+  _buildWorkspaceFilter(filters: any, qdrantWorkspaceId: any) {
     try {
-      qdrantFilter = buildQdrantFilter(filters, qdrantWorkspaceId);
+      const qdrantFilter = buildQdrantFilter(filters, qdrantWorkspaceId);
       this.logger.info('Applied Qdrant filters with workspace isolation', {
         service: 'rag',
         workspaceId: qdrantWorkspaceId,
         hasUserFilters: !!filters,
         filterConditions: qdrantFilter?.must?.length || 0,
       });
+      return qdrantFilter;
     } catch (filterError: any) {
       this.logger.warn('Filter validation failed', {
         service: 'rag',
@@ -639,19 +637,17 @@ class RAGService {
       (error as any).isValidationError = true;
       throw error;
     }
+  }
 
-    // Direct vector store retrieval — fan out to vendor (workspace-scoped)
-    // and regulation (shared compliance_kb) collections in parallel.
-    // Issue #206: chat must see DORA article text, not just uploaded vendor docs.
-    // Use allSettled so one collection's failure (e.g. embedding-dim drift,
-    // unseeded compliance_kb) doesn't take down the other.
-    const searchSpan = retrievalSpan.span({
-      name: 'vector-search',
-      input: { searchQuery, qdrantWorkspaceId, collections: ['vendor', 'regulation'] },
-    });
+  /**
+   * Fan out to the vendor (workspace-scoped) and regulation (shared compliance_kb)
+   * collections in parallel with allSettled so one collection's failure doesn't
+   * take down the other. Returns the vendor + regulation doc arrays.
+   */
+  async _fetchCollectionDocs(searchQuery: any, qdrantFilter: any, lang: any, requestId: any) {
     const [vendorResult, regulationResult] = await Promise.allSettled([
       this.vectorStore.similaritySearch(searchQuery, 15, qdrantFilter),
-      this.retrieveRegulationDocs(searchQuery, 5, options.lang),
+      this.retrieveRegulationDocs(searchQuery, 5, lang),
     ]);
 
     const vendorDocsRaw = vendorResult.status === 'fulfilled' ? vendorResult.value : [];
@@ -675,6 +671,46 @@ class RAGService {
       ...doc,
       metadata: { ...(doc.metadata || {}), source: doc.metadata?.source || 'vendor' },
     }));
+
+    return { vendorDocs, regulationDocs };
+  }
+
+  /**
+   * Full retrieval pipeline for a chat turn: rephrase → vector search (fan-out)
+   * → dedup → rerank. Returns the retrieval result object (documents + metrics).
+   */
+  async _retrieveDocuments({
+    question,
+    history,
+    filters,
+    workspaceId,
+    lang,
+    requestId,
+    trace,
+  }: any) {
+    const retrievalSpan = trace.span({ name: 'retrieval', input: { question } });
+    const rephraseSpan = retrievalSpan.span({ name: 'rephrase-query', input: { question } });
+    const searchQuery = await this._rephraseQuery(question, history);
+    rephraseSpan.end({ output: { searchQuery } });
+
+    // Resolve workspace UUID for Qdrant filtering
+    const qdrantWorkspaceId = await this._resolveQdrantWorkspaceId(workspaceId);
+
+    const qdrantFilter = this._buildWorkspaceFilter(filters, qdrantWorkspaceId);
+
+    // Direct vector store retrieval — fan out to vendor (workspace-scoped)
+    // and regulation (shared compliance_kb) collections in parallel.
+    // Issue #206: chat must see DORA article text, not just uploaded vendor docs.
+    const searchSpan = retrievalSpan.span({
+      name: 'vector-search',
+      input: { searchQuery, qdrantWorkspaceId, collections: ['vendor', 'regulation'] },
+    });
+    const { vendorDocs, regulationDocs } = await this._fetchCollectionDocs(
+      searchQuery,
+      qdrantFilter,
+      lang,
+      requestId
+    );
 
     searchSpan.end({
       output: { vendorDocs: vendorDocs.length, regulationDocs: regulationDocs.length },
@@ -719,34 +755,52 @@ class RAGService {
       docsAfterRerank: rerankedDocs.length,
     });
 
-    const { context: docContext, sources } = this._prepareContext(retrieval.documents);
+    this._logRetrievalTrace(retrieval, searchQuery, requestId, qdrantFilter);
 
-    // Retrieval trace logging (gated by env var)
-    if (process.env.LOG_RETRIEVAL_TRACE === 'true') {
-      const tinyThreshold = 50;
-      const chunks = retrieval.documents.map((doc: any) => ({
-        sourceId: doc.metadata?.sourceId || null,
-        documentTitle: doc.metadata?.documentTitle || null,
-        headingPath: doc.metadata?.heading_path || [],
-        estimatedTokens:
-          doc.metadata?.estimatedTokens || Math.ceil((doc.pageContent?.length || 0) / 4),
-        rrfScore: doc.rrfScore || doc.score || null,
-        block_type: doc.metadata?.block_type || null,
-      }));
-      const tinyChunkCount = chunks.filter((c) => c.estimatedTokens < tinyThreshold).length;
+    return { retrieval, searchQuery, qdrantFilter };
+  }
 
-      this.logger.debug('Retrieval trace', {
-        service: 'rag-trace',
-        requestId,
-        query: searchQuery,
-        chunks,
-        retrievedChunkCount: chunks.length,
-        tinyChunkCount,
-      });
-    }
+  /**
+   * Env-gated retrieval trace logging (LOG_RETRIEVAL_TRACE=true).
+   */
+  _estimateDocTokens(doc: any) {
+    return doc.metadata?.estimatedTokens || Math.ceil((doc.pageContent?.length || 0) / 4);
+  }
 
-    emit('sources', { sources });
+  _toTraceChunk(doc: any) {
+    const meta = doc.metadata || {};
+    return {
+      sourceId: meta.sourceId || null,
+      documentTitle: meta.documentTitle || null,
+      headingPath: meta.heading_path || [],
+      estimatedTokens: this._estimateDocTokens(doc),
+      rrfScore: doc.rrfScore || doc.score || null,
+      block_type: meta.block_type || null,
+    };
+  }
 
+  _logRetrievalTrace(retrieval: any, searchQuery: any, requestId: any, _qdrantFilter?: any) {
+    if (process.env.LOG_RETRIEVAL_TRACE !== 'true') return;
+
+    const tinyThreshold = 50;
+    const chunks = retrieval.documents.map((doc: any) => this._toTraceChunk(doc));
+    const tinyChunkCount = chunks.filter((c: any) => c.estimatedTokens < tinyThreshold).length;
+
+    this.logger.debug('Retrieval trace', {
+      service: 'rag-trace',
+      requestId,
+      query: searchQuery,
+      chunks,
+      retrievedChunkCount: chunks.length,
+      tinyChunkCount,
+    });
+  }
+
+  /**
+   * Assemble the final LLM context from the optional memory overviews/entities
+   * and the retrieved document context.
+   */
+  _buildFinalContext(memoryContext: any, docContext: any) {
     const contextParts = [];
     if (memoryContext.summaryContext) {
       contextParts.push(`[Document Overviews]\n${memoryContext.summaryContext}`);
@@ -755,234 +809,580 @@ class RAGService {
       contextParts.push(memoryContext.entityContext);
     }
     contextParts.push(docContext);
-    const context = contextParts.join('\n\n---\n\n');
+    return contextParts.join('\n\n---\n\n');
+  }
 
-    emit('status', { message: 'Generating answer...' });
+  /**
+   * Generate the answer for a chat turn and record the Langfuse generation span
+   * (with an estimated token usage). Returns the raw response text.
+   */
+  async _generateAndTraceAnswer({
+    question,
+    context,
+    history,
+    conversationId,
+    onEvent,
+    combinedInstruction,
+    retrieval,
+    trace,
+  }: any) {
+    const answerGen = trace.generation({
+      name: 'answer',
+      model: getActiveLLMMeta('chat').model,
+      input: { question, contextChars: context.length },
+      metadata: { historyTurns: history.length, sourcesCount: retrieval.documents.length },
+    });
+    const response = await this._generateAnswer(question, context, history, {
+      runName: 'rag-query',
+      sourcesCount: retrieval.documents.length,
+      sessionId: conversationId,
+      onEvent: onEvent || undefined,
+      responseInstruction: combinedInstruction,
+      langfuseGeneration: answerGen,
+    });
+    // Exact token cost is captured per-call by the LiteLLM gateway (ai-gateway
+    // project). _generateAnswer returns text (streamed), so here we record an
+    // ESTIMATE (~4 chars/token) — enough for relative per-session/user consumption
+    // trends in the retrieva project without a competing billing source of truth.
+    const estIn = Math.ceil((question.length + (context?.length || 0)) / 4);
+    const estOut = Math.ceil(((response as any)?.length || 0) / 4);
+    answerGen.end({
+      output: response,
+      usage: { input: estIn, output: estOut, total: estIn + estOut, unit: 'TOKENS' },
+      metadata: { usageEstimated: true },
+    });
+    trace.update({ output: response });
+    trace.flush().catch(() => {});
 
-    try {
-      const combinedInstruction = callerInstruction || '';
+    return response;
+  }
 
-      const answerGen = trace.generation({
-        name: 'answer',
-        model: getActiveLLMMeta('chat').model,
-        input: { question, contextChars: context.length },
-        metadata: { historyTurns: history.length, sourcesCount: retrieval.documents.length },
-      });
-      const response = await this._generateAnswer(question, context, history, {
-        runName: 'rag-query',
-        sourcesCount: retrieval.documents.length,
-        sessionId: conversationId,
-        onEvent: onEvent || undefined,
-        responseInstruction: combinedInstruction,
-        langfuseGeneration: answerGen,
-      });
-      // Exact token cost is captured per-call by the LiteLLM gateway (ai-gateway
-      // project). _generateAnswer returns text (streamed), so here we record an
-      // ESTIMATE (~4 chars/token) — enough for relative per-session/user consumption
-      // trends in the retrieva project without a competing billing source of truth.
-      const estIn = Math.ceil((question.length + (context?.length || 0)) / 4);
-      const estOut = Math.ceil(((response as any)?.length || 0) / 4);
-      answerGen.end({
-        output: response,
-        usage: { input: estIn, output: estOut, total: estIn + estOut, unit: 'TOKENS' },
-        metadata: { usageEstimated: true },
-      });
-      trace.update({ output: response });
-      trace.flush().catch(() => {});
+  /**
+   * Fast path (#244 follow-up): skip the synchronous LLM judge, extract citations
+   * locally, ship 'done' immediately, and fire the judge in the background for
+   * telemetry only. Returns the built result.
+   */
+  async _handleAsyncJudgePath({
+    response,
+    sources,
+    question,
+    context,
+    conversationId,
+    requestId,
+    workspaceId,
+    retrieval,
+    startTime,
+    trace,
+    emit,
+  }: any) {
+    const citedSources = extractCitedSourcesFromText(response as any, sources);
+    const validation = buildSkippedJudgeValidation(citedSources.length);
 
-      // Fast path (#244 follow-up): skip the synchronous LLM judge in the chat
-      // request. The judge currently runs gemma3:12b on Ollama Cloud (~5 s) and
-      // dominates totalTime now that retrieval is on Groq. With this flag set,
-      // we extract citations locally via regex, ship 'done' immediately, and
-      // fire the judge in the background for telemetry only. Hallucination
-      // gating is sacrificed by design — only enable when answer quality is
-      // already validated by other means (RAG grounding + retrieval reranking).
-      if (process.env.RAG_CHAT_ASYNC_JUDGE === 'true') {
-        const citedSources = extractCitedSourcesFromText(response as any, sources);
-        const validation = buildSkippedJudgeValidation(citedSources.length);
+    await this._saveMessages(conversationId, question, response, trace?.id);
 
-        await this._saveMessages(conversationId, question, response, trace?.id);
+    const result = await this._buildAndCacheResult({
+      answer: response,
+      sources,
+      validation,
+      citedSources,
+      question,
+      requestId,
+      conversationId,
+      workspaceId,
+      retrievalMetrics: retrieval.metrics,
+      startTime,
+    });
 
-        const result = await this._buildAndCacheResult({
-          answer: response,
-          sources,
-          validation,
-          citedSources,
-          question,
-          requestId,
-          conversationId,
-          workspaceId,
-          retrievalMetrics: retrieval.metrics,
-          startTime,
-        });
+    emit('metadata', {
+      confidence: validation.confidence,
+      citationCount: citedSources.length,
+      citedSources,
+      isGrounded: validation.isGrounded,
+      hasHallucinations: validation.hasHallucinations,
+      isRelevant: validation.isRelevant,
+      reasoning: validation.reasoning,
+      judged: false,
+    });
+    emit('saved', { conversationId });
+    emit('done', { message: 'Streaming complete' });
 
-        emit('metadata', {
-          confidence: validation.confidence,
-          citationCount: citedSources.length,
-          citedSources,
-          isGrounded: validation.isGrounded,
-          hasHallucinations: validation.hasHallucinations,
-          isRelevant: validation.isRelevant,
-          reasoning: validation.reasoning,
-          judged: false,
-        });
-        emit('saved', { conversationId });
-        emit('done', { message: 'Streaming complete' });
-
-        // Background judge — fire and forget. Used for telemetry only; no UI
-        // impact since the SSE response is already closing. Wrap in try/catch
-        // so a slow/down judge LLM can't crash the request.
-        Promise.resolve()
-          .then(() => this._processAnswer(response, sources, question, context))
-          .then(({ validation: bgValidation }) => {
-            if (bgValidation.hasHallucinations) {
-              this.logger.warn('Async judge flagged hallucination after stream close', {
-                service: 'rag',
-                requestId,
-                conversationId,
-                confidence: bgValidation.confidence,
-              });
-            }
-          })
-          .catch((err) => {
-            this.logger.warn('Background judge failed (non-fatal)', {
-              service: 'rag',
-              requestId,
-              error: err.message,
-            });
+    // Background judge — fire and forget. Used for telemetry only; no UI
+    // impact since the SSE response is already closing. Wrap in try/catch
+    // so a slow/down judge LLM can't crash the request.
+    Promise.resolve()
+      .then(() => this._processAnswer(response, sources, question, context))
+      .then(({ validation: bgValidation }) => {
+        if (bgValidation.hasHallucinations) {
+          this.logger.warn('Async judge flagged hallucination after stream close', {
+            service: 'rag',
+            requestId,
+            conversationId,
+            confidence: bgValidation.confidence,
           });
+        }
+      })
+      .catch((err) => {
+        this.logger.warn('Background judge failed (non-fatal)', {
+          service: 'rag',
+          requestId,
+          error: err.message,
+        });
+      });
 
-        return result;
-      }
+    return result;
+  }
 
-      emit('status', { message: 'Evaluating answer...' });
+  /**
+   * FIX #3: Replace a hallucinated answer with the safe fallback, persist it,
+   * and emit the swap. Returns the built result.
+   */
+  async _handleHallucinationBlock({
+    validation,
+    citedSources,
+    sources,
+    question,
+    requestId,
+    conversationId,
+    workspaceId,
+    retrieval,
+    startTime,
+    strictMode,
+    trace,
+    emit,
+  }: any) {
+    this.logger.warn('Hallucinated answer detected — replacing with fallback', {
+      service: 'rag',
+      confidence: validation.confidence.toFixed(2),
+      hasHallucinations: validation.hasHallucinations,
+      isGrounded: validation.isGrounded,
+      strictMode,
+      requestId,
+    });
 
-      const { validation, citedSources } = await this._processAnswer(
+    const fallbackAnswer = guardrailsConfig.output.confidenceHandling.messages.blocked;
+    emit('replace', { text: fallbackAnswer });
+
+    await this._saveMessages(conversationId, question, fallbackAnswer, trace?.id);
+
+    const result = await this._buildAndCacheResult({
+      answer: fallbackAnswer,
+      sources,
+      validation,
+      citedSources,
+      question,
+      requestId,
+      conversationId,
+      workspaceId,
+      retrievalMetrics: retrieval.metrics,
+      startTime,
+      extraData: { _hallucinationBlocked: true },
+    });
+
+    emit('metadata', {
+      confidence: validation.confidence,
+      citationCount: citedSources.length,
+      citedSources,
+      isGrounded: validation.isGrounded,
+      hasHallucinations: validation.hasHallucinations,
+      isRelevant: validation.isRelevant,
+      reasoning: validation.reasoning,
+    });
+    emit('saved', { conversationId });
+    emit('done', { message: 'Streaming complete' });
+
+    return result;
+  }
+
+  /**
+   * SECURITY FIX (LLM04): Apply retry guardrails. Returns the retry result when a
+   * retry ran and improved the answer, otherwise null (caller falls through to
+   * the normal finalize path).
+   */
+  _shouldRetry(validation: any, retrieval: any, retryConfig: any) {
+    return (
+      retryConfig.enabled &&
+      validation.isLowQuality &&
+      validation.confidence >= retryConfig.minConfidenceForRetry &&
+      retrieval.documents.length < 50
+    );
+  }
+
+  async _maybeRetry({
+    validation,
+    question,
+    retrieval,
+    qdrantFilter,
+    searchQuery,
+    history,
+    sources,
+    conversationId,
+    startTime,
+    requestId,
+    trace,
+    emit,
+  }: any) {
+    const retryConfig = guardrailsConfig.generation.retry;
+    if (!this._shouldRetry(validation, retrieval, retryConfig)) return null;
+
+    if (retryConfig.cooldownMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, retryConfig.cooldownMs));
+    }
+
+    const retryResult = await this._retryWithMoreContext({
+      question,
+      retrieval,
+      qdrantFilter,
+      searchQuery,
+      history,
+      sources,
+      conversationId,
+      startTime,
+      requestId,
+      traceId: trace?.id,
+      retryTimeout: retryConfig.retryTimeoutMs,
+    });
+    if (retryResult) {
+      emit('metadata', {
+        confidence: retryResult.validation?.confidence,
+        citationCount: (retryResult as any).citedSources?.length || 0,
+        citedSources: (retryResult as any).citedSources || [],
+        retriedWithMoreContext: true,
+      });
+      emit('saved', { conversationId });
+      emit('done', { message: 'Streaming complete' });
+      return retryResult;
+    }
+    return null;
+  }
+
+  /**
+   * Normal finalize path: persist the answer, build+cache the result, emit the
+   * final metadata/done events.
+   */
+  async _finalizeAnswer({
+    response,
+    validation,
+    citedSources,
+    sources,
+    question,
+    requestId,
+    conversationId,
+    workspaceId,
+    retrieval,
+    startTime,
+    trace,
+    emit,
+  }: any) {
+    await this._saveMessages(conversationId, question, response, trace?.id);
+
+    const result = await this._buildAndCacheResult({
+      answer: response,
+      sources,
+      validation,
+      citedSources,
+      question,
+      requestId,
+      conversationId,
+      workspaceId,
+      retrievalMetrics: retrieval.metrics,
+      startTime,
+    });
+
+    emit('metadata', {
+      confidence: validation.confidence,
+      citationCount: citedSources.length,
+      citedSources,
+      qualityIssues: validation.issues,
+      isGrounded: validation.isGrounded,
+      hasHallucinations: validation.hasHallucinations,
+      isRelevant: validation.isRelevant,
+      reasoning: validation.reasoning,
+    });
+    emit('saved', { conversationId });
+    emit('done', { message: 'Streaming complete' });
+
+    return result;
+  }
+
+  /**
+   * Orchestrate answer generation + the result branches (async-judge,
+   * hallucination-block, retry, normal finalize) for a chat turn.
+   */
+  async _generateAndHandleAnswer({
+    question,
+    context,
+    history,
+    callerInstruction,
+    sources,
+    conversationId,
+    requestId,
+    workspaceId,
+    retrieval,
+    qdrantFilter,
+    searchQuery,
+    startTime,
+    trace,
+    emit,
+    onEvent,
+  }: any) {
+    const combinedInstruction = callerInstruction || '';
+
+    const response = await this._generateAndTraceAnswer({
+      question,
+      context,
+      history,
+      conversationId,
+      onEvent,
+      combinedInstruction,
+      retrieval,
+      trace,
+    });
+
+    if (process.env.RAG_CHAT_ASYNC_JUDGE === 'true') {
+      return this._handleAsyncJudgePath({
         response,
         sources,
         question,
-        context
-      );
+        context,
+        conversationId,
+        requestId,
+        workspaceId,
+        retrieval,
+        startTime,
+        trace,
+        emit,
+      });
+    }
 
-      // FIX #3: Stricter hallucination blocking
-      // Block if hasHallucinations is true (strict mode) OR compound condition (legacy mode)
-      const hallucinationConfig: any = guardrailsConfig.output.hallucinationBlocking || {};
-      const shouldBlockHallucination = hallucinationConfig.strictMode
-        ? validation.hasHallucinations // Strict: block on hallucination flag alone
-        : validation.hasHallucinations && !validation.isGrounded; // Legacy: compound condition
+    return this._judgeAndBranch({
+      response,
+      question,
+      context,
+      history,
+      sources,
+      conversationId,
+      requestId,
+      workspaceId,
+      retrieval,
+      qdrantFilter,
+      searchQuery,
+      startTime,
+      trace,
+      emit,
+    });
+  }
 
-      if (shouldBlockHallucination) {
-        this.logger.warn('Hallucinated answer detected — replacing with fallback', {
-          service: 'rag',
-          confidence: validation.confidence.toFixed(2),
-          hasHallucinations: validation.hasHallucinations,
-          isGrounded: validation.isGrounded,
-          strictMode: hallucinationConfig.strictMode,
-          requestId,
-        });
+  /**
+   * Synchronous-judge path: evaluate the answer, then route to the
+   * hallucination-block, retry, or normal finalize branch.
+   */
+  async _judgeAndBranch({
+    response,
+    question,
+    context,
+    history,
+    sources,
+    conversationId,
+    requestId,
+    workspaceId,
+    retrieval,
+    qdrantFilter,
+    searchQuery,
+    startTime,
+    trace,
+    emit,
+  }: any) {
+    emit('status', { message: 'Evaluating answer...' });
 
-        const fallbackAnswer = guardrailsConfig.output.confidenceHandling.messages.blocked;
-        emit('replace', { text: fallbackAnswer });
+    const { validation, citedSources } = await this._processAnswer(
+      response,
+      sources,
+      question,
+      context
+    );
 
-        await this._saveMessages(conversationId, question, fallbackAnswer, trace?.id);
+    // FIX #3: Stricter hallucination blocking
+    // Block if hasHallucinations is true (strict mode) OR compound condition (legacy mode)
+    const hallucinationConfig: any = guardrailsConfig.output.hallucinationBlocking || {};
+    const shouldBlockHallucination = hallucinationConfig.strictMode
+      ? validation.hasHallucinations // Strict: block on hallucination flag alone
+      : validation.hasHallucinations && !validation.isGrounded; // Legacy: compound condition
 
-        const result = await this._buildAndCacheResult({
-          answer: fallbackAnswer,
-          sources,
-          validation,
-          citedSources,
-          question,
-          requestId,
-          conversationId,
-          workspaceId,
-          retrievalMetrics: retrieval.metrics,
-          startTime,
-          extraData: { _hallucinationBlocked: true },
-        });
-
-        emit('metadata', {
-          confidence: validation.confidence,
-          citationCount: citedSources.length,
-          citedSources,
-          isGrounded: validation.isGrounded,
-          hasHallucinations: validation.hasHallucinations,
-          isRelevant: validation.isRelevant,
-          reasoning: validation.reasoning,
-        });
-        emit('saved', { conversationId });
-        emit('done', { message: 'Streaming complete' });
-
-        return result;
-      }
-
-      // SECURITY FIX (LLM04): Apply retry guardrails to prevent DoS
-      const retryConfig = guardrailsConfig.generation.retry;
-      const shouldRetry =
-        retryConfig.enabled &&
-        validation.isLowQuality &&
-        validation.confidence >= retryConfig.minConfidenceForRetry &&
-        retrieval.documents.length < 50;
-
-      if (shouldRetry) {
-        if (retryConfig.cooldownMs > 0) {
-          await new Promise((resolve) => setTimeout(resolve, retryConfig.cooldownMs));
-        }
-
-        const retryResult = await this._retryWithMoreContext({
-          question,
-          retrieval,
-          qdrantFilter,
-          searchQuery,
-          history,
-          sources,
-          conversationId,
-          startTime,
-          requestId,
-          traceId: trace?.id,
-          retryTimeout: retryConfig.retryTimeoutMs,
-        });
-        if (retryResult) {
-          emit('metadata', {
-            confidence: retryResult.validation?.confidence,
-            citationCount: (retryResult as any).citedSources?.length || 0,
-            citedSources: (retryResult as any).citedSources || [],
-            retriedWithMoreContext: true,
-          });
-          emit('saved', { conversationId });
-          emit('done', { message: 'Streaming complete' });
-          return retryResult;
-        }
-      }
-
-      await this._saveMessages(conversationId, question, response, trace?.id);
-
-      const result = await this._buildAndCacheResult({
-        answer: response,
-        sources,
+    if (shouldBlockHallucination) {
+      return this._handleHallucinationBlock({
         validation,
         citedSources,
+        sources,
         question,
         requestId,
         conversationId,
         workspaceId,
-        retrievalMetrics: retrieval.metrics,
+        retrieval,
         startTime,
+        strictMode: hallucinationConfig.strictMode,
+        trace,
+        emit,
       });
+    }
 
-      emit('metadata', {
-        confidence: validation.confidence,
-        citationCount: citedSources.length,
-        citedSources,
-        qualityIssues: validation.issues,
-        isGrounded: validation.isGrounded,
-        hasHallucinations: validation.hasHallucinations,
-        isRelevant: validation.isRelevant,
-        reasoning: validation.reasoning,
+    const retryResult = await this._maybeRetry({
+      validation,
+      question,
+      retrieval,
+      qdrantFilter,
+      searchQuery,
+      history,
+      sources,
+      conversationId,
+      startTime,
+      requestId,
+      trace,
+      emit,
+    });
+    if (retryResult) return retryResult;
+
+    return this._finalizeAnswer({
+      response,
+      validation,
+      citedSources,
+      sources,
+      question,
+      requestId,
+      conversationId,
+      workspaceId,
+      retrieval,
+      startTime,
+      trace,
+      emit,
+    });
+  }
+
+  /**
+   * Prologue for a chat turn: validate options, load + authorize the
+   * conversation, and start the Langfuse trace. Returns the resolved per-turn
+   * context (ids, workspace, trace, emit, startTime).
+   */
+  async _prepareConversationTurn(question: any, options: any, emit: any) {
+    const {
+      conversationId,
+      onEvent = null,
+      userId = null,
+      authorizedWorkspaceIds = null,
+    } = options;
+
+    if (!conversationId) {
+      throw new Error('conversationId is required');
+    }
+
+    await this._ensureInitialized();
+
+    const startTime = Date.now();
+    const requestId = randomUUID();
+
+    // SECURITY: Get conversation and workspaceId BEFORE cache check for tenant isolation
+    const conversation = await this.conversationRepo.findById(conversationId);
+    if (!conversation) throw new Error(`Conversation ${conversationId} not found`);
+
+    const workspaceId = conversation.workspaceId || null;
+
+    // App-level LLMOps trace (Langfuse) — one trace per RAG query, with session + user, holding
+    // the retrieval span and the answer generation. No-op when Langfuse isn't configured.
+    const trace = startTrace({
+      name: 'rag.askWithConversation',
+      sessionId: conversationId,
+      userId,
+      input: question,
+      tags: ['feature:rag-chat'],
+      metadata: { workspaceId, requestId },
+    });
+
+    // SECURITY (tenant isolation): the retrieval workspace IS the conversation's
+    // workspace. Authorize it against the caller's real memberships so a user
+    // cannot read another workspace's documents via a spoofed X-Workspace-Id or
+    // a conversation id they do not own.
+    this._assertWorkspaceAuthorized(workspaceId, conversation.userId, {
+      userId,
+      authorizedWorkspaceIds,
+    });
+
+    this.logger.info('Processing RAG question', {
+      service: 'rag',
+      conversationId,
+      workspaceId,
+      questionLength: question.length,
+      requestId,
+      streaming: !!onEvent,
+    });
+
+    return { conversationId, workspaceId, requestId, startTime, trace, onEvent };
+  }
+
+  async askWithConversation(question: any, options: any = {}) {
+    const {
+      filters = null,
+      onEvent = null,
+      responseInstruction: callerInstruction = '',
+    } = options;
+
+    // ISSUE #31 FIX: Validated emit wrapper for streaming events
+    const rawEmit = onEvent || (() => {});
+    const emit = this._createValidatedEmit(rawEmit);
+
+    const { conversationId, workspaceId, requestId, startTime, trace } =
+      await this._prepareConversationTurn(question, options, emit);
+
+    // Check cache (SECURITY: workspaceId included for tenant isolation)
+    const cached = await this.cache.get(question, workspaceId, conversationId);
+    if (cached) {
+      if (onEvent) {
+        this._emitCachedAnswer(cached, emit);
+      }
+      return this._handleCacheHit(cached, requestId, workspaceId);
+    }
+
+    const messages = await this.messageRepo.getRecentMessages(conversationId, 20);
+    const history = this._convertToHistory(messages);
+
+    const memoryContext = { entityContext: '', summaryContext: '' };
+
+    emit('status', { message: 'Retrieving context...', queryId: requestId });
+
+    const { retrieval, searchQuery, qdrantFilter } = await this._retrieveDocuments({
+      question,
+      history,
+      filters,
+      workspaceId,
+      lang: options.lang,
+      requestId,
+      trace,
+    });
+
+    const { context: docContext, sources } = this._prepareContext(retrieval.documents);
+
+    emit('sources', { sources });
+
+    const context = this._buildFinalContext(memoryContext, docContext);
+
+    emit('status', { message: 'Generating answer...' });
+
+    try {
+      return await this._generateAndHandleAnswer({
+        question,
+        context,
+        history,
+        callerInstruction,
+        sources,
+        conversationId,
+        requestId,
+        workspaceId,
+        retrieval,
+        qdrantFilter,
+        searchQuery,
+        startTime,
+        trace,
+        emit,
+        onEvent,
       });
-      emit('saved', { conversationId });
-      emit('done', { message: 'Streaming complete' });
-
-      return result;
     } catch (error: any) {
       this.logger.error('Error generating answer', {
         service: 'rag',
@@ -999,6 +1399,35 @@ class RAGService {
    * - Timeout on retry operations
    * - Abort capability for cancellation
    */
+  /**
+   * SECURITY FIX (LLM04): Gather + limit + rerank + compress the additional
+   * documents used for a retry. Returns the compressed docs and their context.
+   */
+  async _prepareRetryContext(retrieval: any, qdrantFilter: any, searchQuery: any, question: any) {
+    // Limit retry documents to prevent excessive resource usage
+    const maxRetryDocs = guardrailsConfig.retrieval.maxRetryDocuments;
+
+    const uniqueRetryDocs = await retrieveAdditionalDocuments({
+      allQueries: retrieval.allQueries,
+      retriever: this.retriever,
+      vectorStore: this.vectorStore,
+      qdrantFilter,
+      existingDocs: retrieval.documents,
+    });
+
+    // Limit documents for retry to conserve resources
+    const limitedDocs = uniqueRetryDocs.slice(0, maxRetryDocs);
+    const rerankedRetryDocs = rerankDocuments(
+      limitedDocs as any,
+      searchQuery,
+      Math.min(10, maxRetryDocs)
+    );
+    const compressedRetryDocs = await compressDocuments(rerankedRetryDocs, question);
+    const { context: retryContext } = this._prepareContext(compressedRetryDocs);
+
+    return { compressedRetryDocs, retryContext };
+  }
+
   async _retryWithMoreContext({
     question,
     retrieval,
@@ -1019,27 +1448,13 @@ class RAGService {
       retryTimeout,
     });
 
-    // SECURITY FIX (LLM04): Limit retry documents to prevent excessive resource usage
-    const maxRetryDocs = guardrailsConfig.retrieval.maxRetryDocuments;
-
     try {
-      const uniqueRetryDocs = await retrieveAdditionalDocuments(
-        retrieval.allQueries,
-        this.retriever,
-        this.vectorStore,
+      const { compressedRetryDocs, retryContext } = await this._prepareRetryContext(
+        retrieval,
         qdrantFilter,
-        retrieval.documents
-      );
-
-      // Limit documents for retry to conserve resources
-      const limitedDocs = uniqueRetryDocs.slice(0, maxRetryDocs);
-      const rerankedRetryDocs = rerankDocuments(
-        limitedDocs as any,
         searchQuery,
-        Math.min(10, maxRetryDocs)
+        question
       );
-      const compressedRetryDocs = await compressDocuments(rerankedRetryDocs, question);
-      const { context: retryContext } = this._prepareContext(compressedRetryDocs);
 
       // Check if we've exceeded retry timeout before expensive LLM call
       const elapsedTime = Date.now() - retryStartTime;
@@ -1107,79 +1522,63 @@ class RAGService {
    * @param {Function} rawEmit - The raw emit function to wrap
    * @returns {Function} Validated emit function
    */
+  /**
+   * Keep this in sync with the events the frontend useStreaming hook handles.
+   * `replace` lets the hallucination guard swap the streamed answer for a
+   * safe fallback; `saved` notifies the UI that messages have been persisted.
+   */
+  static _VALID_EVENT_TYPES = new Set([
+    'status',
+    'chunk',
+    'sources',
+    'done',
+    'error',
+    'metadata',
+    'replace',
+    'saved',
+  ]);
+
+  /**
+   * Per-event-type payload checks. Each returns an error string when invalid,
+   * or null when valid. Event types without an entry accept any object payload
+   * (e.g. `done` optional message, `metadata` arbitrary structure).
+   */
+  static _EMIT_PAYLOAD_CHECKS: Record<string, (data: any) => string | null> = {
+    status: (data) =>
+      typeof data.message === 'string' ? null : 'status event requires message string',
+    chunk: (data) => (typeof data.text === 'string' ? null : 'chunk event requires text string'),
+    sources: (data) =>
+      Array.isArray(data.sources) ? null : 'sources event requires sources array',
+    error: (data) =>
+      typeof data.message === 'string' ? null : 'error event requires message string',
+    replace: (data) =>
+      typeof data.text === 'string' ? null : 'replace event requires text string',
+    saved: (data) =>
+      typeof data.conversationId === 'string' ? null : 'saved event requires conversationId string',
+  };
+
+  _validateEmitPayload(type: any, data?: any) {
+    if (typeof data !== 'object' || data === null) {
+      return { valid: false, error: 'Payload must be an object' };
+    }
+    const check = RAGService._EMIT_PAYLOAD_CHECKS[type];
+    const error = check ? check(data) : null;
+    return error ? { valid: false, error } : { valid: true };
+  }
+
   _createValidatedEmit(rawEmit: any) {
-    // Keep this in sync with the events the frontend useStreaming hook handles.
-    // `replace` lets the hallucination guard swap the streamed answer for a
-    // safe fallback; `saved` notifies the UI that messages have been persisted.
-    const validEventTypes = new Set([
-      'status',
-      'chunk',
-      'sources',
-      'done',
-      'error',
-      'metadata',
-      'replace',
-      'saved',
-    ]);
-
-    const validatePayload = (type: any, data?: any) => {
-      if (typeof data !== 'object' || data === null) {
-        return { valid: false, error: 'Payload must be an object' };
-      }
-
-      switch (type) {
-        case 'status':
-          if (typeof data.message !== 'string') {
-            return { valid: false, error: 'status event requires message string' };
-          }
-          break;
-        case 'chunk':
-          if (typeof data.text !== 'string') {
-            return { valid: false, error: 'chunk event requires text string' };
-          }
-          break;
-        case 'sources':
-          if (!Array.isArray(data.sources)) {
-            return { valid: false, error: 'sources event requires sources array' };
-          }
-          break;
-        case 'done':
-          // done can have optional message
-          break;
-        case 'error':
-          if (typeof data.message !== 'string') {
-            return { valid: false, error: 'error event requires message string' };
-          }
-          break;
-        case 'metadata':
-          // metadata can have arbitrary structure
-          break;
-        case 'replace':
-          if (typeof data.text !== 'string') {
-            return { valid: false, error: 'replace event requires text string' };
-          }
-          break;
-        case 'saved':
-          if (typeof data.conversationId !== 'string') {
-            return { valid: false, error: 'saved event requires conversationId string' };
-          }
-          break;
-      }
-      return { valid: true };
-    };
-
     return (type: any, data?: any) => {
       // Validate event type
-      if (!validEventTypes.has(type)) {
+      if (!RAGService._VALID_EVENT_TYPES.has(type)) {
         this.logger.warn('Invalid streaming event type', {
           type,
-          validTypes: [...validEventTypes],
+          validTypes: [...RAGService._VALID_EVENT_TYPES],
         });
         return;
       }
 
       // Validate payload
-      const validation = validatePayload(type, data);
+      const validation = this._validateEmitPayload(type, data);
       if (!validation.valid) {
         this.logger.warn('Invalid streaming event payload', {
           type,

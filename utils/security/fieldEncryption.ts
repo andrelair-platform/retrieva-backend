@@ -23,28 +23,22 @@ import logger from '../../config/logger.js';
  * @param {string} value - Value to check
  * @returns {boolean} True if appears to be encrypted
  */
+/** A 32-char lowercase/uppercase hex string (the iv / authTag shape). */
+function isHex32(part: string | undefined): boolean {
+  return !!part && part.length === 32 && /^[a-f0-9]+$/i.test(part);
+}
+
 export function isEncrypted(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   const parts = value.split(':');
 
   // Check for versioned format: v{n}:iv:authTag:encrypted (4 parts)
   if (parts.length === 4 && /^v\d+$/.test(parts[0])) {
-    return (
-      parts[1].length === 32 &&
-      parts[2].length === 32 &&
-      /^[a-f0-9]+$/i.test(parts[1]) &&
-      /^[a-f0-9]+$/i.test(parts[2])
-    );
+    return isHex32(parts[1]) && isHex32(parts[2]);
   }
 
   // Check for legacy format: iv:authTag:encrypted (3 parts)
-  return (
-    parts.length === 3 &&
-    parts[0].length === 32 &&
-    parts[1].length === 32 &&
-    /^[a-f0-9]+$/i.test(parts[0]) &&
-    /^[a-f0-9]+$/i.test(parts[1])
-  );
+  return parts.length === 3 && isHex32(parts[0]) && isHex32(parts[1]);
 }
 
 /**

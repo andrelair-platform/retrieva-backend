@@ -33,13 +33,13 @@ export interface ReopenArgs {
 }
 
 export interface ReopenDeps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable repo/audit/enqueue/logger for tests
+   
   repo?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   audit?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   enqueue?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   logger?: any;
 }
 
@@ -57,6 +57,33 @@ async function defaultEnqueue(a: { organizationId: string; id: string }, reason:
     userId: null, // system-initiated (no human actor)
     reason,
   });
+}
+
+/**
+ * Attempt the active→under_review lifecycle move (best-effort, race-safe) and audit it.
+ * Returns true only when the record actually transitioned.
+ */
+async function transitionActiveToReview(ctx: {
+  repo: any;
+  audit: any;
+  organizationId: string;
+  id: string;
+  reason: string;
+}): Promise<boolean> {
+  const { repo, audit, organizationId, id, reason } = ctx;
+  const to = nextState('active', 'start_review'); // 'under_review'
+  if (!to) return false;
+  const updated = await repo.setLifecycle(organizationId, id, to);
+  if (!updated) return false;
+  await audit({
+    organizationId,
+    actor: null, // system actor — event-driven, non-human
+    action: 'arrangement.lifecycle',
+    targetType: 'arrangement',
+    targetId: id,
+    metadata: { from: 'active', to, transition: 'start_review', reason },
+  });
+  return true;
 }
 
 /**
@@ -90,24 +117,10 @@ export async function reopenForReassessment(
   }
 
   // active → under_review (the change re-entry). Already under_review → no transition, just re-enqueue.
-  let transitioned = false;
-  if (status === 'active') {
-    const to = nextState('active', 'start_review'); // 'under_review'
-    if (to) {
-      const updated = await repo.setLifecycle(organizationId, id, to);
-      if (updated) {
-        transitioned = true;
-        await audit({
-          organizationId,
-          actor: null, // system actor — event-driven, non-human
-          action: 'arrangement.lifecycle',
-          targetType: 'arrangement',
-          targetId: id,
-          metadata: { from: 'active', to, transition: 'start_review', reason },
-        });
-      }
-    }
-  }
+  const transitioned =
+    status === 'active'
+      ? await transitionActiveToReview({ repo, audit, organizationId, id, reason })
+      : false;
 
   // The "why" event itself (always recorded when we act — the audit evidence of the trigger).
   if (args.event) {

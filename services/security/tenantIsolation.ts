@@ -24,7 +24,7 @@ interface QdrantFilter {
 }
 // A LangChain vector store — an external SDK object this module monkeypatches; typed `any`
 // (its generics don't survive the method wrapping) until RTV-24 revisits the RAG layer.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain store, wrapped
+ 
 type VectorStore = any;
 
 /**
@@ -41,6 +41,19 @@ export class TenantIsolationError extends Error {
   }
 }
 
+// A workspaceId condition is valid iff it keys on metadata.workspaceId with a non-empty string
+// match value. Returns the workspaceId string on a match, else null (one predicate → both the
+// `must`-array and the top-level simple-match checks share it, keeping the caller flat).
+function workspaceIdFromCondition(
+  key: string | undefined,
+  match: FilterMatch | undefined
+): string | null {
+  if (key === 'metadata.workspaceId' && match?.value && typeof match.value === 'string') {
+    return match.value;
+  }
+  return null;
+}
+
 /** Validate that a Qdrant filter includes workspaceId. */
 export function validateWorkspaceFilter(
   filter: QdrantFilter | null | undefined
@@ -52,25 +65,127 @@ export function validateWorkspaceFilter(
   // Check 'must' array for workspaceId filter
   const mustConditions = filter.must || [];
   for (const condition of mustConditions) {
-    if (
-      condition.key === 'metadata.workspaceId' &&
-      condition.match?.value &&
-      typeof condition.match.value === 'string'
-    ) {
-      return { valid: true, workspaceId: condition.match.value };
+    const workspaceId = workspaceIdFromCondition(condition.key, condition.match);
+    if (workspaceId) {
+      return { valid: true, workspaceId };
     }
   }
 
   // Check if filter itself is a simple match (less common)
-  if (
-    filter.key === 'metadata.workspaceId' &&
-    filter.match?.value &&
-    typeof filter.match.value === 'string'
-  ) {
-    return { valid: true, workspaceId: filter.match.value };
+  const topLevel = workspaceIdFromCondition(filter.key, filter.match);
+  if (topLevel) {
+    return { valid: true, workspaceId: topLevel };
   }
 
   return { valid: false, workspaceId: null };
+}
+
+/**
+ * Enforce workspace isolation before any search.
+ * @param {string} methodName - Name of the search method
+ * @param {Object} filter - The filter being used
+ */
+function enforceIsolation(methodName: string, filter: QdrantFilter | null | undefined) {
+  const validation = validateWorkspaceFilter(filter);
+
+  if (!validation.valid) {
+    const errorMsg = `SECURITY: ${methodName} rejected - missing workspaceId filter (tenant isolation violation)`;
+    logger.error(errorMsg, {
+      service: 'tenant-isolation',
+      method: methodName,
+      filterProvided: !!filter,
+      filterKeys: filter ? Object.keys(filter) : [],
+    });
+    throw new TenantIsolationError(
+      'Search rejected: workspace isolation required. All queries must include metadata.workspaceId filter.'
+    );
+  }
+
+  logger.debug(`Tenant isolation validated for ${methodName}`, {
+    service: 'tenant-isolation',
+    workspaceId: validation.workspaceId,
+  });
+
+  return validation.workspaceId;
+}
+
+// Intercept the three direct search methods (similaritySearch + the two optional ones) so each
+// enforces isolation before delegating to the original.
+function wrapSearchMethods(vectorStore: VectorStore) {
+  const originalSimilaritySearch = vectorStore.similaritySearch.bind(vectorStore);
+  const originalSimilaritySearchWithScore = vectorStore.similaritySearchWithScore?.bind(vectorStore);
+  const originalMaxMarginalRelevanceSearch = vectorStore.maxMarginalRelevanceSearch?.bind(vectorStore);
+
+  vectorStore.similaritySearch = async function (query: string, k: number, filter?: QdrantFilter) {
+    enforceIsolation('similaritySearch', filter);
+    return originalSimilaritySearch(query, k, filter);
+  };
+
+  if (originalSimilaritySearchWithScore) {
+    vectorStore.similaritySearchWithScore = async function (
+      query: string,
+      k: number,
+      filter?: QdrantFilter
+    ) {
+      enforceIsolation('similaritySearchWithScore', filter);
+      return originalSimilaritySearchWithScore(query, k, filter);
+    };
+  }
+
+  if (originalMaxMarginalRelevanceSearch) {
+    vectorStore.maxMarginalRelevanceSearch = async function (
+      query: string,
+      options?: { filter?: QdrantFilter }
+    ) {
+      enforceIsolation('maxMarginalRelevanceSearch', options?.filter);
+      return originalMaxMarginalRelevanceSearch(query, options);
+    };
+  }
+}
+
+// Wrap a retriever's invoke + _getRelevantDocuments so a filter-less call is rejected and a
+// filtered one re-enforces isolation. `options` carries the filter the retriever was created with.
+function wrapRetrieverMethods(retriever: any, options: { filter?: QdrantFilter }) {
+  const noFilter = () => {
+    throw new TenantIsolationError(
+      'Retriever invoked without workspace filter. Use vectorStore.similaritySearch with explicit filter instead.'
+    );
+  };
+
+  const originalInvoke = retriever.invoke?.bind(retriever);
+  if (originalInvoke) {
+    retriever.invoke = async function (query: string) {
+      if (!options.filter) noFilter();
+      enforceIsolation('retriever.invoke', options.filter);
+      return originalInvoke(query);
+    };
+  }
+
+  const originalGetRelevantDocs = retriever._getRelevantDocuments?.bind(retriever);
+  if (originalGetRelevantDocs) {
+    retriever._getRelevantDocuments = async function (query: string, runManager?: unknown) {
+      if (!options.filter) noFilter();
+      enforceIsolation('retriever._getRelevantDocuments', options.filter);
+      return originalGetRelevantDocs(query, runManager);
+    };
+  }
+}
+
+// Intercept asRetriever so every retriever it hands out is itself isolation-wrapped.
+function wrapAsRetriever(vectorStore: VectorStore) {
+  const originalAsRetriever = vectorStore.asRetriever.bind(vectorStore);
+  vectorStore.asRetriever = function (options: { filter?: QdrantFilter } = {}) {
+    // If no filter is provided, the retriever CANNOT be used safely
+    // Log a warning - actual enforcement happens at search time
+    if (!options.filter) {
+      logger.warn('Creating retriever without filter - searches will fail tenant isolation check', {
+        service: 'tenant-isolation',
+      });
+    }
+    const retriever = originalAsRetriever(options);
+    wrapRetrieverMethods(retriever, options);
+    return retriever;
+  };
 }
 
 /**
@@ -90,112 +205,8 @@ export function wrapWithTenantIsolation(vectorStore: VectorStore): VectorStore {
     return vectorStore;
   }
 
-  const originalSimilaritySearch = vectorStore.similaritySearch.bind(vectorStore);
-  const originalSimilaritySearchWithScore = vectorStore.similaritySearchWithScore?.bind(vectorStore);
-  const originalMaxMarginalRelevanceSearch = vectorStore.maxMarginalRelevanceSearch?.bind(vectorStore);
-
-  /**
-   * Enforce workspace isolation before any search
-   * @param {string} methodName - Name of the search method
-   * @param {Object} filter - The filter being used
-   */
-  function enforceIsolation(methodName: string, filter: QdrantFilter | null | undefined) {
-    const validation = validateWorkspaceFilter(filter);
-
-    if (!validation.valid) {
-      const errorMsg = `SECURITY: ${methodName} rejected - missing workspaceId filter (tenant isolation violation)`;
-      logger.error(errorMsg, {
-        service: 'tenant-isolation',
-        method: methodName,
-        filterProvided: !!filter,
-        filterKeys: filter ? Object.keys(filter) : [],
-      });
-      throw new TenantIsolationError(
-        'Search rejected: workspace isolation required. All queries must include metadata.workspaceId filter.'
-      );
-    }
-
-    logger.debug(`Tenant isolation validated for ${methodName}`, {
-      service: 'tenant-isolation',
-      workspaceId: validation.workspaceId,
-    });
-
-    return validation.workspaceId;
-  }
-
-  // Wrap similaritySearch
-  vectorStore.similaritySearch = async function (query: string, k: number, filter?: QdrantFilter) {
-    enforceIsolation('similaritySearch', filter);
-    return originalSimilaritySearch(query, k, filter);
-  };
-
-  // Wrap similaritySearchWithScore if it exists
-  if (originalSimilaritySearchWithScore) {
-    vectorStore.similaritySearchWithScore = async function (
-      query: string,
-      k: number,
-      filter?: QdrantFilter
-    ) {
-      enforceIsolation('similaritySearchWithScore', filter);
-      return originalSimilaritySearchWithScore(query, k, filter);
-    };
-  }
-
-  // Wrap maxMarginalRelevanceSearch if it exists
-  if (originalMaxMarginalRelevanceSearch) {
-    vectorStore.maxMarginalRelevanceSearch = async function (
-      query: string,
-      options?: { filter?: QdrantFilter }
-    ) {
-      enforceIsolation('maxMarginalRelevanceSearch', options?.filter);
-      return originalMaxMarginalRelevanceSearch(query, options);
-    };
-  }
-
-  // Wrap asRetriever to return an isolated retriever
-  const originalAsRetriever = vectorStore.asRetriever.bind(vectorStore);
-  vectorStore.asRetriever = function (options: { filter?: QdrantFilter } = {}) {
-    // If no filter is provided, the retriever CANNOT be used safely
-    // Log a warning - actual enforcement happens at search time
-    if (!options.filter) {
-      logger.warn('Creating retriever without filter - searches will fail tenant isolation check', {
-        service: 'tenant-isolation',
-      });
-    }
-
-    const retriever = originalAsRetriever(options);
-
-    // Wrap the retriever's invoke method
-    const originalInvoke = retriever.invoke?.bind(retriever);
-    if (originalInvoke) {
-      retriever.invoke = async function (query: string) {
-        // Check if retriever has a filter set
-        if (!options.filter) {
-          throw new TenantIsolationError(
-            'Retriever invoked without workspace filter. Use vectorStore.similaritySearch with explicit filter instead.'
-          );
-        }
-        enforceIsolation('retriever.invoke', options.filter);
-        return originalInvoke(query);
-      };
-    }
-
-    // Also wrap _getRelevantDocuments for LangChain compatibility
-    const originalGetRelevantDocs = retriever._getRelevantDocuments?.bind(retriever);
-    if (originalGetRelevantDocs) {
-      retriever._getRelevantDocuments = async function (query: string, runManager?: unknown) {
-        if (!options.filter) {
-          throw new TenantIsolationError(
-            'Retriever invoked without workspace filter. Use vectorStore.similaritySearch with explicit filter instead.'
-          );
-        }
-        enforceIsolation('retriever._getRelevantDocuments', options.filter);
-        return originalGetRelevantDocs(query, runManager);
-      };
-    }
-
-    return retriever;
-  };
+  wrapSearchMethods(vectorStore);
+  wrapAsRetriever(vectorStore);
 
   // Mark as wrapped
   vectorStore._tenantIsolationEnabled = true;

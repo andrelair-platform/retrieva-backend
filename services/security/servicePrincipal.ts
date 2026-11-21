@@ -51,6 +51,48 @@ function getJwks(url: string): ReturnType<typeof createRemoteJWKSet> {
   return jwksCache;
 }
 
+// Accept the issuer with OR without a trailing slash: Authentik stamps `iss` WITH the slash, but
+// config drift can set it either way — jose does an exact match, so offer both (defensive; the
+// trailing-slash mismatch was a live 401 in the ADR-0004 dogfood).
+function candidateIssuers(issuer: string): string[] {
+  return issuer.endsWith('/')
+    ? [issuer, issuer.replace(/\/+$/, '')]
+    : [issuer, `${issuer}/`];
+}
+
+// Verify the M2M token against Authentik's JWKS; returns the verified payload or
+// null (logged) on any verification failure.
+async function verifyServiceToken(
+  token: string,
+  cfg: NonNullable<ReturnType<typeof getAuthentikM2mConfig>>
+): Promise<JWTPayload | null> {
+  try {
+    const { payload } = await jwtVerify(token, getJwks(cfg.jwksUrl), {
+      issuer: candidateIssuers(cfg.issuer), // exact trusted issuer(s) — both slash forms
+      audience: cfg.audience, // exact intended audience
+      algorithms: ['RS256'], // alg allow-list — reject 'none' / alg-confusion
+      clockTolerance: 60, // bounded skew (seconds); exp + nbf validated by jose
+    });
+    return payload;
+  } catch (err) {
+    logger.warn('service-principal: token verification failed', {
+      service: 'service-principal',
+      error: (err as Error).message,
+    });
+    return null;
+  }
+}
+
+// The authorized party (the Authentik client). Taken ONLY from verified claims, never a request param.
+function extractClientId(payload: JWTPayload): string {
+  return (
+    (typeof payload.azp === 'string' && payload.azp) ||
+    (typeof (payload as Record<string, unknown>).client_id === 'string' &&
+      ((payload as Record<string, unknown>).client_id as string)) ||
+    ''
+  );
+}
+
 /**
  * Verify an Authentik M2M access token and resolve it to a governed SERVICE principal, or return a
  * typed rejection. Fail-closed: any verification or mapping failure denies.
@@ -62,35 +104,10 @@ export async function resolveServicePrincipal(
   if (!cfg) return { ok: false, reason: 'not_configured' };
   if (!token) return { ok: false, reason: 'no_token' };
 
-  // Accept the issuer with OR without a trailing slash: Authentik stamps `iss` WITH the slash, but
-  // config drift can set it either way — jose does an exact match, so offer both (defensive; the
-  // trailing-slash mismatch was a live 401 in the ADR-0004 dogfood).
-  const issuers = cfg.issuer.endsWith('/')
-    ? [cfg.issuer, cfg.issuer.replace(/\/+$/, '')]
-    : [cfg.issuer, `${cfg.issuer}/`];
+  const payload = await verifyServiceToken(token, cfg);
+  if (!payload) return { ok: false, reason: 'invalid_token' };
 
-  let payload: JWTPayload;
-  try {
-    ({ payload } = await jwtVerify(token, getJwks(cfg.jwksUrl), {
-      issuer: issuers, // exact trusted issuer(s) — both slash forms
-      audience: cfg.audience, // exact intended audience
-      algorithms: ['RS256'], // alg allow-list — reject 'none' / alg-confusion
-      clockTolerance: 60, // bounded skew (seconds); exp + nbf validated by jose
-    }));
-  } catch (err) {
-    logger.warn('service-principal: token verification failed', {
-      service: 'service-principal',
-      error: (err as Error).message,
-    });
-    return { ok: false, reason: 'invalid_token' };
-  }
-
-  // The authorized party (the Authentik client). Taken ONLY from verified claims, never a request param.
-  const clientId =
-    (typeof payload.azp === 'string' && payload.azp) ||
-    (typeof (payload as Record<string, unknown>).client_id === 'string' &&
-      ((payload as Record<string, unknown>).client_id as string)) ||
-    '';
+  const clientId = extractClientId(payload);
   if (!clientId) return { ok: false, reason: 'invalid_token' };
 
   const svc = await userRepository.findServicePrincipalByClientId(clientId);

@@ -34,15 +34,15 @@ export const getDecisionQueue = catchAsync(async (req: Request, res: Response) =
 
   // Resolve arrangement → { providerName, businessFunctionName } for the queue's row context.
   const providerName = new Map<string, string>(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     providers.map((p: any) => [p.id, String(p.displayName ?? p.name ?? '')])
   );
   const functionName = new Map<string, string>(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     functions.map((f: any) => [f.id, String(f.name ?? '')])
   );
   const arrangementContext = new Map<string, { providerName: string; businessFunctionName: string }>(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     arrangements.map((a: any) => [
       a.id,
       {
@@ -58,9 +58,9 @@ export const getDecisionQueue = catchAsync(async (req: Request, res: Response) =
   const controlDomain = new Map<string, string>();
   const versions = new Set<string>(
     [
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       ...findings.map((f: any) => f.libraryVersion),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       ...risks.map((r: any) => r.libraryVersion),
     ].filter(Boolean)
   );
@@ -100,11 +100,11 @@ export const acceptHighConfidence = catchAsync(async (req: Request, res: Respons
 
   const pending = await findingRepository.listPendingByOrg(organizationId);
   const highConfidence = pending.filter(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     (f: any) => typeof f.confidence === 'number' && f.confidence >= threshold
   );
   // Only agreements are bulk-acceptable; gaps (approve = override) need an individual reason.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const candidates = highConfidence.filter((f: any) => !isVerdictOverride(f.verdict, 'approve'));
   const requiresIndividualReason = highConfidence.length - candidates.length;
 

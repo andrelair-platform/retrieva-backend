@@ -24,25 +24,48 @@ const requireOrg = (req: Request, res: Response) => {
 };
 const audit = (
   req: Request,
-  operation: string,
-  decision: 'allow' | 'deny',
-  result: 'success' | 'failure',
-  detail?: string
+  opts: {
+    operation: string;
+    decision: 'allow' | 'deny';
+    result: 'success' | 'failure';
+    detail?: string;
+  }
 ) =>
   recordAction({
     principalId: req.principal?.principalId ?? 'unknown',
     actorType: req.principal?.type === 'service' ? 'SERVICE' : 'HUMAN',
     tenantId: req.principal?.organizationId ?? '',
-    operation,
-    authorizationDecision: decision,
-    result,
-    detail: detail ?? null,
+    operation: opts.operation,
+    authorizationDecision: opts.decision,
+    result: opts.result,
+    detail: opts.detail ?? null,
   });
 const requireCap = async (req: Request, res: Response, action: string, organizationId: string) => {
   if (await can(canUser(req), action, { organizationId })) return true;
-  await audit(req, action, 'deny', 'failure');
+  await audit(req, { operation: action, decision: 'deny', result: 'failure' });
   sendError(res, 403, 'Forbidden');
   return false;
+};
+
+// Record the determination + audit the success and respond. Extracted so the
+// handler stays a thin orchestrator (guards → this). Service errors with a
+// statusCode are surfaced to the client; anything else re-throws.
+const recordAndRespondDetermination = async (
+  req: Request,
+  res: Response,
+  organizationId: string
+) => {
+  const determination = await recordDetermination({
+    organizationId,
+    arrangementId: String(req.params.arrangementId),
+    determinedBy: actorId(req),
+    status: String(req.body?.status || ''),
+    rationale: req.body?.rationale,
+    evidenceRefs: req.body?.evidenceRefs,
+    serviceRelationship: req.body?.serviceRelationship,
+  });
+  await audit(req, { operation: 'reportability.determine', decision: 'allow', result: 'success', detail: determination.id });
+  sendSuccess(res, 201, 'Reportability determination recorded', { determination });
 };
 
 // POST /api/v1/reportability/:arrangementId — set the human reportability determination.
@@ -52,22 +75,12 @@ export const postDetermination = catchAsync(async (req: Request, res: Response) 
   // Hard SoD guard: a SERVICE principal can NEVER set a regulated determination, even with an
   // inherited/wildcard grant (the capability map also excludes it — this is defense-in-depth).
   if (req.principal?.type === 'service') {
-    await audit(req, 'reportability.determine', 'deny', 'failure', 'service-principal denied (SoD)');
+    await audit(req, { operation: 'reportability.determine', decision: 'deny', result: 'failure', detail: 'service-principal denied (SoD)' });
     return sendError(res, 403, 'A service principal cannot set a reportability determination');
   }
   if (!(await requireCap(req, res, 'reportability:determine', organizationId))) return;
   try {
-    const determination = await recordDetermination({
-      organizationId,
-      arrangementId: String(req.params.arrangementId),
-      determinedBy: actorId(req),
-      status: String(req.body?.status || ''),
-      rationale: req.body?.rationale,
-      evidenceRefs: req.body?.evidenceRefs,
-      serviceRelationship: req.body?.serviceRelationship,
-    });
-    await audit(req, 'reportability.determine', 'allow', 'success', determination.id);
-    sendSuccess(res, 201, 'Reportability determination recorded', { determination });
+    await recordAndRespondDetermination(req, res, organizationId);
   } catch (e: any) {
     if (e?.statusCode) return sendError(res, e.statusCode, e.message);
     throw e;
@@ -106,7 +119,7 @@ export const getAuditPack = catchAsync(async (req: Request, res: Response) => {
       String(req.params.arrangementId),
       { generatedAt: new Date().toISOString(), generatedBy: actorId(req) }
     );
-    await audit(req, 'reportability.audit_pack', 'allow', 'success', pack.manifest.integrityHash);
+    await audit(req, { operation: 'reportability.audit_pack', decision: 'allow', result: 'success', detail: pack.manifest.integrityHash });
     sendSuccess(res, 200, 'Audit evidence pack', pack);
   } catch (e: any) {
     if (e?.statusCode) return sendError(res, e.statusCode, e.message);

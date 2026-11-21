@@ -58,9 +58,7 @@ export const sendError = (
 export const sendPaginatedResponse = (
   res: Response,
   data: unknown,
-  page: number,
-  limit: number,
-  total: number
+  { page, limit, total }: { page: number; limit: number; total: number }
 ) => {
   const totalPages = Math.ceil(total / limit);
 

@@ -113,6 +113,23 @@ interface LLMConfig {
   jsonMode?: boolean;
 }
 
+/** Assemble the ChatOpenAI options from the caller config + guardrail defaults. */
+function buildGatewayLLMOptions(config: LLMConfig, model: string) {
+  const seed = config.seed ?? guardrailsConfig.generation.seed;
+  return {
+    model,
+    apiKey: config.apiKey || GATEWAY_API_KEY,
+    configuration: { baseURL: config.baseUrl || GATEWAY_BASE_URL },
+    temperature: config.temperature ?? guardrailsConfig.generation.temperature,
+    maxTokens: config.maxTokens ?? guardrailsConfig.generation.maxTokens,
+    ...(config.topP !== undefined && { topP: config.topP }),
+    stop: guardrailsConfig.generation.stopSequences,
+    ...(seed !== null && seed !== undefined && { seed }),
+    // OpenAI-compatible structured-output flag; LiteLLM maps it to the provider's JSON mode.
+    ...(config.jsonMode && { modelKwargs: { response_format: { type: 'json_object' } } }),
+  };
+}
+
 async function createGatewayLLM(config: LLMConfig) {
   const { ChatOpenAI } = await import('@langchain/openai');
   if (!GATEWAY_BASE_URL) {
@@ -126,24 +143,12 @@ async function createGatewayLLM(config: LLMConfig) {
       'LLM model is required. Set LLM_MODEL (or LLM_<PURPOSE>_MODEL) to a gateway model name.'
     );
   }
-  const seed = config.seed ?? guardrailsConfig.generation.seed;
   logger.info('Creating LLM via AI gateway', {
     service: 'llm-provider',
     baseURL: GATEWAY_BASE_URL,
     model,
   });
-  return new ChatOpenAI({
-    model,
-    apiKey: config.apiKey || GATEWAY_API_KEY,
-    configuration: { baseURL: config.baseUrl || GATEWAY_BASE_URL },
-    temperature: config.temperature ?? guardrailsConfig.generation.temperature,
-    maxTokens: config.maxTokens ?? guardrailsConfig.generation.maxTokens,
-    ...(config.topP !== undefined && { topP: config.topP }),
-    stop: guardrailsConfig.generation.stopSequences,
-    ...(seed !== null && seed !== undefined && { seed }),
-    // OpenAI-compatible structured-output flag; LiteLLM maps it to the provider's JSON mode.
-    ...(config.jsonMode && { modelKwargs: { response_format: { type: 'json_object' } } }),
-  });
+  return new ChatOpenAI(buildGatewayLLMOptions(config, model));
 }
 
 /**
@@ -194,9 +199,9 @@ export function getActiveLLMMeta(purpose = 'analysis') {
  * Create the default LLM instance based on environment configuration
  * This is the main entry point for the application
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain chat model instance
+ 
 let defaultLLM: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain chat model instance
+ 
 let judgeLLM: any = null;
 
 export async function getDefaultLLM() {
@@ -260,7 +265,7 @@ export function validateLLMResponse(response: unknown) {
  * Invoke LLM with timeout and proper cancellation
  */
 export async function invokeWithTimeout(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain chat model instance
+   
   llmInstance: any,
   input: unknown,
   options: { timeout?: number; [key: string]: unknown } = {}
@@ -292,7 +297,7 @@ export async function invokeWithTimeout(
  * Create cancellable LLM call
  */
 export function createCancellableLLMCall(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain chat model instance
+   
   llmInstance: any,
   input: unknown,
   options: Record<string, unknown> = {}

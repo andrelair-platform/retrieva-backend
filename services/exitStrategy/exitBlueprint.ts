@@ -83,6 +83,56 @@ export interface BlueprintDeps {
   sessionId?: string;
 }
 
+// Coerce an unknown value to a string[] (non-arrays → []).
+const toStringArray = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
+
+// Defensively normalise the phases array from the parsed model output.
+function normalizePhases(phases: Partial<ExitBlueprintPayload>['phases']): ExitPhase[] {
+  return (phases ?? []).map((p) => ({
+    name: String(p?.name ?? ''),
+    objective: String(p?.objective ?? ''),
+    durationEstimate: String(p?.durationEstimate ?? ''),
+    keyActivities: toStringArray(p?.keyActivities),
+    dependencies: toStringArray(p?.dependencies),
+  }));
+}
+
+// Normalise the dataPortability sub-object.
+function normalizeDataPortability(dp: Partial<ExitBlueprintPayload>['dataPortability']) {
+  return {
+    approach: String(dp?.approach ?? ''),
+    formats: toStringArray(dp?.formats),
+    secureDeletion: String(dp?.secureDeletion ?? ''),
+  };
+}
+
+// Normalise the parallelRun sub-object.
+function normalizeParallelRun(pr: Partial<ExitBlueprintPayload>['parallelRun']) {
+  return {
+    recommended: pr?.recommended !== false,
+    rationale: String(pr?.rationale ?? ''),
+    durationEstimate: String(pr?.durationEstimate ?? ''),
+  };
+}
+
+// Parse the model's raw text → structured payload (JSON extraction + defensive
+// normalisation). Throws if no phases are present. Pure; no I/O.
+function normalizeBlueprintOutput(raw: string): ExitBlueprintPayload {
+  const match = raw.match(/\{[\s\S]*\}/);
+  const parsed = JSON.parse(match ? match[0] : raw) as Partial<ExitBlueprintPayload>;
+  if (!Array.isArray(parsed.phases) || !parsed.phases.length) throw new Error('blueprint: no phases in model output');
+  // Light normalisation — trust the structure but coerce arrays/strings defensively.
+  return {
+    phases: normalizePhases(parsed.phases),
+    totalDurationEstimate: String(parsed.totalDurationEstimate ?? ''),
+    dataPortability: normalizeDataPortability(parsed.dataPortability),
+    parallelRun: normalizeParallelRun(parsed.parallelRun),
+    keyHandover: toStringArray(parsed.keyHandover),
+    risks: toStringArray(parsed.risks),
+    assumptions: toStringArray(parsed.assumptions),
+  };
+}
+
 async function llmBlueprint(ctx: ArrangementContext, sessionId?: string): Promise<ExitBlueprintPayload> {
   const { createLLM } = await import('../../config/llmProvider.js');
   const { getCallbacks } = await import('../../config/tracing.js');
@@ -99,34 +149,7 @@ async function llmBlueprint(ctx: ArrangementContext, sessionId?: string): Promis
     { callbacks: getCallbacks({ feature: 'exit-blueprint', sessionId }) }
   );
   const raw = typeof res?.content === 'string' ? res.content : JSON.stringify(res?.content ?? '');
-  const match = raw.match(/\{[\s\S]*\}/);
-  const parsed = JSON.parse(match ? match[0] : raw) as Partial<ExitBlueprintPayload>;
-  if (!Array.isArray(parsed.phases) || !parsed.phases.length) throw new Error('blueprint: no phases in model output');
-  // Light normalisation — trust the structure but coerce arrays/strings defensively.
-  const arr = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
-  return {
-    phases: parsed.phases.map((p) => ({
-      name: String(p?.name ?? ''),
-      objective: String(p?.objective ?? ''),
-      durationEstimate: String(p?.durationEstimate ?? ''),
-      keyActivities: arr(p?.keyActivities),
-      dependencies: arr(p?.dependencies),
-    })),
-    totalDurationEstimate: String(parsed.totalDurationEstimate ?? ''),
-    dataPortability: {
-      approach: String(parsed.dataPortability?.approach ?? ''),
-      formats: arr(parsed.dataPortability?.formats),
-      secureDeletion: String(parsed.dataPortability?.secureDeletion ?? ''),
-    },
-    parallelRun: {
-      recommended: parsed.parallelRun?.recommended !== false,
-      rationale: String(parsed.parallelRun?.rationale ?? ''),
-      durationEstimate: String(parsed.parallelRun?.durationEstimate ?? ''),
-    },
-    keyHandover: arr(parsed.keyHandover),
-    risks: arr(parsed.risks),
-    assumptions: arr(parsed.assumptions),
-  };
+  return normalizeBlueprintOutput(raw);
 }
 
 /** Draft an exit blueprint for the arrangement. Fail-safe → the deterministic template (never throws). */

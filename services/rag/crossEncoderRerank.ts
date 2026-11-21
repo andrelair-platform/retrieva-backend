@@ -13,8 +13,7 @@
  * @module services/rag/crossEncoderRerank
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any -- reranking works over untyped provider-API
-   responses (Cohere/Azure) and LLM output; the doc shapes are heterogeneous RAG payloads. */
+ 
 import logger from '../../config/logger.js';
 import { createLLM } from '../../config/llm.js';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
@@ -313,6 +312,35 @@ async function rerankWithLLM(query: string, documents: DocLike[], options: Reran
  * @param {Object} options - Re-ranking options
  * @returns {Promise<RerankResult>} Re-ranked documents
  */
+/** Normalize documents to the rerank-result shape without actually reordering. */
+function passthroughRerank(documents: DocLike[], provider: string, extra: Record<string, unknown> = {}) {
+  return {
+    documents: documents.map((doc: DocLike, i: number) => ({
+      ...doc,
+      rerankScore: doc.metadata?.score || 1 / (i + 1),
+      rerankRank: i + 1,
+    })),
+    provider,
+    processingTimeMs: 0,
+    success: true,
+    ...extra,
+  };
+}
+
+/** Dispatch to the configured rerank provider. */
+async function rerankByProvider(query: string, documents: DocLike[], options: RerankOptions) {
+  switch (RERANK_CONFIG.provider) {
+    case 'cohere':
+      return rerankWithCohere(query, documents, options);
+    case 'llm':
+      return rerankWithLLM(query, documents, options);
+    case 'none':
+    default:
+      // No re-ranking, return documents as-is with normalized structure
+      return passthroughRerank(documents, 'none');
+  }
+}
+
 export async function crossEncoderRerank(
   query: string,
   documents: DocLike[],
@@ -346,31 +374,7 @@ export async function crossEncoderRerank(
   }
 
   try {
-    let result;
-
-    switch (RERANK_CONFIG.provider) {
-      case 'cohere':
-        result = await rerankWithCohere(query, documents, options);
-        break;
-
-      case 'llm':
-        result = await rerankWithLLM(query, documents, options);
-        break;
-
-      case 'none':
-      default:
-        // No re-ranking, return documents as-is with normalized structure
-        result = {
-          documents: documents.map((doc: DocLike, i: number) => ({
-            ...doc,
-            rerankScore: doc.metadata?.score || 1 / (i + 1),
-            rerankRank: i + 1,
-          })),
-          provider: 'none',
-          processingTimeMs: 0,
-          success: true,
-        };
-    }
+    const result = await rerankByProvider(query, documents, options);
 
     // Cache successful results
     rerankCache.set(query, documents, result);

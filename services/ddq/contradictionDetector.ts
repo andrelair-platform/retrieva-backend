@@ -127,6 +127,55 @@ async function llmClassifyBatch(items: ClassifyItem[], sessionId?: string): Prom
   }));
 }
 
+type Candidate = { q: AnsweredQuestion; evidence: EvidenceSpan[] };
+
+/**
+ * Select the bounded set of evidence-matched candidates for the LLM (deterministic retrieval). Pushes a
+ * skip reason for every answer that is empty / already-flagged / has no evidence. ctx.arrangementId is
+ * guaranteed non-null by the caller (evidence is arrangement-scoped).
+ */
+async function gatherCandidates(
+  ctx: QuestionnaireContext,
+  deps: DetectContradictionsArgs['deps'],
+  known: Set<string>,
+  skipped: DetectResult['skipped']
+): Promise<{ candidates: Candidate[]; answersChecked: number }> {
+  const candidates: Candidate[] = [];
+  let answersChecked = 0;
+  for (const q of ctx.questions) {
+    if (!q.answer || !q.answer.trim()) {
+      skipped.push({ questionId: q.questionId, reason: 'no-answer' });
+      continue;
+    }
+    answersChecked += 1;
+    if (known.has(q.questionId)) {
+      skipped.push({ questionId: q.questionId, reason: 'already-flagged' });
+      continue;
+    }
+    if (candidates.length >= MAX_CANDIDATES) continue; // bound the single LLM prompt
+    const evidence = await retrieveEvidence(deps, ctx.arrangementId as string, q);
+    if (!evidence.length) {
+      skipped.push({ questionId: q.questionId, reason: 'no-evidence' });
+      continue;
+    }
+    candidates.push({ q, evidence });
+  }
+  return { candidates, answersChecked };
+}
+
+/** Best-effort evidence search for one answer (a retrieval miss → no evidence, never throws). */
+async function retrieveEvidence(
+  deps: DetectContradictionsArgs['deps'],
+  arrangementId: string,
+  q: AnsweredQuestion
+): Promise<EvidenceSpan[]> {
+  try {
+    return await deps.searchEvidence(arrangementId, `${q.questionText}\n${q.answer}`, EVIDENCE_TOPK);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Detect answer-vs-evidence contradictions for one questionnaire. Returns the flagged contradictions
  * (deduped against already-flagged questions) + the skipped questions with a reason. No side effects —
@@ -157,39 +206,25 @@ export async function detectContradictions(args: DetectContradictionsArgs): Prom
   const known = deps.knownQuestionIds ? await deps.knownQuestionIds(organizationId, questionnaireId) : new Set<string>();
 
   // Gather evidence-matched candidates (bounded). Deterministic retrieval; the LLM only JUDGES.
-  const candidates: Array<{ q: AnsweredQuestion; evidence: EvidenceSpan[] }> = [];
-  let answersChecked = 0;
-  for (const q of ctx.questions) {
-    if (!q.answer || !q.answer.trim()) {
-      skipped.push({ questionId: q.questionId, reason: 'no-answer' });
-      continue;
-    }
-    answersChecked += 1;
-    if (known.has(q.questionId)) {
-      skipped.push({ questionId: q.questionId, reason: 'already-flagged' });
-      continue;
-    }
-    if (candidates.length >= MAX_CANDIDATES) continue; // bound the single LLM prompt
-    let evidence: EvidenceSpan[] = [];
-    try {
-      evidence = await deps.searchEvidence(ctx.arrangementId, `${q.questionText}\n${q.answer}`, EVIDENCE_TOPK);
-    } catch {
-      evidence = [];
-    }
-    if (!evidence.length) {
-      skipped.push({ questionId: q.questionId, reason: 'no-evidence' });
-      continue;
-    }
-    candidates.push({ q, evidence });
-  }
+  const { candidates, answersChecked } = await gatherCandidates(ctx, deps, known, skipped);
   base.answersChecked = answersChecked;
   base.evidenceMatched = candidates.length;
   if (!candidates.length) return base;
 
   // ONE batched LLM call. Fail-safe: any error → NO contradictions (don't manufacture flags).
-  let verdicts: ClassifyVerdict[] = [];
+  const verdicts = await classifyCandidates(classifyBatch, candidates, questionnaireId);
+  base.contradictions = buildContradictions(candidates, verdicts);
+  return base;
+}
+
+/** The single batched classify call, fail-safe: any error → [] (never manufacture a flag). */
+async function classifyCandidates(
+  classifyBatch: NonNullable<DetectContradictionsArgs['deps']['classifyBatch']>,
+  candidates: Candidate[],
+  questionnaireId: string
+): Promise<ClassifyVerdict[]> {
   try {
-    verdicts = await classifyBatch(
+    return await classifyBatch(
       candidates.map(({ q, evidence }) => ({
         questionId: q.questionId,
         questionText: q.questionText,
@@ -205,14 +240,18 @@ export async function detectContradictions(args: DetectContradictionsArgs): Prom
       candidates: candidates.length,
       error: err instanceof Error ? err.message : String(err),
     });
-    verdicts = [];
+    return [];
   }
+}
 
+/** Turn the LLM verdicts into findings (only the contradicting ones; citations = the retrieved spans). */
+function buildContradictions(candidates: Candidate[], verdicts: ClassifyVerdict[]): ContradictionFinding[] {
   const verdictById = new Map(verdicts.map((v) => [v.questionId, v] as const));
+  const out: ContradictionFinding[] = [];
   for (const { q, evidence } of candidates) {
     const v = verdictById.get(q.questionId);
     if (!v || !v.contradicts) continue;
-    base.contradictions.push({
+    out.push({
       questionId: q.questionId,
       questionText: q.questionText,
       doraArticle: q.doraArticle,
@@ -222,5 +261,5 @@ export async function detectContradictions(args: DetectContradictionsArgs): Prom
       citations: evidence, // the retrieved spans that ground the flag
     });
   }
-  return base;
+  return out;
 }

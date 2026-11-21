@@ -56,7 +56,7 @@
  */
 interface DocLike {
   pageContent?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous RAG doc metadata
+   
   metadata?: Record<string, any>;
   rrfScore?: number;
   score?: number;
@@ -91,49 +91,79 @@ export function formatContext(docs: DocLike[]) {
  * @param {Document[]} docs - Documents to format
  * @returns {FormattedSource[]} Array of formatted source metadata
  */
-export function formatSources(docs: DocLike[]) {
-  return docs.map((doc, index) => {
-    const sourceNumber = index + 1;
-    const relevanceScore = doc.rrfScore || doc.score || null;
-
-    // Use original content for display (before compression) if available
-    // This ensures source display shows actual document content, not LLM-compressed text
-    const fullContent = doc.metadata?._originalContent || doc.pageContent || '';
-    let contentPreview = fullContent.substring(0, 200);
-    if (fullContent.length > 200) {
-      const lastSpace = contentPreview.lastIndexOf(' ');
-      if (lastSpace > 150) {
-        contentPreview = contentPreview.substring(0, lastSpace);
-      }
-      contentPreview += '...';
+// Truncate content to a ~200-char preview, snapping back to the last word boundary (ellipsis appended).
+function buildContentPreview(fullContent: string): string {
+  let contentPreview = fullContent.substring(0, 200);
+  if (fullContent.length > 200) {
+    const lastSpace = contentPreview.lastIndexOf(' ');
+    if (lastSpace > 150) {
+      contentPreview = contentPreview.substring(0, lastSpace);
     }
+    contentPreview += '...';
+  }
+  return contentPreview;
+}
 
-    return {
-      // Frontend-compatible fields
-      id: doc.metadata?.sourceId || `source-${sourceNumber}`,
-      title: doc.metadata?.documentTitle || 'Untitled',
-      content: contentPreview,
-      // `metadata.url` (e.g. the EUR-Lex link on regulation chunks, #424) must
-      // come before `metadata.source` — the latter is a category tag like
-      // 'regulation', not a URL, and would otherwise shadow the real link.
-      url: doc.metadata?.documentUrl || doc.metadata?.url || doc.metadata?.source || '',
-      // false for the working French translation → the UI labels it unofficial.
-      official: doc.metadata?.official !== false,
-      pageId: doc.metadata?.sourceId || null,
-      score: relevanceScore ? parseFloat(relevanceScore.toFixed(4)) : null,
+// The `metadata.url` precedence note (EUR-Lex link, #424): url before source (a category tag, not a URL).
+function sourceUrl(meta: any): string {
+  return meta?.documentUrl || meta?.url || meta?.source || '';
+}
 
-      // Extended metadata
-      sourceNumber,
-      section: doc.metadata?.section || null,
-      type: doc.metadata?.documentType || 'page',
-      relevanceScore: relevanceScore?.toFixed(4) || null, // Legacy string format
-      chunkInfo: {
-        blockType: doc.metadata?.block_type || null,
-        headingPath: doc.metadata?.heading_path || [],
-        position: doc.metadata?.positionPercent || null,
-      },
-    };
-  });
+function chunkInfoOf(meta: any) {
+  return {
+    blockType: meta?.block_type || null,
+    headingPath: meta?.heading_path || [],
+    position: meta?.positionPercent || null,
+  };
+}
+
+// The frontend-compatible identity fields (title/id/pageId/url/official) — isolates their fallbacks.
+function sourceIdentity(meta: any, sourceNumber: number) {
+  return {
+    id: meta?.sourceId || `source-${sourceNumber}`,
+    title: meta?.documentTitle || 'Untitled',
+    url: sourceUrl(meta),
+    // false for the working French translation → the UI labels it unofficial.
+    official: meta?.official !== false,
+    pageId: meta?.sourceId || null,
+  };
+}
+
+// The relevance score in both numeric + legacy-string shapes (null when absent).
+function sourceScores(doc: DocLike): { score: number | null; relevanceScore: string | null } {
+  const relevanceScore = doc.rrfScore || doc.score || null;
+  return {
+    score: relevanceScore ? parseFloat(relevanceScore.toFixed(4)) : null,
+    relevanceScore: relevanceScore?.toFixed(4) || null, // Legacy string format
+  };
+}
+
+// Build one formatted source object from a document + its 1-based source number.
+function formatSource(doc: DocLike, sourceNumber: number) {
+  const meta = doc.metadata;
+  const { score, relevanceScore } = sourceScores(doc);
+
+  // Use original content for display (before compression) if available — shows the actual document
+  // content, not LLM-compressed text.
+  const fullContent = meta?._originalContent || doc.pageContent || '';
+
+  return {
+    // Frontend-compatible fields
+    ...sourceIdentity(meta, sourceNumber),
+    content: buildContentPreview(fullContent),
+    score,
+
+    // Extended metadata
+    sourceNumber,
+    section: meta?.section || null,
+    type: meta?.documentType || 'page',
+    relevanceScore, // Legacy string format
+    chunkInfo: chunkInfoOf(meta),
+  };
+}
+
+export function formatSources(docs: DocLike[]) {
+  return docs.map((doc, index) => formatSource(doc, index + 1));
 }
 
 /**

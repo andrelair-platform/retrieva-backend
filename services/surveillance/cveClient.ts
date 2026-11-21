@@ -62,19 +62,29 @@ function numericScore(severities?: OsvSeverity[]): number | null {
  * LLM classify then refines severity from the advisory text. Never `none` (a published advisory is a
  * signal, not noise).
  */
+/** OSV human severity label → impact vocab (null = no mapping for this label). */
+const SEVERITY_LABEL_IMPACT: Record<string, string> = {
+  CRITICAL: 'critical',
+  HIGH: 'major',
+  MODERATE: 'minor',
+  MEDIUM: 'minor',
+  LOW: 'minor',
+};
+
+/** A numeric CVSS base score → impact vocab. */
+function scoreToImpact(score: number): string {
+  if (score >= 9) return 'critical';
+  if (score >= 7) return 'major';
+  return 'minor';
+}
+
 export function cveToImpact(vuln: OsvVuln): string {
-  switch (String(vuln.database_specific?.severity ?? '').toUpperCase()) {
-    case 'CRITICAL':
-      return 'critical';
-    case 'HIGH':
-      return 'major';
-    case 'MODERATE':
-    case 'MEDIUM':
-    case 'LOW':
-      return 'minor';
-  }
+  const label = String(vuln.database_specific?.severity ?? '').toUpperCase();
+  const byLabel = SEVERITY_LABEL_IMPACT[label];
+  if (byLabel) return byLabel;
+
   const score = numericScore(vuln.severity);
-  if (score !== null) return score >= 9 ? 'critical' : score >= 7 ? 'major' : 'minor';
+  if (score !== null) return scoreToImpact(score);
   return (vuln.severity ?? []).length ? 'major' : 'minor';
 }
 
@@ -83,6 +93,71 @@ export function cveToImpact(vuln: OsvVuln): string {
  * recency window, and caps the result (most-recent-first). A single package query failing is logged and
  * skipped (the sweep continues). `fetch` injectable. A non-OK OSV response for a package is a soft skip.
  */
+/** Query OSV for one package. Returns the vuln list, or [] on a non-OK response / error (soft skip). */
+async function fetchPackageVulns(
+  pkg: CvePackageRef,
+  fetchImpl: FetchLike,
+  timeoutMs: number
+): Promise<OsvVuln[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(OSV_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ package: { name: pkg.name, ecosystem: pkg.ecosystem } }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      logger.warn('surveillance.cve.query.failed', { service: 'surveillance', pkg: `${pkg.ecosystem}/${pkg.name}`, status: res.status });
+      return [];
+    }
+    const body = (await res.json()) as { vulns?: OsvVuln[] };
+    return Array.isArray(body.vulns) ? body.vulns : [];
+  } catch (err) {
+    logger.warn('surveillance.cve.query.error', {
+      service: 'surveillance',
+      pkg: `${pkg.ecosystem}/${pkg.name}`,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Normalise one OSV vuln → a SurveillanceSignal. */
+function vulnToSignal(v: OsvVuln, pkg: CvePackageRef, id: string): SurveillanceSignal {
+  const detail = String(v.details ?? v.summary ?? '').slice(0, 1000);
+  return {
+    source: 'cve',
+    externalId: id,
+    type: 'cve',
+    title: `${id}: ${String(v.summary ?? detail).slice(0, 200)}`.slice(0, 300),
+    summary: `[${pkg.ecosystem}/${pkg.name}] ${detail}`.slice(0, 1000),
+    url: v.references?.find((r) => r.url)?.url ?? `https://osv.dev/vulnerability/${id}`,
+    impact: cveToImpact(v),
+    statusLabel: 'published',
+    observedAt: v.published ? String(v.published) : (v.modified ? String(v.modified) : null),
+  };
+}
+
+/** Dedup + recency-filter one package's vulns into the shared byId map. */
+function collectPackageSignals(
+  vulns: OsvVuln[],
+  pkg: CvePackageRef,
+  since: string | undefined,
+  byId: Map<string, SurveillanceSignal>
+): void {
+  for (const v of vulns) {
+    const id = String(v.id ?? '');
+    if (!id || byId.has(id)) continue;
+    const when = String(v.modified ?? v.published ?? '');
+    if (since && when && when < since) continue; // recency window
+    byId.set(id, vulnToSignal(v, pkg, id));
+  }
+}
+
 export async function listCveAdvisories(packages: CvePackageRef[], deps: ListCveDeps = {}): Promise<SurveillanceSignal[]> {
   const fetchImpl = deps.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -91,51 +166,8 @@ export async function listCveAdvisories(packages: CvePackageRef[], deps: ListCve
 
   const byId = new Map<string, SurveillanceSignal>();
   for (const pkg of packages) {
-    let vulns: OsvVuln[] = [];
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetchImpl(OSV_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ package: { name: pkg.name, ecosystem: pkg.ecosystem } }),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        logger.warn('surveillance.cve.query.failed', { service: 'surveillance', pkg: `${pkg.ecosystem}/${pkg.name}`, status: res.status });
-        continue;
-      }
-      const body = (await res.json()) as { vulns?: OsvVuln[] };
-      vulns = Array.isArray(body.vulns) ? body.vulns : [];
-    } catch (err) {
-      logger.warn('surveillance.cve.query.error', {
-        service: 'surveillance',
-        pkg: `${pkg.ecosystem}/${pkg.name}`,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      continue;
-    } finally {
-      clearTimeout(timer);
-    }
-
-    for (const v of vulns) {
-      const id = String(v.id ?? '');
-      if (!id || byId.has(id)) continue;
-      const when = String(v.modified ?? v.published ?? '');
-      if (since && when && when < since) continue; // recency window
-      const detail = String(v.details ?? v.summary ?? '').slice(0, 1000);
-      byId.set(id, {
-        source: 'cve',
-        externalId: id,
-        type: 'cve',
-        title: `${id}: ${String(v.summary ?? detail).slice(0, 200)}`.slice(0, 300),
-        summary: `[${pkg.ecosystem}/${pkg.name}] ${detail}`.slice(0, 1000),
-        url: v.references?.find((r) => r.url)?.url ?? `https://osv.dev/vulnerability/${id}`,
-        impact: cveToImpact(v),
-        statusLabel: 'published',
-        observedAt: v.published ? String(v.published) : (v.modified ? String(v.modified) : null),
-      });
-    }
+    const vulns = await fetchPackageVulns(pkg, fetchImpl, timeoutMs);
+    collectPackageSignals(vulns, pkg, since, byId);
   }
 
   // Most-recent-first, capped.

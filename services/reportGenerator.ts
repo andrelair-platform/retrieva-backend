@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- IO/LLM adapter over untyped PDF/DOCX/zip/LLM payloads. */
+ 
 /**
  * Report Generator
  *
@@ -149,11 +149,9 @@ function gapBadge(level: any) {
 // Section builders
 // ---------------------------------------------------------------------------
 
-function buildCoverPage(assessment: any) {
-  const risk = assessment.results?.overallRisk || 'N/A';
-  const isContract = assessment.framework === 'CONTRACT_A30';
+// Cover-page title + vendor subtitle paragraphs.
+function buildCoverTitle(assessment: any, isContract: boolean) {
   return [
-    new Paragraph({ children: [new PageBreak()] }),
     new Paragraph({
       children: [
         new TextRun({
@@ -180,6 +178,12 @@ function buildCoverPage(assessment: any) {
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
     }),
+  ];
+}
+
+// Cover-page metadata paragraphs (risk badge, name, date, framework).
+function buildCoverMeta(assessment: any, isContract: boolean, risk: string) {
+  return [
     new Paragraph({
       children: [
         new TextRun({
@@ -232,6 +236,16 @@ function buildCoverPage(assessment: any) {
       alignment: AlignmentType.CENTER,
       spacing: { after: 800 },
     }),
+  ];
+}
+
+function buildCoverPage(assessment: any) {
+  const risk = assessment.results?.overallRisk || 'N/A';
+  const isContract = assessment.framework === 'CONTRACT_A30';
+  return [
+    new Paragraph({ children: [new PageBreak()] }),
+    ...buildCoverTitle(assessment, isContract),
+    ...buildCoverMeta(assessment, isContract, risk),
   ];
 }
 

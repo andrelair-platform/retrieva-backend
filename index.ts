@@ -156,4 +156,7 @@ const gracefulShutdown = async (signal: string) => {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-startServer();
+startServer().catch((err) => {
+  logger.error('fatal: failed to start server', { error: err });
+  process.exit(1);
+});

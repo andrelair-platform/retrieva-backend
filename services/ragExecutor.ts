@@ -34,9 +34,9 @@ export class InputGuardrailError extends AppError {
 interface ExecuteRAGParams {
   question: string;
   conversationId?: string | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- optional retrieval filters
+   
   filters?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- SSE event callback (event, data)
+   
   onEvent?: ((event: any, data?: any) => void) | null;
   userId?: string | null;
   authorizedWorkspaceIds?: string[] | null;
@@ -70,7 +70,14 @@ export async function executeRAG({
     lang,
   });
 
-  logger.info('RAG query completed', {
+  logger.info('RAG query completed', ragCompletionLogFields(result));
+
+  return result;
+}
+
+/** Build the structured log fields for a completed RAG query (null-safe extraction from the result). */
+function ragCompletionLogFields(result: any) {
+  return {
     service: 'rag-executor',
     sourcesCount: result.sources?.length || 0,
     confidence: result.validation?.confidence,
@@ -78,7 +85,5 @@ export async function executeRAG({
     llmProvider: result.metadata?.llmProvider,
     llmModel: result.metadata?.llmModel,
     llmPurpose: result.metadata?.llmPurpose,
-  });
-
-  return result;
+  };
 }

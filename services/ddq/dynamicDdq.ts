@@ -176,36 +176,38 @@ async function llmGenerate(input: GenerateInput): Promise<GeneratedQuestion[]> {
  * text. The extras are the LLM's output UNION the deterministic add-on floor — so even a perfect LLM
  * call never drops a must-ask question, and a failed call still yields the deterministic add-ons.
  */
-export async function buildDynamicQuestionnaire(args: BuildDynamicArgs): Promise<BuildDynamicResult> {
-  const tier = (args.tier || 'standard').toLowerCase();
-  const serviceType = (args.serviceType || 'other').toLowerCase();
-  const baseAll = args.baseQuestions || [];
-  const selected = selectBaseByTier(baseAll, tier);
-  const base: DdqQuestion[] = selected.map((q) => ({ ...q, source: 'base' as const }));
-
-  const generate = args.deps?.generate ?? ((i: GenerateInput) => llmGenerate(i));
-  const floor = fallbackAddons(tier, serviceType);
-
+/** Call the LLM generator; on throw OR empty output, mark usedFallback. Returns the output + the flag. */
+async function generateOrFallback(
+  generate: (i: GenerateInput) => Promise<GeneratedQuestion[]> | GeneratedQuestion[],
+  input: GenerateInput
+): Promise<{ llmOut: GeneratedQuestion[]; usedFallback: boolean }> {
   let llmOut: GeneratedQuestion[] = [];
   let usedFallback = false;
   try {
-    llmOut = await generate({ tier, serviceType, existing: base.map((q) => q.text), sessionId: args.deps?.sessionId });
+    llmOut = await generate(input);
   } catch (err) {
     usedFallback = true;
     logger.warn('ddq.dynamic.fallback', {
       service: 'ddq-dynamic',
-      tier,
-      serviceType,
+      tier: input.tier,
+      serviceType: input.serviceType,
       error: err instanceof Error ? err.message : String(err),
     });
   }
   if (!llmOut.length) usedFallback = true;
+  return { llmOut, usedFallback };
+}
 
-  // Union the LLM output with the deterministic floor, dedup by normalised text against the included base
-  // + each other (the floor guarantees the must-ask questions regardless of what the model returned).
+/** Dedup candidate questions (by normalised text) against the base + each other → adaptive extras. */
+function buildAdaptiveExtras(
+  candidates: GeneratedQuestion[],
+  base: DdqQuestion[],
+  tier: string,
+  serviceType: string
+): DdqQuestion[] {
   const seen = new Set(base.map((q) => normText(q.text)));
   const extras: DdqQuestion[] = [];
-  for (const q of [...llmOut, ...floor]) {
+  for (const q of candidates) {
     const key = normText(q.text);
     if (!key || seen.has(key)) continue;
     seen.add(key);
@@ -220,6 +222,29 @@ export async function buildDynamicQuestionnaire(args: BuildDynamicArgs): Promise
       serviceType,
     });
   }
+  return extras;
+}
+
+export async function buildDynamicQuestionnaire(args: BuildDynamicArgs): Promise<BuildDynamicResult> {
+  const tier = (args.tier || 'standard').toLowerCase();
+  const serviceType = (args.serviceType || 'other').toLowerCase();
+  const baseAll = args.baseQuestions || [];
+  const selected = selectBaseByTier(baseAll, tier);
+  const base: DdqQuestion[] = selected.map((q) => ({ ...q, source: 'base' as const }));
+
+  const generate = args.deps?.generate ?? ((i: GenerateInput) => llmGenerate(i));
+  const floor = fallbackAddons(tier, serviceType);
+
+  const { llmOut, usedFallback } = await generateOrFallback(generate, {
+    tier,
+    serviceType,
+    existing: base.map((q) => q.text),
+    sessionId: args.deps?.sessionId,
+  });
+
+  // Union the LLM output with the deterministic floor, dedup by normalised text against the included base
+  // + each other (the floor guarantees the must-ask questions regardless of what the model returned).
+  const extras = buildAdaptiveExtras([...llmOut, ...floor], base, tier, serviceType);
 
   return {
     questions: [...base, ...extras],

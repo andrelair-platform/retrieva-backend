@@ -77,14 +77,15 @@ export class DdqContradictionRepository {
   }
 
   /** Persist new contradictions; dedup on (org, questionnaire, question) via the unique index. */
-  async saveContradictions(
-    organizationId: string,
-    questionnaireId: string,
-    vendorName: string,
-    arrangementId: string | null,
-    findings: ContradictionFinding[],
-    createdBy?: string | null
-  ) {
+  async saveContradictions(opts: {
+    organizationId: string;
+    questionnaireId: string;
+    vendorName: string;
+    arrangementId: string | null;
+    findings: ContradictionFinding[];
+    createdBy?: string | null;
+  }) {
+    const { organizationId, questionnaireId, vendorName, arrangementId, findings, createdBy } = opts;
     if (!findings.length) return [];
     return this.db
       .insert(ddqContradictions)

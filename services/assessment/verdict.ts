@@ -66,6 +66,61 @@ export function coverageConfidence(control: Control, coveredEvidenceTypes: strin
   return Math.max(0, Math.min(1, covered / expected));
 }
 
+/** AC-3 guardrail verdict: no evidence found → insufficient_evidence (deterministic, no model). */
+function noEvidenceVerdict(control: Control, searched: unknown[]) {
+  return {
+    verdict: 'insufficient_evidence',
+    rationale: `No evidence found for the expected evidence types: ${
+      control.expectedEvidenceTypes?.join(', ') || '(none specified)'
+    }. Human review required.`,
+    citations: [],
+    searched,
+    confidence: 0,
+  };
+}
+
+/** Run the injected judge, swallowing any error to a null result (safe → insufficient_evidence). */
+async function runJudge(control: Control, spans: Span[], llmJudge: Judge): Promise<JudgeResult | null> {
+  try {
+    return await llmJudge(control, spans);
+  } catch {
+    return null;
+  }
+}
+
+interface VerdictCtx {
+  spans: Span[];
+  searched: unknown[];
+  confidence: number;
+}
+
+/** Evidence present but the judge could not decide → hand to a human, don't fabricate a verdict. */
+function inconclusiveVerdict(judged: JudgeResult | null, ctx: VerdictCtx) {
+  return {
+    verdict: 'insufficient_evidence',
+    rationale:
+      judged?.rationale ||
+      'Evidence was found but could not be conclusively assessed; human review required.',
+    citations: ctx.spans,
+    searched: ctx.searched,
+    confidence: ctx.confidence,
+  };
+}
+
+/** A decided (non-insufficient) verdict: map cited span indices → citations (default: all spans). */
+function decidedVerdict(judged: JudgeResult, verdict: string, ctx: VerdictCtx) {
+  const idx = judged.citedIndices;
+  const cited =
+    Array.isArray(idx) && idx.length ? idx.map((i) => ctx.spans[i]).filter(Boolean) : ctx.spans;
+  return {
+    verdict,
+    rationale: judged.rationale || '',
+    citations: cited,
+    searched: ctx.searched,
+    confidence: ctx.confidence,
+  };
+}
+
 /** Decide the verdict for one control given the gathered evidence + an injected judge. */
 export async function assessControl(control: Control, gathered: Gathered = {}, llmJudge: Judge) {
   const spans = gathered.spans || [];
@@ -74,51 +129,19 @@ export async function assessControl(control: Control, gathered: Gathered = {}, l
   const hasEvidence = spans.length > 0 || evidenceRecords.length > 0;
 
   // ── AC-3 guardrail (deterministic, no model) ────────────────────────────────
-  if (!hasEvidence) {
-    return {
-      verdict: 'insufficient_evidence',
-      rationale: `No evidence found for the expected evidence types: ${
-        control.expectedEvidenceTypes?.join(', ') || '(none specified)'
-      }. Human review required.`,
-      citations: [],
-      searched,
-      confidence: 0,
-    };
-  }
+  if (!hasEvidence) return noEvidenceVerdict(control, searched);
 
   // ── evidence present → the judge grades it, grounded ONLY in the provided spans ──
-  let judged: JudgeResult | null = null;
-  try {
-    judged = await llmJudge(control, spans);
-  } catch {
-    judged = null;
-  }
+  const judged = await runJudge(control, spans, llmJudge);
   const verdict =
     judged && JUDGE_VERDICTS.includes(judged.verdict) ? judged.verdict : 'insufficient_evidence';
+  const confidence = coverageConfidence(control, gathered.coveredEvidenceTypes);
+
+  const ctx: VerdictCtx = { spans, searched, confidence };
   if (verdict === 'insufficient_evidence') {
-    // present evidence but the judge could not decide → hand to a human, don't fabricate a verdict.
-    return {
-      verdict,
-      rationale:
-        judged?.rationale ||
-        'Evidence was found but could not be conclusively assessed; human review required.',
-      citations: spans,
-      searched,
-      confidence: coverageConfidence(control, gathered.coveredEvidenceTypes),
-    };
+    return inconclusiveVerdict(judged, ctx);
   }
 
-  // map cited span indices → citation objects; default to all provided spans if none cited.
   // (verdict !== insufficient_evidence ⇒ judged is a valid result here.)
-  const idx = judged!.citedIndices;
-  const cited =
-    Array.isArray(idx) && idx.length ? idx.map((i) => spans[i]).filter(Boolean) : spans;
-
-  return {
-    verdict,
-    rationale: judged!.rationale || '',
-    citations: cited,
-    searched,
-    confidence: coverageConfidence(control, gathered.coveredEvidenceTypes),
-  };
+  return decidedVerdict(judged!, verdict, ctx);
 }

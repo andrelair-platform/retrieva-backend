@@ -20,14 +20,23 @@ import type { VendorPrincipal, VendorRejectReason, VendorResolution } from './ve
  * fulfilled) are decided HERE so there is one source of truth for "is this token still good?".
  * `fulfilled` reuses the shared `complete` reason (nothing left to upload).
  */
+/** Token-level denial reasons (for a resolved, non-null request); `null` = still good. */
+function evidenceRequestDenyReason(
+  r: NonNullable<Awaited<ReturnType<typeof evidenceRequestRepository.findByToken>>>
+): VendorRejectReason | null {
+  if (r.revokedAt) return 'revoked';
+  if (r.status === 'fulfilled') return 'complete';
+  if (r.tokenExpiresAt && new Date() > new Date(r.tokenExpiresAt)) return 'expired';
+  if (!r.arrangementId) return 'no_arrangement';
+  return null;
+}
+
 export async function resolveEvidenceRequestPrincipal(token: string): Promise<VendorResolution> {
   const reject = (reason: VendorRejectReason): VendorResolution => ({ ok: false, reason });
   const r = await evidenceRequestRepository.findByToken(token);
   if (!r) return reject('not_found');
-  if (r.revokedAt) return reject('revoked');
-  if (r.status === 'fulfilled') return reject('complete');
-  if (r.tokenExpiresAt && new Date() > new Date(r.tokenExpiresAt)) return reject('expired');
-  if (!r.arrangementId) return reject('no_arrangement');
+  const denied = evidenceRequestDenyReason(r);
+  if (denied) return reject(denied);
 
   // Derive the org from the arrangement (unscoped — the valid token IS the access proof).
   const arrangement = await arrangementRepository.findByIdUnscoped(r.arrangementId);

@@ -34,7 +34,7 @@ function main() {
   const artifacts = buildArtifacts();
   for (const [name, obj] of Object.entries(artifacts)) {
     writeFileSync(join(OUT_DIR, name), stringify(obj));
-    // eslint-disable-next-line no-console -- generator CLI output
+     
     console.log(`wrote contracts/a2a/schema/${name}`);
   }
 }

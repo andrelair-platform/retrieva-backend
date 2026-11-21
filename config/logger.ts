@@ -82,7 +82,7 @@ export interface Logger {
   _pino: unknown;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- pino instance is externally typed
+ 
 type PinoLike = any;
 
 const logger = createCompatLogger(pinoLogger);

@@ -28,35 +28,32 @@ import {
   arrangementRepository as defaultArrangementRepo,
 } from '../../repositories/index.js';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- persisted finding/risk rows are heterogeneous
+ 
 export type ApplyDecisionResult =
   | { ok: true; finding: any; risk: any | null; override: boolean }
   | { ok: false; code: 'self_approval' | 'override_reason_required'; message: string };
 
 interface ApplyArgs {
   organizationId: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- already fetched + org/branch-scoped by the caller
+   
   finding: any;
   decision: FindingDecision;
   reason?: string | null;
   userId: string; // the checker
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable repos/audit for tests
+   
   repos?: Record<string, any>;
 }
 
-export async function applyFindingDecision({
-  organizationId,
-  finding,
-  decision,
-  reason = null,
-  userId,
-  repos = {},
-}: ApplyArgs): Promise<ApplyDecisionResult> {
-  const findingRepo = repos.findingRepository || defaultFindingRepo;
-  const riskRepo = repos.riskRepository || defaultRiskRepo;
-  const audit = repos.recordAudit || defaultRecordAudit;
-  const status = DECISION_STATUS[decision];
-
+/**
+ * Validate the SoD gates that don't need req/res. Returns a failure result to
+ * short-circuit, or `{ override }` when the decision may proceed.
+ */
+function checkDecisionGates(
+  finding: any,
+  decision: FindingDecision,
+  reason: string | null,
+  userId: string
+): { ok: false; code: 'self_approval' | 'override_reason_required'; message: string } | { ok: true; override: boolean } {
   // gate 2: maker ≠ checker (AC-2) — cannot decide your own draft, whatever roles you hold.
   if (isSelfApproval(finding, userId)) {
     return {
@@ -76,6 +73,140 @@ export async function applyFindingDecision({
       message: `A reason is required to ${decision} against the AI verdict '${finding.verdict}'`,
     };
   }
+
+  return { ok: true, override };
+}
+
+interface RiskStepCtx {
+  organizationId: string;
+  finding: any;
+  userId: string;
+  audit: any;
+  repos: Record<string, any>;
+}
+
+/**
+ * P2a (DORA Art. 28): route an opened gap to its owning party by control domain +
+ * severity and notify the role-holders. Best-effort — routing/notification must
+ * NEVER break the SoD decision commit, so the whole block is guarded and only logs
+ * on failure.
+ */
+async function routeAndNotifyGap(ctx: RiskStepCtx, risk: any, derived: any) {
+  const { organizationId, finding, userId, audit, repos } = ctx;
+  try {
+    const arrangementRepo = repos.arrangementRepository || defaultArrangementRepo;
+    const notify = repos.notifyRoutedGap || defaultNotifyRoutedGap;
+    let controls: Array<{ id: string; domain: string }> = [];
+    try {
+      controls = controlLibraryService.getControls(finding.libraryVersion);
+    } catch {
+      controls = []; // unknown library version → domain unresolved → routeFinding uses the safe default
+    }
+    const domain = domainForControl(finding.controlId, controls);
+    const arr = finding.arrangementId
+      ? await arrangementRepo
+          .findByIdInOrg(organizationId, String(finding.arrangementId))
+          .catch(() => null)
+      : null;
+    const cif = controlLibraryService.isCIF({ criticality: arr?.criticality });
+    const route = routeFinding({ domain, severity: derived.severity, cif });
+    const notifyResult = await notify({ organizationId, route, finding, risk }, {});
+    await audit({
+      organizationId,
+      actor: userId,
+      action: 'finding.routed',
+      targetType: 'risk',
+      targetId: risk.id,
+      evidenceRefs: [finding.controlId],
+      metadata: {
+        arrangementId: finding.arrangementId,
+        findingId: finding.id,
+        domain: domain ?? null,
+        owner: route.owner,
+        notify: route.notify,
+        escalated: route.escalated,
+        reason: route.reason,
+        notified: notifyResult.notified,
+        recipientCount: notifyResult.recipientCount,
+      },
+    });
+  } catch (err) {
+    defaultLogger.warn('finding.routed.skipped', {
+      service: 'finding-routing',
+      organizationId,
+      findingId: finding.id,
+      riskId: risk.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * AC-3: approving a GAP verdict routes it into the remediation loop as a Risk the
+ * human owns. Idempotent (one risk per finding); compliant/not_applicable approvals
+ * open no risk. Returns the created risk (or null).
+ */
+async function openRemediationRisk(
+  ctx: RiskStepCtx,
+  status: string,
+  riskRepo: any
+): Promise<any | null> {
+  const { organizationId, finding, userId, audit } = ctx;
+  if (!(status === 'approved' && verdictWarrantsRisk(finding.verdict))) {
+    return null;
+  }
+
+  const derived = buildRiskFromFinding(finding);
+  const risk = await riskRepo.createFromFinding({
+    organizationId,
+    arrangementId: finding.arrangementId,
+    findingId: finding.id,
+    controlId: finding.controlId,
+    libraryVersion: finding.libraryVersion,
+    sourceVerdict: derived.sourceVerdict,
+    title: derived.title,
+    description: derived.description,
+    severity: derived.severity,
+    openedBy: userId,
+  });
+  if (!risk) return null;
+
+  await audit({
+    organizationId,
+    actor: userId,
+    action: 'risk.created',
+    targetType: 'risk',
+    targetId: risk.id,
+    evidenceRefs: [finding.controlId],
+    metadata: {
+      arrangementId: finding.arrangementId,
+      findingId: finding.id,
+      sourceVerdict: derived.sourceVerdict,
+      severity: derived.severity,
+      libraryVersion: finding.libraryVersion,
+    },
+  });
+
+  await routeAndNotifyGap(ctx, risk, derived);
+  return risk;
+}
+
+export async function applyFindingDecision({
+  organizationId,
+  finding,
+  decision,
+  reason = null,
+  userId,
+  repos = {},
+}: ApplyArgs): Promise<ApplyDecisionResult> {
+  const findingRepo = repos.findingRepository || defaultFindingRepo;
+  const riskRepo = repos.riskRepository || defaultRiskRepo;
+  const audit = repos.recordAudit || defaultRecordAudit;
+  const status = DECISION_STATUS[decision];
+
+  const gate = checkDecisionGates(finding, decision, reason, userId);
+  if (!gate.ok) return gate;
+  const { override } = gate;
 
   const updated = await findingRepo.setDecision(organizationId, finding.id, status, {
     decidedBy: userId,
@@ -99,91 +230,11 @@ export async function applyFindingDecision({
     },
   });
 
-  // AC-3: approving a GAP verdict routes it into the remediation loop as a Risk the human owns.
-  // Idempotent (one risk per finding); compliant/not_applicable approvals open no risk.
-  let risk = null;
-  if (status === 'approved' && verdictWarrantsRisk(finding.verdict)) {
-    const derived = buildRiskFromFinding(finding);
-    risk = await riskRepo.createFromFinding({
-      organizationId,
-      arrangementId: finding.arrangementId,
-      findingId: finding.id,
-      controlId: finding.controlId,
-      libraryVersion: finding.libraryVersion,
-      sourceVerdict: derived.sourceVerdict,
-      title: derived.title,
-      description: derived.description,
-      severity: derived.severity,
-      openedBy: userId,
-    });
-    if (risk) {
-      await audit({
-        organizationId,
-        actor: userId,
-        action: 'risk.created',
-        targetType: 'risk',
-        targetId: risk.id,
-        evidenceRefs: [finding.controlId],
-        metadata: {
-          arrangementId: finding.arrangementId,
-          findingId: finding.id,
-          sourceVerdict: derived.sourceVerdict,
-          severity: derived.severity,
-          libraryVersion: finding.libraryVersion,
-        },
-      });
-
-      // P2a (DORA Art. 28): route the opened gap to its owning party by control domain + severity, and
-      // notify the people holding that role. Best-effort — routing/notification must NEVER break the
-      // SoD decision commit above, so the whole block is guarded and only logs on failure.
-      try {
-        const arrangementRepo = repos.arrangementRepository || defaultArrangementRepo;
-        const notify = repos.notifyRoutedGap || defaultNotifyRoutedGap;
-        let controls: Array<{ id: string; domain: string }> = [];
-        try {
-          controls = controlLibraryService.getControls(finding.libraryVersion);
-        } catch {
-          controls = []; // unknown library version → domain unresolved → routeFinding uses the safe default
-        }
-        const domain = domainForControl(finding.controlId, controls);
-        const arr = finding.arrangementId
-          ? await arrangementRepo
-              .findByIdInOrg(organizationId, String(finding.arrangementId))
-              .catch(() => null)
-          : null;
-        const cif = controlLibraryService.isCIF({ criticality: arr?.criticality });
-        const route = routeFinding({ domain, severity: derived.severity, cif });
-        const notifyResult = await notify({ organizationId, route, finding, risk }, {});
-        await audit({
-          organizationId,
-          actor: userId,
-          action: 'finding.routed',
-          targetType: 'risk',
-          targetId: risk.id,
-          evidenceRefs: [finding.controlId],
-          metadata: {
-            arrangementId: finding.arrangementId,
-            findingId: finding.id,
-            domain: domain ?? null,
-            owner: route.owner,
-            notify: route.notify,
-            escalated: route.escalated,
-            reason: route.reason,
-            notified: notifyResult.notified,
-            recipientCount: notifyResult.recipientCount,
-          },
-        });
-      } catch (err) {
-        defaultLogger.warn('finding.routed.skipped', {
-          service: 'finding-routing',
-          organizationId,
-          findingId: finding.id,
-          riskId: risk.id,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-  }
+  const risk = await openRemediationRisk(
+    { organizationId, finding, userId, audit, repos },
+    status,
+    riskRepo
+  );
 
   // Push-update the vendor's unified DORA score — a decided finding (and any risk it opened) changes the
   // risk-penalty pillar. Resolves the vendor via the arrangement→provider-node link; no-op if unmapped.

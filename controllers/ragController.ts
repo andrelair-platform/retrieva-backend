@@ -12,26 +12,33 @@ import logger from '../config/logger.js';
  * activity logging, token tracking) lives in executeRAG().
  * This controller only handles HTTP request/response shaping.
  */
-export const askQuestion = catchAsync(async (req: Request, res: Response) => {
+// Build the executeRAG() arg set from the request body (the fallbacks the two transports share).
+function buildRagRequest(req: Request): any {
   const { question, conversationId, filters, useIntentAware = true, forceIntent, lang } = req.body;
+  return {
+    question,
+    conversationId,
+    filters: filters || null,
+    userId: req.user?.userId?.toString(),
+    authorizedWorkspaceIds: req.authorizedWorkspaces?.map((w: any) => String(w.workspaceId)) || [],
+    forceIntent: forceIntent || null,
+    useIntentAware,
+    lang,
+  };
+}
 
-  if (!conversationId) {
+const workspaceIdOf = (req: Request): any => req.headers?.['x-workspace-id'] || req.body?.workspaceId;
+const errMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+export const askQuestion = catchAsync(async (req: Request, res: Response) => {
+  if (!req.body.conversationId) {
     return sendError(res, 400, 'conversationId is required');
   }
 
-  const workspaceId = req.headers?.['x-workspace-id'] || req.body?.workspaceId;
+  const workspaceId = workspaceIdOf(req);
 
   try {
-    const result = await executeRAG({
-      question,
-      conversationId,
-      filters: filters || null,
-      userId: req.user?.userId?.toString(),
-      authorizedWorkspaceIds: req.authorizedWorkspaces?.map((w: any) => String(w.workspaceId)) || [],
-      forceIntent: forceIntent || null,
-      useIntentAware,
-      lang,
-    });
+    const result = await executeRAG(buildRagRequest(req));
 
     // B1: honor the workspace canViewSources permission before returning sources.
     if (result?.sources?.length && !(await userCanViewSources(req, workspaceId))) {
@@ -41,7 +48,7 @@ export const askQuestion = catchAsync(async (req: Request, res: Response) => {
     sendSuccess(res, 200, 'Question answered successfully', result);
   } catch (error: unknown) {
     if (error instanceof InputGuardrailError) {
-      return sendError(res, 400, (error instanceof Error ? error.message : String(error)));
+      return sendError(res, 400, errMessage(error));
     }
     throw error;
   }
@@ -55,16 +62,24 @@ export const askQuestion = catchAsync(async (req: Request, res: Response) => {
  * the client as `event: <type>\ndata: <json>\n\n` so the UI can render tokens
  * progressively.
  */
-export const askQuestionStream = catchAsync(async (req: Request, res: Response) => {
-  const { question, conversationId, filters, useIntentAware = true, forceIntent, lang } = req.body;
+// Emit the terminal SSE `error` event (guardrail → 400-class; anything else → logged generic error).
+function sendStreamError(send: (event: any, data?: any) => void, error: unknown): void {
+  if (error instanceof InputGuardrailError) {
+    send('error', { message: errMessage(error), code: 'INPUT_GUARDRAIL' });
+    return;
+  }
+  logger.error('RAG stream failed', { error: errMessage(error), stack: (error as Error).stack });
+  send('error', { message: 'Stream failed', code: 'STREAM_ERROR' });
+}
 
-  if (!conversationId) {
+export const askQuestionStream = catchAsync(async (req: Request, res: Response) => {
+  if (!req.body.conversationId) {
     return sendError(res, 400, 'conversationId is required');
   }
 
   // B1: resolve once up-front so the synchronous SSE writer can drop the
   // `sources` event when this member is not allowed to see sources.
-  const workspaceId = req.headers?.['x-workspace-id'] || req.body?.workspaceId;
+  const workspaceId = workspaceIdOf(req);
   const allowSources = await userCanViewSources(req, workspaceId);
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -93,24 +108,9 @@ export const askQuestionStream = catchAsync(async (req: Request, res: Response) 
   }, 20000);
 
   try {
-    await executeRAG({
-      question,
-      conversationId,
-      filters: filters || null,
-      userId: req.user?.userId?.toString(),
-      authorizedWorkspaceIds: req.authorizedWorkspaces?.map((w: any) => String(w.workspaceId)) || [],
-      forceIntent: forceIntent || null,
-      useIntentAware,
-      lang,
-      onEvent: send,
-    });
+    await executeRAG({ ...buildRagRequest(req), onEvent: send });
   } catch (error: unknown) {
-    if (error instanceof InputGuardrailError) {
-      send('error', { message: (error instanceof Error ? error.message : String(error)), code: 'INPUT_GUARDRAIL' });
-    } else {
-      logger.error('RAG stream failed', { error: (error instanceof Error ? error.message : String(error)), stack: (error as Error).stack });
-      send('error', { message: 'Stream failed', code: 'STREAM_ERROR' });
-    }
+    sendStreamError(send, error);
   } finally {
     clearInterval(heartbeat);
     if (!res.writableEnded) res.end();

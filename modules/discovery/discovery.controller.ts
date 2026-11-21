@@ -17,6 +17,10 @@ const requireOrg = (req: Request, res: Response) => {
   return id;
 };
 
+// Every arrangement proposal must name its provider + legal entity + business function.
+const hasRequiredDimensions = (p: Record<string, unknown>) =>
+  !!(p.providerName && p.legalEntityName && p.businessFunctionName);
+
 // GET /api/v1/discovery/runs — recent sweeps for the org.
 export const listRuns = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
@@ -58,8 +62,9 @@ export const confirmDiscoveryProposal = catchAsync(async (req: Request, res: Res
   if (!item) return sendError(res, 404, 'Proposal not found');
   if (item.status !== 'pending') return sendError(res, 409, `Proposal already ${item.status}`);
 
-  const merged = { ...(item.proposal as Record<string, unknown>), ...(req.body?.proposal ?? req.body ?? {}) };
-  if (!merged.providerName || !merged.legalEntityName || !merged.businessFunctionName) {
+  const overrides = (req.body?.proposal ?? req.body ?? {}) as Record<string, unknown>;
+  const merged = { ...(item.proposal as Record<string, unknown>), ...overrides };
+  if (!hasRequiredDimensions(merged)) {
     return sendError(res, 400, 'providerName, legalEntityName and businessFunctionName are required');
   }
 

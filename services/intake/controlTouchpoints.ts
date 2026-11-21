@@ -35,7 +35,7 @@ export function summarizeControlTouchpoints(
   opts: { version?: string } = {}
 ): ControlTouchpoint[] {
   const controls = getControls(opts.version);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- library controls are heterogeneous
+   
   const byId = new Map<string, any>(controls.map((c: any) => [c.id, c]));
 
   const clauses = String(text || '')

@@ -31,7 +31,7 @@ const CODE_PATTERN =
  * Cached tiktoken encoder instance
  * @type {Object|null}
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- external js-tiktoken encoder
+ 
 let cachedEncoder: any = null;
 let encoderLoadFailed = false;
 

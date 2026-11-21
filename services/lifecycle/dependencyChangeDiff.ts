@@ -98,16 +98,32 @@ export interface DetectChangesInput {
  *   - residency change       → high  (critical on CIF — data-location/transfer is a first-order control)
  * Empty when nothing material changed — the caller then does NOT trigger a reassessment.
  */
+// Severity floor per change type: a CIF (critical/important function) arrangement raises each one
+// rung (DORA proportionality). Table over ternaries keeps detectDependencyChanges within the floor.
+const CHANGE_SEVERITY: Record<
+  'subprocessor_added' | 'subprocessor_removed' | 'residency_change',
+  { cif: SurveillanceSeverity; base: SurveillanceSeverity }
+> = {
+  subprocessor_added: { cif: 'high', base: 'medium' },
+  subprocessor_removed: { cif: 'medium', base: 'low' },
+  residency_change: { cif: 'critical', base: 'high' },
+};
+
+const sevFor = (
+  type: keyof typeof CHANGE_SEVERITY,
+  cif: boolean
+): SurveillanceSeverity => (cif ? CHANGE_SEVERITY[type].cif : CHANGE_SEVERITY[type].base);
+
 export function detectDependencyChanges(input: DetectChangesInput): DependencyChange[] {
   const cif = input.cif === true;
   const changes: DependencyChange[] = [];
 
   const sub = diffSubprocessors(input.prevSubprocessors ?? [], input.nextSubprocessors ?? []);
   for (const name of sub.added) {
-    changes.push({ type: 'subprocessor_added', detail: name, severity: cif ? 'high' : 'medium' });
+    changes.push({ type: 'subprocessor_added', detail: name, severity: sevFor('subprocessor_added', cif) });
   }
   for (const name of sub.removed) {
-    changes.push({ type: 'subprocessor_removed', detail: name, severity: cif ? 'medium' : 'low' });
+    changes.push({ type: 'subprocessor_removed', detail: name, severity: sevFor('subprocessor_removed', cif) });
   }
 
   const res = diffResidency(input.prevResidency, input.nextResidency);
@@ -115,7 +131,7 @@ export function detectDependencyChanges(input: DetectChangesInput): DependencyCh
     changes.push({
       type: 'residency_change',
       detail: `${res.from || '(none)'} → ${res.to || '(none)'}`,
-      severity: cif ? 'critical' : 'high',
+      severity: sevFor('residency_change', cif),
     });
   }
 

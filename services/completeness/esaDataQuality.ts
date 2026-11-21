@@ -117,13 +117,14 @@ export function isValidCountryCode(code: string | null | undefined): boolean {
 /** DQ.LEI.* — malformed LEIs on legal entities + providers (only when an LEI IS recorded). */
 export function auditLeiValidity(s: RegisterSnapshot): CompletenessFinding[] {
   const out: CompletenessFinding[] = [];
-  const emit = (
-    entityType: 'legal_entity' | 'provider',
-    id: string,
-    name: string,
-    problem: 'format' | 'checksum',
-    severity: GapSeverity
-  ) => {
+  const emit = (opts: {
+    entityType: 'legal_entity' | 'provider';
+    id: string;
+    name: string;
+    problem: 'format' | 'checksum';
+    severity: GapSeverity;
+  }) => {
+    const { entityType, id, name, problem, severity } = opts;
     const checkId = problem === 'format' ? 'DQ.LEI.01' : 'DQ.LEI.02';
     const why = problem === 'format' ? 'is not a valid ISO 17442 LEI (18 alphanumerics + 2 check digits)' : 'fails the ISO 7064 mod 97-10 checksum';
     out.push({
@@ -133,11 +134,11 @@ export function auditLeiValidity(s: RegisterSnapshot): CompletenessFinding[] {
   };
   for (const le of s.legalEntities) {
     const p = leiProblem(le.lei);
-    if (p) emit('legal_entity', le.id, le.name, p, 'medium');
+    if (p) emit({ entityType: 'legal_entity', id: le.id, name: le.name, problem: p, severity: 'medium' });
   }
   for (const pr of s.providers) {
     const p = leiProblem(pr.lei);
-    if (p) emit('provider', pr.id, pr.name, p, pr.onCritical ? 'high' : 'medium');
+    if (p) emit({ entityType: 'provider', id: pr.id, name: pr.name, problem: p, severity: pr.onCritical ? 'high' : 'medium' });
   }
   return out;
 }
@@ -158,6 +159,52 @@ export function auditCountryCodes(s: RegisterSnapshot): CompletenessFinding[] {
   return out;
 }
 
+/** A reference is present (populated) when it is neither undefined nor the empty string. */
+function isPopulatedRef(ref: string | undefined): ref is string {
+  return ref !== undefined && ref !== '';
+}
+
+/** DQ.REF.01/02 — an arrangement's legal-entity + provider references resolve against the register. */
+function checkArrangementRefs(
+  a: RegisterSnapshot['arrangements'][number],
+  entityIds: ReadonlySet<string>,
+  providerResolve: ReadonlySet<string>,
+  out: CompletenessFinding[]
+): void {
+  if (isPopulatedRef(a.legalEntityId) && !entityIds.has(a.legalEntityId)) {
+    out.push({
+      entityType: 'arrangement', entityId: a.id, entityName: a.label, gapType: 'referential_integrity',
+      field: 'legalEntityId', severity: 'high',
+      detail: withRef('DQ.REF.01', `References legal entity '${a.legalEntityId}' which is absent from the register`),
+    });
+  }
+  if (isPopulatedRef(a.providerId) && !providerResolve.has(a.providerId)) {
+    out.push({
+      entityType: 'arrangement', entityId: a.id, entityName: a.label, gapType: 'referential_integrity',
+      field: 'providerId', severity: 'high',
+      detail: withRef('DQ.REF.02', `References provider '${a.providerName || a.providerId}' which is absent from the register`),
+    });
+  }
+}
+
+/** DQ.REF.03 — a sub-chain edge's parent + child endpoints exist in the full provider node set. */
+function checkSubchainEdge(
+  e: RegisterSnapshot['subchainEdges'][number],
+  providerNodeIds: ReadonlySet<string>,
+  out: CompletenessFinding[]
+): void {
+  const parentMissing = e.parentId !== '' && !providerNodeIds.has(e.parentId);
+  const childMissing = isPopulatedRef(e.childId) && !providerNodeIds.has(e.childId);
+  if (!parentMissing && !childMissing) return;
+
+  const who = parentMissing ? e.parentName : e.childName;
+  out.push({
+    entityType: 'provider', entityId: parentMissing ? e.parentId : (e.childId ?? e.parentId),
+    entityName: e.parentName, gapType: 'referential_integrity', field: '', severity: 'high',
+    detail: withRef('DQ.REF.03', `Sub-chain edge endpoint '${who}' is absent from the register's provider set`),
+  });
+}
+
 /** DQ.REF.* — cross-template referential integrity. Only checks references the snapshot actually carries
  *  (the id fields are optional; a snapshot that doesn't populate them yields no false dangling gap). */
 export function auditReferentialIntegrity(s: RegisterSnapshot): CompletenessFinding[] {
@@ -168,20 +215,7 @@ export function auditReferentialIntegrity(s: RegisterSnapshot): CompletenessFind
   const providerResolve = s.providerNodeIds ?? new Set(s.providers.map((p) => p.id));
 
   for (const a of s.arrangements) {
-    if (a.legalEntityId !== undefined && a.legalEntityId !== '' && !entityIds.has(a.legalEntityId)) {
-      out.push({
-        entityType: 'arrangement', entityId: a.id, entityName: a.label, gapType: 'referential_integrity',
-        field: 'legalEntityId', severity: 'high',
-        detail: withRef('DQ.REF.01', `References legal entity '${a.legalEntityId}' which is absent from the register`),
-      });
-    }
-    if (a.providerId !== undefined && a.providerId !== '' && !providerResolve.has(a.providerId)) {
-      out.push({
-        entityType: 'arrangement', entityId: a.id, entityName: a.label, gapType: 'referential_integrity',
-        field: 'providerId', severity: 'high',
-        detail: withRef('DQ.REF.02', `References provider '${a.providerName || a.providerId}' which is absent from the register`),
-      });
-    }
+    checkArrangementRefs(a, entityIds, providerResolve, out);
   }
 
   // Sub-chain endpoint integrity needs the FULL node set (a parent can be a workspace-kind vendor node);
@@ -189,16 +223,7 @@ export function auditReferentialIntegrity(s: RegisterSnapshot): CompletenessFind
   // external-only list).
   if (s.providerNodeIds) {
     for (const e of s.subchainEdges) {
-      const parentMissing = e.parentId !== '' && !s.providerNodeIds.has(e.parentId);
-      const childMissing = e.childId !== undefined && e.childId !== '' && !s.providerNodeIds.has(e.childId);
-      if (parentMissing || childMissing) {
-        const who = parentMissing ? e.parentName : e.childName;
-        out.push({
-          entityType: 'provider', entityId: parentMissing ? e.parentId : (e.childId ?? e.parentId),
-          entityName: e.parentName, gapType: 'referential_integrity', field: '', severity: 'high',
-          detail: withRef('DQ.REF.03', `Sub-chain edge endpoint '${who}' is absent from the register's provider set`),
-        });
-      }
+      checkSubchainEdge(e, s.providerNodeIds, out);
     }
   }
   return out;

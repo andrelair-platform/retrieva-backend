@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- injectable repos/services stored as fields;
-   user rows + auth request payloads are heterogeneous. */
+ 
 import { AppError } from '../utils/index.js';
 import { userRepository } from '../repositories/drizzle/UserRepository.js';
 import { organizationRepository } from '../repositories/drizzle/OrganizationRepository.js';
@@ -162,6 +161,23 @@ class AuthService {
   async login({ email, password, deviceInfo }: any): Promise<any> {
     const user = await this.userRepo.findByEmail(email);
 
+    this._assertLoginable(user, email);
+    await this._assertPasswordValid(user, password, email);
+
+    await this.userRepo.resetLoginAttempts(user.id);
+
+    // A1: if MFA is enabled, password is only step 1 — return a short-lived challenge.
+    if (user.mfaEnabled) {
+      this.logger.info('Login passed password, MFA required', { userId: user.id });
+      this.authAudit.logLoginSuccess?.({ userId: user.id, email: user.email, mfa: 'pending' });
+      return { mfaRequired: true, mfaToken: generateMfaToken({ userId: user.id }) };
+    }
+
+    return this._issueSession(user, deviceInfo);
+  }
+
+  /** Pre-password login guards: account must exist, not be locked, and be active. */
+  _assertLoginable(user: any, email: string) {
     if (!user) {
       this.logger.warn('Login attempt with non-existent email', { email });
       throw new AppError('Invalid credentials', 401);
@@ -180,28 +196,19 @@ class AuthService {
       this.logger.warn('Login attempt on inactive account', { userId: user.id });
       throw new AppError('Account is inactive', 401);
     }
+  }
 
+  /** Verify the password; on failure bump the lockout counter + audit, then throw. */
+  async _assertPasswordValid(user: any, password: string, email: string) {
     const isPasswordValid = await this.userRepo.verifyPassword(user.id, password);
-    if (!isPasswordValid) {
-      this.logger.warn('Failed login attempt', { email });
-      const after = await this.userRepo.incLoginAttempts(user.id);
-      this.authAudit.logLoginFailed?.({ userId: user.id, email });
-      if (after?.isLocked) {
-        this.authAudit.logAccountLocked?.({ userId: user.id, email });
-      }
-      throw new AppError('Invalid credentials', 401);
+    if (isPasswordValid) return;
+    this.logger.warn('Failed login attempt', { email });
+    const after = await this.userRepo.incLoginAttempts(user.id);
+    this.authAudit.logLoginFailed?.({ userId: user.id, email });
+    if (after?.isLocked) {
+      this.authAudit.logAccountLocked?.({ userId: user.id, email });
     }
-
-    await this.userRepo.resetLoginAttempts(user.id);
-
-    // A1: if MFA is enabled, password is only step 1 — return a short-lived challenge.
-    if (user.mfaEnabled) {
-      this.logger.info('Login passed password, MFA required', { userId: user.id });
-      this.authAudit.logLoginSuccess?.({ userId: user.id, email: user.email, mfa: 'pending' });
-      return { mfaRequired: true, mfaToken: generateMfaToken({ userId: user.id }) };
-    }
-
-    return this._issueSession(user, deviceInfo);
+    throw new AppError('Invalid credentials', 401);
   }
 
   /** Issue tokens + a refresh session for an already-authenticated user. */
@@ -321,6 +328,34 @@ class AuthService {
       throw new AppError('Refresh token required', 401);
     }
 
+    const user = await this._resolveRefreshTokenUser(refreshTokenValue);
+
+    const tokenValid = await this.userRepo.consumeRefreshToken(
+      user.id,
+      hashRefreshToken(refreshTokenValue)
+    );
+
+    if (!tokenValid) {
+      await this._handleRefreshTokenTheft(user);
+    }
+
+    const newAccessToken = generateAccessToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    });
+    const newRefreshToken = generateRefreshToken({ userId: user.id, email: user.email });
+    await this.userRepo.addRefreshToken(user.id, hashRefreshToken(newRefreshToken), deviceInfo);
+    await this.userRepo.updateLastLogin(user.id);
+
+    this.logger.info('Tokens rotated successfully', { userId: user.id });
+    this.authAudit.logTokenRefresh?.({ userId: user.id });
+
+    return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+  }
+
+  /** Verify the refresh-token signature and resolve the active user it belongs to. */
+  async _resolveRefreshTokenUser(refreshTokenValue: string) {
     let decoded;
     try {
       decoded = verifyRefreshToken(refreshTokenValue);
@@ -337,36 +372,18 @@ class AuthService {
     if (!user.isActive) {
       throw new AppError('Account is inactive', 401);
     }
+    return user;
+  }
 
-    const tokenValid = await this.userRepo.consumeRefreshToken(
-      user.id,
-      hashRefreshToken(refreshTokenValue)
-    );
-
-    if (!tokenValid) {
-      // Possible theft — clear all refresh tokens
-      this.logger.warn('Refresh token not found or already used - possible token theft', {
-        userId: user.id,
-      });
-      await this.userRepo.clearRefreshTokens(user.id);
-      this.authAudit.logTokenTheftDetected?.({ userId: user.id });
-      this._sendTokenTheftAlert(user);
-      throw new AppError('Invalid refresh token. Please login again.', 401);
-    }
-
-    const newAccessToken = generateAccessToken({
+  /** Possible token theft — clear all refresh tokens, audit, alert, then reject. Always throws. */
+  async _handleRefreshTokenTheft(user: any): Promise<never> {
+    this.logger.warn('Refresh token not found or already used - possible token theft', {
       userId: user.id,
-      email: user.email,
-      role: user.role,
     });
-    const newRefreshToken = generateRefreshToken({ userId: user.id, email: user.email });
-    await this.userRepo.addRefreshToken(user.id, hashRefreshToken(newRefreshToken), deviceInfo);
-    await this.userRepo.updateLastLogin(user.id);
-
-    this.logger.info('Tokens rotated successfully', { userId: user.id });
-    this.authAudit.logTokenRefresh?.({ userId: user.id });
-
-    return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+    await this.userRepo.clearRefreshTokens(user.id);
+    this.authAudit.logTokenTheftDetected?.({ userId: user.id });
+    this._sendTokenTheftAlert(user);
+    throw new AppError('Invalid refresh token. Please login again.', 401);
   }
 
   async logout({ userId, refreshTokenValue, logoutAll }: any) {

@@ -44,83 +44,165 @@ function isMaterial(severity: string, blast: { hasCriticalImpact: boolean }): bo
   return MATERIAL.has(severity) && blast.hasCriticalImpact;
 }
 
+/** Record the surveillance alert audit entry for a material event. */
+async function recordMaterialAlert(opts: {
+  recordAuditFn: typeof recordAudit;
+  organizationId: string;
+  userId: string | null;
+  ev: any;
+  blast: { functionCount: number };
+}) {
+  const { recordAuditFn, organizationId, userId, ev, blast } = opts;
+  await recordAuditFn({
+    organizationId,
+    actor: userId,
+    action: 'surveillance.alert',
+    targetType: 'surveillance_event',
+    targetId: ev.id,
+    metadata: {
+      provider: ev.providerName,
+      severity: ev.severity,
+      title: ev.title,
+      functions: blast.functionCount,
+      url: ev.url,
+    },
+  });
+}
+
+/**
+ * Workflow C #3 — don't wait on a human to file a supplier notice: auto-reopen
+ * the provider's arrangements for reassessment. Fail-safe — a reopen error must
+ * not fail the surveillance run.
+ */
+async function reopenArrangementsSafely(
+  withScope: typeof runWithEntityScope,
+  scope: EntityScope,
+  organizationId: string,
+  ev: any
+) {
+  try {
+    await withScope(scope, () =>
+      reopenArrangementsForSurveillanceEvent({
+        organizationId,
+        event: {
+          id: ev.id,
+          providerNodeId: ev.providerNodeId as string,
+          providerName: ev.providerName,
+          severity: ev.severity,
+          title: ev.title,
+          kind: ev.type, // incident | cve | breach
+          url: ev.url,
+        },
+      })
+    );
+  } catch (err) {
+    logger.error('surveillance.reassessment.failed', {
+      service: 'surveillance-worker',
+      eventId: ev.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * Process one saved event: compute blast-radius, persist it, and for material
+ * events raise an alert + auto-reopen the provider's arrangements. Returns true
+ * when an alert was raised.
+ */
+async function processSavedEvent(
+  ev: any,
+  ctx: {
+    repo: typeof surveillanceRepository;
+    withScope: typeof runWithEntityScope;
+    recordAuditFn: typeof recordAudit;
+    scope: EntityScope;
+    organizationId: string;
+    userId: string | null;
+  }
+): Promise<boolean> {
+  const { repo, withScope, recordAuditFn, scope, organizationId, userId } = ctx;
+  const blast = await withScope(scope, () =>
+    repo.computeBlastRadius(organizationId, ev.providerNodeId as string)
+  );
+  const material = isMaterial(ev.severity, blast);
+  await repo.updateEventBlastRadius(ev.id, blast, material);
+  if (!material) return false;
+
+  await recordMaterialAlert({ recordAuditFn, organizationId, userId, ev, blast });
+  await reopenArrangementsSafely(withScope, scope, organizationId, ev);
+  return true;
+}
+
 /**
  * Handle one `run-surveillance` job. All collaborators injectable → unit-tests with no DB/Redis/LLM.
  * Persists new events, attaches blast-radius, raises alerts for material ones, writes the run summary.
  */
+/** Resolve the entity scope for a run: the caller's scope, or system-wide when scheduled. */
+async function resolveRunScope(
+  resolveScope: typeof resolveEntityScope,
+  userId: string | null
+): Promise<EntityScope> {
+  return userId
+    ? await resolveScope({ userId } as Parameters<typeof resolveEntityScope>[0])
+    : SYSTEM_SCOPE;
+}
+
+/**
+ * Run the sweep in the caller's scope against a dedup set spanning BOTH sources
+ * (statuspage incidents + cve advisories — ids don't collide, so a union is safe
+ * + keeps re-polls idempotent).
+ */
+async function executeSweep(opts: {
+  repo: typeof surveillanceRepository;
+  run: typeof runSurveillance;
+  withScope: typeof runWithEntityScope;
+  scope: EntityScope;
+  organizationId: string;
+}) {
+  const { repo, run, withScope, scope, organizationId } = opts;
+  const [spKnown, cveKnown] = await Promise.all([
+    repo.listKnownExternalIds(organizationId, 'statuspage'),
+    repo.listKnownExternalIds(organizationId, 'cve'),
+  ]);
+  const knownExternalIds = new Set([...spKnown, ...cveKnown]);
+  return withScope(scope, () => run({ organizationId, deps: { knownExternalIds } }));
+}
+
+/** Resolve injectable collaborators to their defaults (keeps the job handler flat). */
+function resolveProcessDeps(deps: ProcessSurveillanceDeps) {
+  return {
+    repo: deps.repo ?? surveillanceRepository,
+    run: deps.runSurveillanceFn ?? runSurveillance,
+    recordAuditFn: deps.recordAuditFn ?? recordAudit,
+    resolveScope: deps.resolveEntityScopeFn ?? resolveEntityScope,
+    withScope: deps.runWithEntityScopeFn ?? runWithEntityScope,
+  };
+}
+
 export async function processSurveillanceJob(job: Job<SurveillanceRunJobData>, deps: ProcessSurveillanceDeps = {}) {
-  const repo = deps.repo ?? surveillanceRepository;
-  const run = deps.runSurveillanceFn ?? runSurveillance;
-  const recordAuditFn = deps.recordAuditFn ?? recordAudit;
-  const resolveScope = deps.resolveEntityScopeFn ?? resolveEntityScope;
-  const withScope = deps.runWithEntityScopeFn ?? runWithEntityScope;
+  const { repo, run, recordAuditFn, resolveScope, withScope } = resolveProcessDeps(deps);
 
   const { runId, organizationId, userId = null } = job.data;
   logger.info('surveillance.job.started', { service: 'surveillance-worker', runId, jobId: job.id });
   await repo.markRunning(runId);
 
   try {
-    const scope = userId
-      ? await resolveScope({ userId } as Parameters<typeof resolveEntityScope>[0])
-      : SYSTEM_SCOPE;
-
-    // Dedup set across the inbox for BOTH sources (statuspage incidents + cve advisories) — ids don't
-    // collide, so a union is safe + keeps re-polls idempotent. Then run the sweep in the caller's scope.
-    const [spKnown, cveKnown] = await Promise.all([
-      repo.listKnownExternalIds(organizationId, 'statuspage'),
-      repo.listKnownExternalIds(organizationId, 'cve'),
-    ]);
-    const knownExternalIds = new Set([...spKnown, ...cveKnown]);
-    const result = await withScope(scope, () => run({ organizationId, deps: { knownExternalIds } }));
+    const scope = await resolveRunScope(resolveScope, userId);
+    const result = await executeSweep({ repo, run, withScope, scope, organizationId });
 
     // Persist the new events (dedup on the unique index), then attach blast-radius + alert material ones.
     const saved = await repo.saveEvents(runId, organizationId, result.events);
     let raised = 0;
     for (const ev of saved) {
-      const blast = await withScope(scope, () => repo.computeBlastRadius(organizationId, ev.providerNodeId as string));
-      const material = isMaterial(ev.severity, blast);
-      await repo.updateEventBlastRadius(ev.id, blast, material);
-      if (material) {
-        raised += 1;
-        await recordAuditFn({
-          organizationId,
-          actor: userId,
-          action: 'surveillance.alert',
-          targetType: 'surveillance_event',
-          targetId: ev.id,
-          metadata: {
-            provider: ev.providerName,
-            severity: ev.severity,
-            title: ev.title,
-            functions: blast.functionCount,
-            url: ev.url,
-          },
-        });
-        // Workflow C #3 — don't wait on a human to file a supplier notice: auto-reopen the provider's
-        // arrangements for reassessment. Fail-safe — a reopen error must not fail the surveillance run.
-        try {
-          await withScope(scope, () =>
-            reopenArrangementsForSurveillanceEvent({
-              organizationId,
-              event: {
-                id: ev.id,
-                providerNodeId: ev.providerNodeId as string,
-                providerName: ev.providerName,
-                severity: ev.severity,
-                title: ev.title,
-                kind: ev.type, // incident | cve | breach
-                url: ev.url,
-              },
-            })
-          );
-        } catch (err) {
-          logger.error('surveillance.reassessment.failed', {
-            service: 'surveillance-worker',
-            eventId: ev.id,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
+      const alerted = await processSavedEvent(ev, {
+        repo,
+        withScope,
+        recordAuditFn,
+        scope,
+        organizationId,
+        userId,
+      });
+      if (alerted) raised += 1;
     }
 
     await repo.completeRun(runId, {

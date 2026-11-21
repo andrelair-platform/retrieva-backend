@@ -49,29 +49,38 @@ async function _request(
 
     const response = await fetch(url, init);
     clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      const err: Error & { statusCode?: number } = new Error(
-        `Internal service responded ${response.status}: ${text}`
-      );
-      err.statusCode = response.status;
-      throw err;
-    }
-
-    const ct = response.headers.get('content-type') || '';
-    return ct.includes('application/json') ? response.json() : response.text();
+    return handleInternalResponse(response);
   } catch (error) {
     clearTimeout(timeoutId);
-    if ((error as Error).name === 'AbortError') {
-      const te: Error & { code?: string } = new Error(
-        `Internal request timed out after ${timeoutMs}ms: ${url}`
-      );
-      te.code = 'INTERNAL_TIMEOUT';
-      throw te;
-    }
-    throw error;
+    throw translateInternalRequestError(error, url, timeoutMs);
   }
+}
+
+/** Throw on a non-2xx (attaching statusCode), else return the parsed JSON/text body. */
+async function handleInternalResponse(response: Response) {
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    const err: Error & { statusCode?: number } = new Error(
+      `Internal service responded ${response.status}: ${text}`
+    );
+    err.statusCode = response.status;
+    throw err;
+  }
+
+  const ct = response.headers.get('content-type') || '';
+  return ct.includes('application/json') ? response.json() : response.text();
+}
+
+/** Map an abort into a typed INTERNAL_TIMEOUT error; pass any other error through unchanged. */
+function translateInternalRequestError(error: unknown, url: string, timeoutMs: number): unknown {
+  if ((error as Error).name === 'AbortError') {
+    const te: Error & { code?: string } = new Error(
+      `Internal request timed out after ${timeoutMs}ms: ${url}`
+    );
+    te.code = 'INTERNAL_TIMEOUT';
+    return te;
+  }
+  return error;
 }
 
 export const internalClient = {

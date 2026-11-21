@@ -10,7 +10,7 @@ import { arrangementRepository, reportabilityDeterminationRepository } from '../
 
 const HUMAN_DECISIONS = ['reportable', 'not_reportable'];
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable repo overrides (stubbed in tests)
+ 
 type Repos = Record<string, any>;
 
 export async function recordDetermination({

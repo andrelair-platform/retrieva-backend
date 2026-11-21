@@ -52,6 +52,62 @@ export interface RunDiscoveryArgs {
   };
 }
 
+type AppOutcome = { skip: SkippedApp; proposal?: undefined } | { skip?: undefined; proposal: DiscoveredProposal };
+
+// Resolve the injectable discovery collaborators to their defaults. `listApps` must already be
+// present (the caller guards on it) — asserted here so the resolved deps are non-optional.
+function resolveDiscoveryDeps(deps: NonNullable<RunDiscoveryArgs['deps']>) {
+  return {
+    listApps: deps.listApps!,
+    mapApp:
+      deps.mapApp ?? ((app: DiscoveredApp, sessionId: string) => mapAppToProposal(app, { sessionId })),
+    listExistingProviders:
+      deps.listExistingProviders ??
+      ((orgId: string) => providerGraphRepository.listNodesByOrg(orgId)),
+    audit: deps.recordAuditFn ?? recordAudit,
+  };
+}
+
+// Classify one discovered app against the three dedupe sets, mapping it to a proposal only when it
+// survives all of them. Mutates `seenInBatch` (records the app id, as the original inline loop did);
+// the caller mutates `known` with the accepted provider name. Returns a skip OR a proposal.
+async function classifyApp(
+  app: DiscoveredApp,
+  ctx: {
+    mapApp: (app: DiscoveredApp, sessionId: string) => Promise<DiscoveredProposal>;
+    organizationId: string;
+    known: Set<string>;
+    seenInBatch: Set<string>;
+    knownExternalIds: Set<string>;
+  }
+): Promise<AppOutcome> {
+  const { mapApp, organizationId, known, seenInBatch, knownExternalIds } = ctx;
+  const externalName = app.label || app.name;
+
+  if (seenInBatch.has(app.id)) {
+    return { skip: { externalId: app.id, externalName, reason: 'duplicate-in-batch' } };
+  }
+  seenInBatch.add(app.id);
+
+  // Dedupe set 3: an app already in the inbox (pending/confirmed) — skip before the LLM call so a
+  // repeated / scheduled sweep stays idempotent.
+  if (knownExternalIds.has(app.id)) {
+    return { skip: { externalId: app.id, externalName, reason: 'already-proposed' } };
+  }
+
+  // Cheap pre-dedupe on the app's own name (avoids an LLM call for an obviously-known vendor).
+  if (known.has(norm(externalName))) {
+    return { skip: { externalId: app.id, externalName, reason: 'already-registered' } };
+  }
+
+  const discovered = await mapApp(app, organizationId);
+  // Post-dedupe on the mapped provider name (the model may normalise "Acme SSO" → "Acme").
+  if (known.has(norm(discovered.proposal.providerName))) {
+    return { skip: { externalId: app.id, externalName, reason: 'already-registered' } };
+  }
+  return { proposal: discovered };
+}
+
 export async function runDiscovery({
   source,
   organizationId,
@@ -64,19 +120,15 @@ export async function runDiscovery({
     return { source, configured: false, dryRun, discovered: 0, proposed: 0, proposals: [], skipped: [] };
   }
 
-  const listApps = deps.listApps;
-  const mapApp =
-    deps.mapApp ?? ((app: DiscoveredApp, sessionId: string) => mapAppToProposal(app, { sessionId }));
-  const listExistingProviders =
-    deps.listExistingProviders ??
-    ((orgId: string) => providerGraphRepository.listNodesByOrg(orgId));
-  const audit = deps.recordAuditFn ?? recordAudit;
+  const { listApps, mapApp, listExistingProviders, audit } = resolveDiscoveryDeps(deps);
 
   const apps = await listApps();
 
   // Dedupe set 1: providers already registered for this org (by normalised display name).
   const existing = await listExistingProviders(organizationId);
-  const known = new Set(existing.map((p: { displayName?: string }) => norm(p.displayName)));
+  const known = new Set<string>(
+    (existing as { displayName?: string }[]).map((p) => norm(p.displayName))
+  );
 
   const proposals: DiscoveredProposal[] = [];
   const skipped: SkippedApp[] = [];
@@ -84,35 +136,20 @@ export async function runDiscovery({
   const knownExternalIds = deps.knownExternalIds ?? new Set<string>(); // set 3: already in the inbox
 
   for (const app of apps) {
-    const externalName = app.label || app.name;
-    if (seenInBatch.has(app.id)) {
-      skipped.push({ externalId: app.id, externalName, reason: 'duplicate-in-batch' });
-      continue;
+    const outcome = await classifyApp(app, {
+      mapApp,
+      organizationId,
+      known,
+      seenInBatch,
+      knownExternalIds,
+    });
+    if (outcome.skip) {
+      skipped.push(outcome.skip);
+    } else {
+      proposals.push(outcome.proposal);
+      // Guard against two apps mapping to the same provider in one batch.
+      known.add(norm(outcome.proposal.proposal.providerName));
     }
-    seenInBatch.add(app.id);
-
-    // Dedupe set 3: an app already in the inbox (pending/confirmed) — skip before the LLM call so a
-    // repeated / scheduled sweep stays idempotent.
-    if (knownExternalIds.has(app.id)) {
-      skipped.push({ externalId: app.id, externalName, reason: 'already-proposed' });
-      continue;
-    }
-
-    // Cheap pre-dedupe on the app's own name (avoids an LLM call for an obviously-known vendor).
-    if (known.has(norm(externalName))) {
-      skipped.push({ externalId: app.id, externalName, reason: 'already-registered' });
-      continue;
-    }
-
-    const discovered = await mapApp(app, organizationId);
-    // Post-dedupe on the mapped provider name (the model may normalise "Acme SSO" → "Acme").
-    if (known.has(norm(discovered.proposal.providerName))) {
-      skipped.push({ externalId: app.id, externalName, reason: 'already-registered' });
-      continue;
-    }
-    proposals.push(discovered);
-    // Guard against two apps mapping to the same provider in one batch.
-    known.add(norm(discovered.proposal.providerName));
   }
 
   if (!dryRun) {

@@ -116,6 +116,69 @@ function parseSourceNumbers(numbersStr: string): number[] {
  * @param {number} options.maxOrphanCitations - Max allowed orphan citations (default from guardrails)
  * @returns {CitationValidationResult} Validation result
  */
+/** Partition citations into sorted valid/invalid source-number arrays. */
+function categorizeCitations(
+  citations: Array<{ number: number }>,
+  maxSourceNumber: number
+): { valid: number[]; invalid: number[] } {
+  const validNumbers = new Set<number>();
+  const invalidNumbers = new Set<number>();
+
+  for (const citation of citations) {
+    if (citation.number >= 1 && citation.number <= maxSourceNumber) {
+      validNumbers.add(citation.number);
+    } else {
+      invalidNumbers.add(citation.number);
+    }
+  }
+
+  return {
+    valid: Array.from(validNumbers).sort((a, b) => a - b),
+    invalid: Array.from(invalidNumbers).sort((a, b) => a - b),
+  };
+}
+
+/** Record the orphan-citation issue + warn/strip per options. Mutates `result`. */
+function handleOrphanCitations(
+  result: CitationValidationResult,
+  text: string,
+  maxSourceNumber: number,
+  opts: { removeInvalid: boolean; logWarnings: boolean; maxOrphanCitations: number }
+): void {
+  result.valid = false;
+  result.issues.push(
+    `Found ${result.invalidCitations.length} orphan citation(s): [Source ${result.invalidCitations.join(', ')}] (max sources: ${maxSourceNumber})`
+  );
+
+  if (opts.logWarnings) {
+    logger.warn('Invalid citations detected in LLM output', {
+      service: 'citation-validator',
+      invalidCitations: result.invalidCitations,
+      maxSourceNumber,
+      totalCitations: result.totalCitations,
+    });
+  }
+
+  // Remove or mark invalid citations if requested
+  if (opts.removeInvalid && result.invalidCitations.length > opts.maxOrphanCitations) {
+    result.text = removeInvalidCitations(text, result.invalidCitations);
+    result.modified = true;
+  }
+}
+
+/** Empty (no-op) validation result for a given input text. */
+function emptyCitationResult(text: unknown): CitationValidationResult {
+  return {
+    valid: true,
+    text: typeof text === 'string' ? text : '',
+    validCitations: [],
+    invalidCitations: [],
+    totalCitations: 0,
+    issues: [],
+    modified: false,
+  };
+}
+
 export function validateCitations(
   text: unknown,
   sources?: unknown[] | null,
@@ -131,16 +194,7 @@ export function validateCitations(
     maxOrphanCitations = guardrailsConfig.output.citationValidation.maxOrphanCitations,
   } = options;
 
-  const result: CitationValidationResult = {
-    valid: true,
-    text: typeof text === 'string' ? text : '',
-    validCitations: [],
-    invalidCitations: [],
-    totalCitations: 0,
-    issues: [],
-    modified: false,
-  };
-
+  const result = emptyCitationResult(text);
   if (!text || typeof text !== 'string') {
     return result;
   }
@@ -149,42 +203,17 @@ export function validateCitations(
   const citations = extractCitations(text);
   result.totalCitations = citations.length;
 
-  // Categorize citations as valid or invalid
-  const validNumbers = new Set<number>();
-  const invalidNumbers = new Set<number>();
-
-  for (const citation of citations) {
-    if (citation.number >= 1 && citation.number <= maxSourceNumber) {
-      validNumbers.add(citation.number);
-    } else {
-      invalidNumbers.add(citation.number);
-    }
-  }
-
-  result.validCitations = Array.from(validNumbers).sort((a, b) => a - b);
-  result.invalidCitations = Array.from(invalidNumbers).sort((a, b) => a - b);
+  const categorized = categorizeCitations(citations, maxSourceNumber);
+  result.validCitations = categorized.valid;
+  result.invalidCitations = categorized.invalid;
 
   // Check for orphan citations
   if (result.invalidCitations.length > 0) {
-    result.valid = false;
-    result.issues.push(
-      `Found ${result.invalidCitations.length} orphan citation(s): [Source ${result.invalidCitations.join(', ')}] (max sources: ${maxSourceNumber})`
-    );
-
-    if (logWarnings) {
-      logger.warn('Invalid citations detected in LLM output', {
-        service: 'citation-validator',
-        invalidCitations: result.invalidCitations,
-        maxSourceNumber,
-        totalCitations: result.totalCitations,
-      });
-    }
-
-    // Remove or mark invalid citations if requested
-    if (removeInvalid && result.invalidCitations.length > maxOrphanCitations) {
-      result.text = removeInvalidCitations(text, result.invalidCitations);
-      result.modified = true;
-    }
+    handleOrphanCitations(result, text, maxSourceNumber, {
+      removeInvalid,
+      logWarnings,
+      maxOrphanCitations,
+    });
   }
 
   return result;

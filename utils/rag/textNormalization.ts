@@ -35,6 +35,29 @@ export function normalizeText(text: string) {
  * calculateTitleSimilarity("Liste de document demande titre de sejour", "Liste de document demande titre de séjour") // 1.0
  * calculateTitleSimilarity("titre de sejour", "Liste de document demande titre de séjour") // ~0.9
  */
+// Count how many words of `a` also appear in `b`.
+function countSharedWords(a: Set<string>, b: Set<string>): number {
+  let intersection = 0;
+  for (const word of a) {
+    if (b.has(word)) intersection++;
+  }
+  return intersection;
+}
+
+// Word-set similarity given the computed intersection (0.9 on full containment,
+// else Jaccard). Kept separate to keep the main function flat.
+function wordSetScore(queryWords: Set<string>, titleWords: Set<string>, intersection: number) {
+  // Full containment: all title words appear in query or vice versa
+  const queryContainsTitle = intersection === titleWords.size;
+  const titleContainsQuery = intersection === queryWords.size;
+
+  if (queryContainsTitle || titleContainsQuery) return 0.9;
+
+  // Jaccard similarity on word sets
+  const union = new Set([...queryWords, ...titleWords]);
+  return intersection / union.size;
+}
+
 export function calculateTitleSimilarity(query: string, title: string) {
   if (!query || !title) return 0;
 
@@ -51,21 +74,8 @@ export function calculateTitleSimilarity(query: string, title: string) {
 
   if (queryWords.size === 0 || titleWords.size === 0) return 0;
 
-  // Count shared words
-  let intersection = 0;
-  for (const word of queryWords) {
-    if (titleWords.has(word)) intersection++;
-  }
-
-  // Full containment: all title words appear in query or vice versa
-  const queryContainsTitle = intersection === titleWords.size;
-  const titleContainsQuery = intersection === queryWords.size;
-
-  if (queryContainsTitle || titleContainsQuery) return 0.9;
-
-  // Jaccard similarity on word sets
-  const union = new Set([...queryWords, ...titleWords]);
-  return intersection / union.size;
+  const intersection = countSharedWords(queryWords, titleWords);
+  return wordSetScore(queryWords, titleWords, intersection);
 }
 
 /**
@@ -78,6 +88,17 @@ export function calculateTitleSimilarity(query: string, title: string) {
  * @example
  * calculateHeadingPathSimilarity("testing best practices", ["5. Testing", "Best Practices"]) // ~0.8
  */
+// True when any heading fully contains (or is contained by) the query → exact-match bonus.
+function hasExactHeadingMatch(normalizedQuery: string, headingPath: string[]): boolean {
+  for (const heading of headingPath) {
+    const normalizedHeading = normalizeText(heading);
+    if (normalizedQuery.includes(normalizedHeading) || normalizedHeading.includes(normalizedQuery)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function calculateHeadingPathSimilarity(query: string, headingPath: string[]) {
   if (!query || !headingPath || !Array.isArray(headingPath) || headingPath.length === 0) {
     return 0;
@@ -95,20 +116,14 @@ export function calculateHeadingPathSimilarity(query: string, headingPath: strin
   if (headingWords.size === 0) return 0;
 
   // Count query words that appear in headings
-  let matches = 0;
-  for (const word of queryWords) {
-    if (headingWords.has(word)) matches++;
-  }
+  const matches = countSharedWords(queryWords, headingWords);
 
   // Calculate match ratio
   const matchRatio = matches / queryWords.size;
 
   // Bonus for exact heading match
-  for (const heading of headingPath) {
-    const normalizedHeading = normalizeText(heading);
-    if (normalizedQuery.includes(normalizedHeading) || normalizedHeading.includes(normalizedQuery)) {
-      return Math.max(matchRatio, 0.9);
-    }
+  if (hasExactHeadingMatch(normalizedQuery, headingPath)) {
+    return Math.max(matchRatio, 0.9);
   }
 
   return matchRatio;

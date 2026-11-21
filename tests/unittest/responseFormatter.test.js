@@ -201,13 +201,13 @@ describe('Response Formatter', () => {
   // ============================================================================
   describe('sendPaginatedResponse', () => {
     it('should always send 200 status', () => {
-      sendPaginatedResponse(mockRes, [], 1, 10, 0);
+      sendPaginatedResponse(mockRes, [], { page: 1, limit: 10, total: 0 });
 
       expect(mockRes.status).toHaveBeenCalledWith(200);
     });
 
     it('should include status success', () => {
-      sendPaginatedResponse(mockRes, [], 1, 10, 0);
+      sendPaginatedResponse(mockRes, [], { page: 1, limit: 10, total: 0 });
 
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -218,7 +218,7 @@ describe('Response Formatter', () => {
 
     it('should include data array', () => {
       const data = [{ id: 1 }, { id: 2 }];
-      sendPaginatedResponse(mockRes, data, 1, 10, 2);
+      sendPaginatedResponse(mockRes, data, { page: 1, limit: 10, total: 2 });
 
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -228,7 +228,7 @@ describe('Response Formatter', () => {
     });
 
     it('should calculate correct total pages', () => {
-      sendPaginatedResponse(mockRes, [], 1, 10, 25);
+      sendPaginatedResponse(mockRes, [], { page: 1, limit: 10, total: 25 });
 
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -240,7 +240,7 @@ describe('Response Formatter', () => {
     });
 
     it('should handle exact page count', () => {
-      sendPaginatedResponse(mockRes, [], 1, 10, 20);
+      sendPaginatedResponse(mockRes, [], { page: 1, limit: 10, total: 20 });
 
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -252,7 +252,7 @@ describe('Response Formatter', () => {
     });
 
     it('should include current page', () => {
-      sendPaginatedResponse(mockRes, [], 2, 10, 25);
+      sendPaginatedResponse(mockRes, [], { page: 2, limit: 10, total: 25 });
 
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -264,7 +264,7 @@ describe('Response Formatter', () => {
     });
 
     it('should include items per page', () => {
-      sendPaginatedResponse(mockRes, [], 1, 15, 45);
+      sendPaginatedResponse(mockRes, [], { page: 1, limit: 15, total: 45 });
 
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -276,7 +276,7 @@ describe('Response Formatter', () => {
     });
 
     it('should include total items', () => {
-      sendPaginatedResponse(mockRes, [], 1, 10, 42);
+      sendPaginatedResponse(mockRes, [], { page: 1, limit: 10, total: 42 });
 
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -288,7 +288,7 @@ describe('Response Formatter', () => {
     });
 
     it('should set hasNextPage to true when more pages exist', () => {
-      sendPaginatedResponse(mockRes, [], 1, 10, 25);
+      sendPaginatedResponse(mockRes, [], { page: 1, limit: 10, total: 25 });
 
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -300,7 +300,7 @@ describe('Response Formatter', () => {
     });
 
     it('should set hasNextPage to false on last page', () => {
-      sendPaginatedResponse(mockRes, [], 3, 10, 25);
+      sendPaginatedResponse(mockRes, [], { page: 3, limit: 10, total: 25 });
 
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -312,7 +312,7 @@ describe('Response Formatter', () => {
     });
 
     it('should set hasPrevPage to false on first page', () => {
-      sendPaginatedResponse(mockRes, [], 1, 10, 25);
+      sendPaginatedResponse(mockRes, [], { page: 1, limit: 10, total: 25 });
 
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -324,7 +324,7 @@ describe('Response Formatter', () => {
     });
 
     it('should set hasPrevPage to true on page > 1', () => {
-      sendPaginatedResponse(mockRes, [], 2, 10, 25);
+      sendPaginatedResponse(mockRes, [], { page: 2, limit: 10, total: 25 });
 
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -336,7 +336,7 @@ describe('Response Formatter', () => {
     });
 
     it('should handle empty results', () => {
-      sendPaginatedResponse(mockRes, [], 1, 10, 0);
+      sendPaginatedResponse(mockRes, [], { page: 1, limit: 10, total: 0 });
 
       expect(mockRes.json).toHaveBeenCalledWith({
         status: 'success',
@@ -353,7 +353,7 @@ describe('Response Formatter', () => {
     });
 
     it('should handle single item that fits on one page', () => {
-      sendPaginatedResponse(mockRes, [{ id: 1 }], 1, 10, 1);
+      sendPaginatedResponse(mockRes, [{ id: 1 }], { page: 1, limit: 10, total: 1 });
 
       expect(mockRes.json).toHaveBeenCalledWith({
         status: 'success',

@@ -99,23 +99,42 @@ export function routableRoleExists(role: string): boolean {
  * co-notifies the management-body delegate (`group_risk`); a CRITICAL gap escalates regardless of CIF
  * (a critical ICT gap is a board-level concern). The owner never changes — escalation ADDS a notifier.
  */
-export function routeFinding({ domain, severity, cif }: RouteInput): RouteDecision {
-  const key = (domain ?? '').trim();
-  const mapped = key ? CONTROL_DOMAIN_OWNER[key] : undefined;
-  const owner = mapped ?? DEFAULT_OWNER;
+/** A CRITICAL gap escalates regardless of CIF; HIGH/CRITICAL escalates on a CIF arrangement. */
+function shouldEscalate(severity: RouteSeverity, cif: boolean): boolean {
+  return severity === 'critical' || (cif && SEVERE.has(severity));
+}
 
-  const escalate = severity === 'critical' || (cif && SEVERE.has(severity));
-  const notify: RoutableRole[] = [owner];
-  if (escalate && owner !== ESCALATION_ROLE) notify.push(ESCALATION_ROLE);
-
+/** Build the human-readable routing reason string (owner mapping + any escalation). */
+function routeReason(args: {
+  key: string;
+  owner: RoutableRole;
+  mapped: RoutableRole | undefined;
+  escalate: boolean;
+  severity: RouteSeverity;
+  cif: boolean;
+}): string {
+  const { key, owner, mapped, escalate, severity, cif } = args;
   const reason = mapped
     ? `domain '${key}' → ${owner}`
     : `unknown domain '${key || '(none)'}' → default ${owner}`;
   const escReason = escalate
     ? `; escalated to ${ESCALATION_ROLE} (${severity}${cif ? ', CIF' : ''})`
     : '';
+  return reason + escReason;
+}
 
-  return { owner, notify: [...new Set(notify)], escalated: escalate, reason: reason + escReason };
+export function routeFinding({ domain, severity, cif }: RouteInput): RouteDecision {
+  const key = (domain ?? '').trim();
+  const mapped = key ? CONTROL_DOMAIN_OWNER[key] : undefined;
+  const owner = mapped ?? DEFAULT_OWNER;
+
+  const escalate = shouldEscalate(severity, cif);
+  const notify: RoutableRole[] = [owner];
+  if (escalate && owner !== ESCALATION_ROLE) notify.push(ESCALATION_ROLE);
+
+  const reason = routeReason({ key, owner, mapped, escalate, severity, cif });
+
+  return { owner, notify: [...new Set(notify)], escalated: escalate, reason };
 }
 
 /**

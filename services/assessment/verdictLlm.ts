@@ -27,7 +27,7 @@ const JUDGE_MAX_ATTEMPTS = Number(process.env.VERDICT_JUDGE_MAX_ATTEMPTS) || 3;
  * @returns {(control:object, spans:object[]) => Promise<{verdict:string, rationale:string, citedIndices:number[]}>}
  */
 export function makeVerdictJudge(ctx: { sessionId?: string } = {}) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- control + evidence spans are heterogeneous domain objects
+   
   return async function llmJudge(control: any, spans: any[]) {
     // Langfuse-managed (label-routed dev=`latest`/prod=`production`), Git constant as fallback.
     const { text: systemPrompt, modelParams } = await resolveVerdictJudgePrompt();

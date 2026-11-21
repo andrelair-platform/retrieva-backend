@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- injectable repos/queues/services stored as
-   fields; assessment rows, files and request payloads are heterogeneous. */
+ 
 import path from 'path';
 import { AppError } from '../utils/index.js';
 import { assessmentRepository } from '../repositories/drizzle/AssessmentRepository.js';
@@ -16,6 +15,58 @@ import type { FileIndexJobData, GapAnalysisJobData, ReviewReminderJobData } from
 // frontend consumers keep working through the Postgres cutover (RTV-49).
 const withId = (a: any) => (a ? { ...a, _id: a.id } : a);
 
+// Default (lazy, dynamically-imported) chunk-deletion implementation, used when the dep
+// is not injected. Extracted so the constructor stays a flat list of dep assignments.
+const defaultDeleteAssessmentChunksFromWorkspace = async (assessmentId: any) => {
+  const { deleteAssessmentChunksFromWorkspace } = await import('../config/vectorStore.js');
+  return deleteAssessmentChunksFromWorkspace(assessmentId);
+};
+
+/** Parse the multipart `categories` field (JSON array string) into an array; [] on any failure. */
+function parseAssessmentCategories(rawCategories: any): any[] {
+  if (!rawCategories) return [];
+  try {
+    const parsed = JSON.parse(rawCategories);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Build the per-file document metadata records from the uploaded files + parsed categories. */
+function buildAssessmentDocuments(files: any[], categories: any[]) {
+  return files.map((f: any, i: number) => ({
+    fileName: f.originalname,
+    fileType: path.extname(f.originalname).replace('.', '').toLowerCase(),
+    fileSize: f.size,
+    category: typeof categories[i] === 'string' ? categories[i] : null,
+    status: 'uploading',
+  }));
+}
+
+// Production defaults for each injectable dep (resolved by key against the passed `deps`).
+const ASSESSMENT_DEP_DEFAULTS: Record<string, any> = {
+  assessmentRepo: assessmentRepository,
+  workspaceRepo: workspaceRepository,
+  userRepo: userRepository,
+  assessmentQueue,
+  monitoringQueue,
+  storage: storageModule,
+  generateReport,
+  deleteAssessmentCollection,
+  deleteAssessmentChunksFromWorkspace: defaultDeleteAssessmentChunksFromWorkspace,
+  logger,
+};
+
+/** Resolve injected deps against their production defaults (kept out of the constructor's complexity). */
+function resolveAssessmentDeps(deps: Record<string, any>) {
+  const resolved: Record<string, any> = {};
+  for (const [key, fallback] of Object.entries(ASSESSMENT_DEP_DEFAULTS)) {
+    resolved[key] = deps[key] || fallback;
+  }
+  return resolved;
+}
+
 class AssessmentService {
   assessmentRepo: any;
   workspaceRepo: any;
@@ -29,43 +80,24 @@ class AssessmentService {
   logger: any;
 
   constructor(deps: Record<string, any> = {}) {
-    this.assessmentRepo = deps.assessmentRepo || assessmentRepository;
-    this.workspaceRepo = deps.workspaceRepo || workspaceRepository;
-    this.userRepo = deps.userRepo || userRepository;
-    this.assessmentQueue = deps.assessmentQueue || assessmentQueue;
-    this.monitoringQueue = deps.monitoringQueue || monitoringQueue;
-    this.storage = deps.storage || storageModule;
-    this.generateReport = deps.generateReport || generateReport;
-    this.deleteAssessmentCollection = deps.deleteAssessmentCollection || deleteAssessmentCollection;
-    this.deleteAssessmentChunksFromWorkspace =
-      deps.deleteAssessmentChunksFromWorkspace ||
-      (async (assessmentId: any) => {
-        const { deleteAssessmentChunksFromWorkspace } = await import('../config/vectorStore.js');
-        return deleteAssessmentChunksFromWorkspace(assessmentId);
-      });
-    this.logger = deps.logger || logger;
+    const r = resolveAssessmentDeps(deps);
+    this.assessmentRepo = r.assessmentRepo;
+    this.workspaceRepo = r.workspaceRepo;
+    this.userRepo = r.userRepo;
+    this.assessmentQueue = r.assessmentQueue;
+    this.monitoringQueue = r.monitoringQueue;
+    this.storage = r.storage;
+    this.generateReport = r.generateReport;
+    this.deleteAssessmentCollection = r.deleteAssessmentCollection;
+    this.deleteAssessmentChunksFromWorkspace = r.deleteAssessmentChunksFromWorkspace;
+    this.logger = r.logger;
   }
 
   async createAssessment(userId: string, organizationId: string, data: any, files: any) {
     const { name, vendorName, framework = 'DORA', workspaceId } = data;
 
-    let categories = [];
-    if (data.categories) {
-      try {
-        const parsed = JSON.parse(data.categories);
-        if (Array.isArray(parsed)) categories = parsed;
-      } catch {
-        categories = [];
-      }
-    }
-
-    const documents = files.map((f: any, i: number) => ({
-      fileName: f.originalname,
-      fileType: path.extname(f.originalname).replace('.', '').toLowerCase(),
-      fileSize: f.size,
-      category: typeof categories[i] === 'string' ? categories[i] : null,
-      status: 'uploading',
-    }));
+    const categories = parseAssessmentCategories(data.categories);
+    const documents = buildAssessmentDocuments(files, categories);
 
     // Explicit workspaceId (authz'd upstream) + no reliable tenant context here
     // (multipart body is parsed after setTenantContext) → unscoped create.
@@ -89,35 +121,75 @@ class AssessmentService {
 
     this.userRepo.markAssessmentCreated(userId).catch(() => {});
 
-    if (this.storage.isStorageConfigured() && organizationId) {
-      await Promise.all(
-        files.map(async (file: any, i: number) => {
-          const key = this.storage.buildAssessmentFileKey(
-            organizationId.toString(),
-            workspaceId,
-            assessment.id.toString(),
-            i,
-            file.originalname
-          );
-          const storageKey = await this.storage
-            .uploadFile(key, file.buffer, file.mimetype)
-            .catch((err: any) => {
-              this.logger.warn('Assessment file upload to Spaces failed (non-critical)', {
-                service: 'assessment',
-                assessmentId: assessment.id,
-                fileIndex: i,
-                error: err instanceof Error ? err.message : String(err),
-              });
-              return null;
-            });
-          if (storageKey) documents[i].storageKey = storageKey;
-        })
-      );
-      if (documents.some((d: any) => d.storageKey)) {
-        await this.assessmentRepo.updateByIdUnscoped(assessment.id, { documents });
-      }
-    }
+    await this._uploadAssessmentFiles({ organizationId, workspaceId, assessment, files, documents });
+    await this._enqueueAssessmentJobs({ userId, vendorName, assessment, files, documents });
 
+    this.logger.info('Assessment jobs enqueued', {
+      service: 'assessment',
+      assessmentId: assessment.id,
+      jobCount: files.length + 1,
+    });
+
+    return {
+      _id: assessment.id,
+      id: assessment.id,
+      name: assessment.name,
+      vendorName: assessment.vendorName,
+      framework: assessment.framework,
+      status: assessment.status,
+      statusMessage: assessment.statusMessage,
+      documents,
+      createdAt: assessment.createdAt,
+    };
+  }
+
+  // Upload each file to object storage (best-effort) and persist any resulting storageKeys.
+  async _uploadAssessmentFiles(opts: {
+    organizationId: string;
+    workspaceId: any;
+    assessment: any;
+    files: any;
+    documents: any[];
+  }) {
+    const { organizationId, workspaceId, assessment, files, documents } = opts;
+    if (!this.storage.isStorageConfigured() || !organizationId) return;
+    await Promise.all(
+      files.map(async (file: any, i: number) => {
+        const key = this.storage.buildAssessmentFileKey({
+          orgId: organizationId.toString(),
+          workspaceId,
+          assessmentId: assessment.id.toString(),
+          docIndex: i,
+          fileName: file.originalname,
+        });
+        const storageKey = await this.storage
+          .uploadFile(key, file.buffer, file.mimetype)
+          .catch((err: any) => {
+            this.logger.warn('Assessment file upload to Spaces failed (non-critical)', {
+              service: 'assessment',
+              assessmentId: assessment.id,
+              fileIndex: i,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return null;
+          });
+        if (storageKey) documents[i].storageKey = storageKey;
+      })
+    );
+    if (documents.some((d: any) => d.storageKey)) {
+      await this.assessmentRepo.updateByIdUnscoped(assessment.id, { documents });
+    }
+  }
+
+  // Enqueue the per-file index jobs + the delayed gap-analysis job.
+  async _enqueueAssessmentJobs(opts: {
+    userId: string;
+    vendorName: string;
+    assessment: any;
+    files: any;
+    documents: any[];
+  }) {
+    const { userId, vendorName, assessment, files, documents } = opts;
     const fileJobs = files.map((file: any, i: number) =>
       this.assessmentQueue.add(
         'fileIndex',
@@ -140,24 +212,6 @@ class AssessmentService {
       { assessmentId: assessment.id.toString(), userId } satisfies GapAnalysisJobData,
       { jobId: `gapAnalysis-${assessment.id}`, delay: files.length * 5000, priority: 2 }
     );
-
-    this.logger.info('Assessment jobs enqueued', {
-      service: 'assessment',
-      assessmentId: assessment.id,
-      jobCount: files.length + 1,
-    });
-
-    return {
-      _id: assessment.id,
-      id: assessment.id,
-      name: assessment.name,
-      vendorName: assessment.vendorName,
-      framework: assessment.framework,
-      status: assessment.status,
-      statusMessage: assessment.statusMessage,
-      documents,
-      createdAt: assessment.createdAt,
-    };
   }
 
   async listAssessments(authorizedWorkspaceIds: any, query: any = {}) {
@@ -242,33 +296,38 @@ class AssessmentService {
     });
 
     if (nextReviewDate) {
-      try {
-        const delayMs = Math.max(0, nextReviewDate.getTime() - 30 * 24 * 60 * 60 * 1000 - Date.now());
-        const jobId = `review-reminder-${assessment.workspaceId}`;
-        const existing = await this.monitoringQueue.getJob(jobId);
-        if (existing) await existing.remove();
-        await this.monitoringQueue.add(
-          'review-reminder',
-          { workspaceId: assessment.workspaceId.toString() } satisfies ReviewReminderJobData,
-          { jobId, delay: delayMs }
-        );
-
-        this.logger.info('Review reminder scheduled', {
-          service: 'assessment',
-          workspaceId: assessment.workspaceId,
-          nextReviewDate,
-          delayDays: Math.round(delayMs / 86_400_000),
-        });
-      } catch (err) {
-        this.logger.warn('Failed to schedule review reminder (non-critical)', {
-          service: 'assessment',
-          workspaceId: assessment.workspaceId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+      await this._scheduleReviewReminder(assessment.workspaceId, nextReviewDate);
     }
 
     return riskDecision;
+  }
+
+  // Schedule (or replace) the workspace's review-reminder job ~30d before the next review. Best-effort.
+  async _scheduleReviewReminder(workspaceId: any, nextReviewDate: Date) {
+    try {
+      const delayMs = Math.max(0, nextReviewDate.getTime() - 30 * 24 * 60 * 60 * 1000 - Date.now());
+      const jobId = `review-reminder-${workspaceId}`;
+      const existing = await this.monitoringQueue.getJob(jobId);
+      if (existing) await existing.remove();
+      await this.monitoringQueue.add(
+        'review-reminder',
+        { workspaceId: workspaceId.toString() } satisfies ReviewReminderJobData,
+        { jobId, delay: delayMs }
+      );
+
+      this.logger.info('Review reminder scheduled', {
+        service: 'assessment',
+        workspaceId,
+        nextReviewDate,
+        delayDays: Math.round(delayMs / 86_400_000),
+      });
+    } catch (err) {
+      this.logger.warn('Failed to schedule review reminder (non-critical)', {
+        service: 'assessment',
+        workspaceId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   async setClauseSignoff(id: string, userId: string, authorizedWorkspaceIds: any, { clauseRef, status, note }: any) {

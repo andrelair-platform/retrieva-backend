@@ -36,13 +36,13 @@ export interface ReassessArgs {
 }
 
 export interface ReassessDeps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable repo/audit/enqueue/logger for tests
+   
   repo?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   audit?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   enqueue?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   logger?: any;
 }
 
@@ -59,6 +59,28 @@ export interface ReassessResult {
  * non-reviewable arrangement → no-op (logged). Otherwise: transition active→under_review (best-effort,
  * race-safe), audit the change event + the lifecycle move, and enqueue a fresh assessment.
  */
+// active → under_review re-entry (best-effort, race-safe): move the state + audit it. Returns whether
+// the transition actually moved (false when the target state is undefined or the repo update was a no-op).
+async function transitionActiveToReview(
+  a: { organizationId: string; id: string },
+  repo: any,
+  audit: any
+): Promise<boolean> {
+  const to = nextState('active', 'start_review'); // 'under_review'
+  if (!to) return false;
+  const updated = await repo.setLifecycle(a.organizationId, a.id, to);
+  if (!updated) return false;
+  await audit({
+    organizationId: a.organizationId,
+    actor: null, // system actor — event-driven, non-human
+    action: 'arrangement.lifecycle',
+    targetType: 'arrangement',
+    targetId: a.id,
+    metadata: { from: 'active', to, transition: 'start_review', reason: 'dependency-change' },
+  });
+  return true;
+}
+
 export async function reassessOnDependencyChange(
   args: ReassessArgs,
   deps: ReassessDeps = {}
@@ -89,24 +111,7 @@ export async function reassessOnDependencyChange(
   const a = { organizationId: args.organizationId, id: args.arrangement.id };
 
   // active → under_review (the change re-entry). Already under_review → no transition, just re-enqueue.
-  let transitioned = false;
-  if (status === 'active') {
-    const to = nextState('active', 'start_review'); // 'under_review'
-    if (to) {
-      const updated = await repo.setLifecycle(a.organizationId, a.id, to);
-      if (updated) {
-        transitioned = true;
-        await audit({
-          organizationId: a.organizationId,
-          actor: null, // system actor — event-driven, non-human
-          action: 'arrangement.lifecycle',
-          targetType: 'arrangement',
-          targetId: a.id,
-          metadata: { from: 'active', to, transition: 'start_review', reason: 'dependency-change' },
-        });
-      }
-    }
-  }
+  const transitioned = status === 'active' ? await transitionActiveToReview(a, repo, audit) : false;
 
   // The material-change event itself (always recorded when we act — the audit evidence of WHY).
   await audit({

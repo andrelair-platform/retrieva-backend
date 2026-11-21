@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- injectable repos/services stored as fields;
-   org/member/user rows + request payloads are heterogeneous. */
+ 
 import { AppError } from '../utils/index.js';
 import { safeDecrypt } from '../utils/security/fieldEncryption.js';
 import { organizationRepository } from '../repositories/index.js';
@@ -159,12 +158,16 @@ class OrganizationService {
     };
   }
 
-  async inviteMember(inviterId: string, { email, role = "analyst", domainRole = null }: any) {
+  assertValidInvite(email: any, role: any, domainRole: any) {
     if (!email) throw new AppError('Email is required', 400);
     if (!VALID_ROLES.includes(role)) throw new AppError('Invalid role', 400);
     if (domainRole && !ASSIGNABLE_ROLES.includes(domainRole)) {
       throw new AppError(`Invalid domain role '${domainRole}'`, 400);
     }
+  }
+
+  async inviteMember(inviterId: string, { email, role = "analyst", domainRole = null }: any) {
+    this.assertValidInvite(email, role, domainRole);
 
     const callerMembership = await this.memberRepo.findActiveByUserId(inviterId);
     if (!callerMembership) throw new AppError('You do not belong to an organization', 403);
@@ -179,13 +182,13 @@ class OrganizationService {
       throw new AppError('This user is already an active member', 409);
     }
 
-    const { member, rawToken } = await this.memberRepo.createInvite(
-      orgId,
+    const { member, rawToken } = await this.memberRepo.createInvite({
+      organizationId: orgId,
       email,
       role,
-      inviterId,
-      domainRole
-    );
+      invitedBy: inviterId,
+      invitedDomainRole: domainRole,
+    });
 
     const org = await this.organizationRepo.findById(orgId);
     const inviter = await this.userRepo.findById(inviterId);

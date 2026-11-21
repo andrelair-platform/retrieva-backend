@@ -24,21 +24,26 @@ interface AuditEntry {
   metadata?: Record<string, unknown>;
 }
 
+// Apply the append-row defaults (nullish fields → null / empty) for a valid entry.
+function toAppendRow(entry: AuditEntry, organizationId: string, action: string, targetType: string) {
+  return {
+    organizationId,
+    actor: entry.actor ?? null,
+    action,
+    targetType,
+    targetId: entry.targetId ?? null,
+    evidenceRefs: entry.evidenceRefs ?? [],
+    metadata: entry.metadata ?? {},
+  };
+}
+
 export async function recordAudit(entry: AuditEntry) {
   const { organizationId, action, targetType } = entry || {};
   if (!organizationId || !action || !targetType) {
     throw new Error('recordAudit requires organizationId, action, targetType');
   }
   try {
-    return await auditLogRepository.append({
-      organizationId,
-      actor: entry.actor ?? null,
-      action,
-      targetType,
-      targetId: entry.targetId ?? null,
-      evidenceRefs: entry.evidenceRefs ?? [],
-      metadata: entry.metadata ?? {},
-    });
+    return await auditLogRepository.append(toAppendRow(entry, organizationId, action, targetType));
   } catch (err) {
     // Auditing must never break the primary action; surface it in logs for the SIEM.
     logger.error('audit.record_failed', {

@@ -37,13 +37,24 @@ export function withTenantContext<T>(context: TenantStore, fn: () => T): T {
  * workspace-loading middleware. X-Workspace-Id is how the frontend signals the active
  * workspace; fall back to a loaded workspace record / body / query.
  */
-export function setTenantContext(req: Request, _res: Response, next: NextFunction): void {
+/**
+ * Resolve the active workspace id from the request, in priority order:
+ * loaded workspace record → X-Workspace-Id header → body → query.
+ */
+function resolveWorkspaceId(req: Request): string | undefined {
   const hdr = req.headers['x-workspace-id'];
-  const workspaceId: string | undefined =
+  const headerId = Array.isArray(hdr) ? hdr[0] : hdr;
+  const queryId = typeof req.query?.workspaceId === 'string' ? req.query.workspaceId : undefined;
+  return (
     req.workspace?.id ||
-    (Array.isArray(hdr) ? hdr[0] : hdr) ||
+    headerId ||
     (req.body?.workspaceId as string | undefined) ||
-    (typeof req.query?.workspaceId === 'string' ? req.query.workspaceId : undefined);
+    queryId
+  );
+}
+
+export function setTenantContext(req: Request, _res: Response, next: NextFunction): void {
+  const workspaceId = resolveWorkspaceId(req);
   const userId = req.user?.userId;
 
   if (workspaceId || userId) {

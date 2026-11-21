@@ -109,15 +109,8 @@ export interface RowResult {
  */
 export function rowToProposal(rawRow: Record<string, unknown>): RowResult {
   const r = normalizeRow(rawRow);
-  const errors: string[] = [];
-  for (const f of REQUIRED_FIELDS) {
-    if (!String(r[f] ?? '').trim()) errors.push(`missing required column "${f}"`);
-  }
+  const errors = collectRequiredFieldErrors(r);
   const criticality = parseCriticality(r.criticality);
-  const criticalOrImportant =
-    r.criticalOrImportant !== undefined && String(r.criticalOrImportant).trim() !== ''
-      ? parseBool(r.criticalOrImportant)
-      : criticality === 'critical' || criticality === 'important';
 
   const proposal: RowProposal = {
     legalEntityName: String(r.legalEntityName ?? '').trim(),
@@ -125,13 +118,28 @@ export function rowToProposal(rawRow: Record<string, unknown>): RowResult {
     providerName: String(r.providerName ?? '').trim(),
     ictServiceName: String(r.ictServiceName ?? '').trim(),
     criticality,
-    criticalOrImportant,
+    criticalOrImportant: deriveCriticalOrImportant(r.criticalOrImportant, criticality),
     dataResidency: String(r.dataResidency ?? '').trim(),
     dataClasses: splitList(r.dataClasses),
     subcontractors: splitList(r.subcontractors),
     arrangementType: norm(r.arrangementType).includes('intra') ? 'intra_group' : 'external',
   };
   return { ok: errors.length === 0, proposal, errors };
+}
+
+/** Validation errors for any required column that is blank on a normalised row. */
+function collectRequiredFieldErrors(r: Record<string, unknown>): string[] {
+  const errors: string[] = [];
+  for (const f of REQUIRED_FIELDS) {
+    if (!String(r[f] ?? '').trim()) errors.push(`missing required column "${f}"`);
+  }
+  return errors;
+}
+
+/** Explicit column value when present, else inferred from criticality (critical|important ⇒ true). */
+function deriveCriticalOrImportant(raw: unknown, criticality: string | null): boolean {
+  if (raw !== undefined && String(raw).trim() !== '') return parseBool(raw);
+  return criticality === 'critical' || criticality === 'important';
 }
 
 /** Pure: the idempotency key for an arrangement (its dimension names, normalised). */
@@ -169,9 +177,9 @@ interface ImportEstateArgs {
   userId?: string | null;
   rows: Record<string, unknown>[];
   dryRun?: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable repos/confirm for tests
+   
   repos?: Record<string, any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   confirm?: (args: any) => Promise<any>;
 }
 
@@ -180,6 +188,18 @@ interface ImportEstateArgs {
  * via confirmProposal. Idempotent on the natural key against BOTH existing arrangements and earlier
  * rows in the same file. Repo/confirm injectable for unit tests.
  */
+/** Resolve injected repos + confirm fn against their production defaults (kept out of importEstate's complexity). */
+function resolveImportDeps(repos: Record<string, any>, confirm?: (args: any) => Promise<any>) {
+  return {
+    legalEntities: repos.legalEntityRepository || legalEntityRepository,
+    businessFunctions: repos.businessFunctionRepository || businessFunctionRepository,
+    ictServices: repos.ictServiceRepository || ictServiceRepository,
+    providerGraph: repos.providerGraphRepository || providerGraphRepository,
+    arrangements: repos.arrangementRepository || arrangementRepository,
+    confirmFn: confirm || repos.confirmProposal || defaultConfirmProposal,
+  };
+}
+
 export async function importEstate({
   organizationId,
   userId = null,
@@ -188,39 +208,18 @@ export async function importEstate({
   repos = {},
   confirm,
 }: ImportEstateArgs): Promise<ImportSummary> {
-  const legalEntities = repos.legalEntityRepository || legalEntityRepository;
-  const businessFunctions = repos.businessFunctionRepository || businessFunctionRepository;
-  const ictServices = repos.ictServiceRepository || ictServiceRepository;
-  const providerGraph = repos.providerGraphRepository || providerGraphRepository;
-  const arrangements = repos.arrangementRepository || arrangementRepository;
-  const confirmFn = confirm || repos.confirmProposal || defaultConfirmProposal;
+  const { legalEntities, businessFunctions, ictServices, providerGraph, arrangements, confirmFn } =
+    resolveImportDeps(repos, confirm);
 
   // Build the set of natural keys already in the org so a re-run (or an overlap with a prior import)
-  // creates nothing new. Resolve each existing arrangement's dimension ids back to names.
-  const [existingArrangements, entities, functions, providers, services] = await Promise.all([
-    arrangements.listByOrg(organizationId),
-    legalEntities.listByOrg(organizationId),
-    businessFunctions.listByOrg(organizationId),
-    providerGraph.listNodesByOrg(organizationId),
-    ictServices.listByOrg(organizationId),
-  ]);
-  const entityName = new Map<string, string>(entities.map((e: any) => [e.id, String(e.name ?? '')]));
-  const functionName = new Map<string, string>(functions.map((f: any) => [f.id, String(f.name ?? '')]));
-  const providerName = new Map<string, string>(
-    providers.map((p: any) => [p.id, String(p.displayName ?? p.name ?? '')])
-  );
-  const serviceName = new Map<string, string>(services.map((s: any) => [s.id, String(s.name ?? '')]));
-
-  const seenKeys = new Set<string>(
-    existingArrangements.map((a: any) =>
-      naturalKey({
-        legalEntityName: entityName.get(a.legalEntityId),
-        businessFunctionName: functionName.get(a.businessFunctionId),
-        providerName: providerName.get(a.providerId),
-        ictServiceName: a.ictServiceId ? serviceName.get(a.ictServiceId) : '',
-      })
-    )
-  );
+  // creates nothing new.
+  const seenKeys = await buildExistingKeySet(organizationId, {
+    arrangements,
+    legalEntities,
+    businessFunctions,
+    providerGraph,
+    ictServices,
+  });
 
   const summary: ImportSummary = {
     total: rows.length,
@@ -232,32 +231,85 @@ export async function importEstate({
   };
 
   for (let i = 0; i < rows.length; i++) {
-    const { ok, proposal, errors } = rowToProposal(rows[i]);
-    if (!ok) {
-      summary.skipped += 1;
-      // +2: 1-based, plus the header row — matches what a user sees in the spreadsheet.
-      summary.errors.push({ row: i + 2, provider: proposal.providerName, messages: errors });
-      continue;
-    }
-    const key = naturalKey(proposal);
-    if (seenKeys.has(key)) {
-      summary.duplicates += 1;
-      continue;
-    }
-    seenKeys.add(key);
-    if (dryRun) {
-      summary.created += 1; // would create
-      continue;
-    }
-    await confirmFn({
-      organizationId,
-      userId,
-      proposal,
-      sourceFileName: `Estate import — ${proposal.providerName}`,
-      trigger: 'existing', // an existing, in-life estate → active lifecycle (not a new prospect)
-    });
-    summary.created += 1;
+    await processImportRow(rows[i], i, { organizationId, userId, dryRun, confirmFn, seenKeys, summary });
   }
 
   return summary;
+}
+
+/** Resolve every existing arrangement's dimensions back to names → the set of natural keys already present. */
+async function buildExistingKeySet(
+  organizationId: string,
+  repos: {
+    arrangements: any;
+    legalEntities: any;
+    businessFunctions: any;
+    providerGraph: any;
+    ictServices: any;
+  }
+): Promise<Set<string>> {
+  const [existingArrangements, entities, functions, providers, services] = await Promise.all([
+    repos.arrangements.listByOrg(organizationId),
+    repos.legalEntities.listByOrg(organizationId),
+    repos.businessFunctions.listByOrg(organizationId),
+    repos.providerGraph.listNodesByOrg(organizationId),
+    repos.ictServices.listByOrg(organizationId),
+  ]);
+  const entityName = new Map<string, string>(entities.map((e: any) => [e.id, String(e.name ?? '')]));
+  const functionName = new Map<string, string>(functions.map((f: any) => [f.id, String(f.name ?? '')]));
+  const providerName = new Map<string, string>(
+    providers.map((p: any) => [p.id, String(p.displayName ?? p.name ?? '')])
+  );
+  const serviceName = new Map<string, string>(services.map((s: any) => [s.id, String(s.name ?? '')]));
+
+  return new Set<string>(
+    existingArrangements.map((a: any) =>
+      naturalKey({
+        legalEntityName: entityName.get(a.legalEntityId),
+        businessFunctionName: functionName.get(a.businessFunctionId),
+        providerName: providerName.get(a.providerId),
+        ictServiceName: a.ictServiceId ? serviceName.get(a.ictServiceId) : '',
+      })
+    )
+  );
+}
+
+interface ProcessRowCtx {
+  organizationId: string;
+  userId?: string | null;
+  dryRun: boolean;
+
+  confirmFn: (args: any) => Promise<any>;
+  seenKeys: Set<string>;
+  summary: ImportSummary;
+}
+
+/** Validate + dedup a single row and (unless dryRun) create it; mutates ctx.summary / ctx.seenKeys. */
+async function processImportRow(rawRow: Record<string, unknown>, i: number, ctx: ProcessRowCtx) {
+  const { organizationId, userId, dryRun, confirmFn, seenKeys, summary } = ctx;
+  const { ok, proposal, errors } = rowToProposal(rawRow);
+  if (!ok) {
+    summary.skipped += 1;
+    // +2: 1-based, plus the header row — matches what a user sees in the spreadsheet.
+    summary.errors.push({ row: i + 2, provider: proposal.providerName, messages: errors });
+    return;
+  }
+  const key = naturalKey(proposal);
+  if (seenKeys.has(key)) {
+    summary.duplicates += 1;
+    return;
+  }
+  seenKeys.add(key);
+  if (dryRun) {
+    summary.created += 1; // would create
+    return;
+  }
+  await confirmFn({
+    organizationId,
+    userId,
+    proposal,
+    sourceFileName: `Estate import — ${proposal.providerName}`,
+    trigger: 'existing', // an existing, in-life estate → active lifecycle (not a new prospect)
+  });
+  summary.created += 1;
 }

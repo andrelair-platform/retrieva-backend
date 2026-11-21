@@ -39,7 +39,7 @@ describe('Document Ranking', () => {
       const document = 'This document covers stripe integration with payment processing';
       const avgDocLength = 10;
 
-      const score = calculateBM25Score(query, document, avgDocLength);
+      const score = calculateBM25Score(query, document, { avgDocLength });
 
       expect(score).toBeGreaterThan(0);
     });
@@ -49,7 +49,7 @@ describe('Document Ranking', () => {
       const document = 'This is about database optimization and caching strategies';
       const avgDocLength = 10;
 
-      const score = calculateBM25Score(query, document, avgDocLength);
+      const score = calculateBM25Score(query, document, { avgDocLength });
 
       expect(score).toBe(0);
     });
@@ -57,11 +57,12 @@ describe('Document Ranking', () => {
     it('should score longer matching document differently than shorter (length normalization)', () => {
       const query = 'stripe';
       const shortDoc = 'stripe integration guide';
-      const longDoc = 'stripe integration guide with detailed steps for setting up payment processing and handling webhooks and subscriptions';
+      const longDoc =
+        'stripe integration guide with detailed steps for setting up payment processing and handling webhooks and subscriptions';
       const avgDocLength = 20;
 
-      const shortScore = calculateBM25Score(query, shortDoc, avgDocLength);
-      const longScore = calculateBM25Score(query, longDoc, avgDocLength);
+      const shortScore = calculateBM25Score(query, shortDoc, { avgDocLength });
+      const longScore = calculateBM25Score(query, longDoc, { avgDocLength });
 
       // Both should score > 0
       expect(shortScore).toBeGreaterThan(0);
@@ -75,11 +76,12 @@ describe('Document Ranking', () => {
     it('should increase score with multiple occurrences of query term (term frequency saturation)', () => {
       const query = 'stripe';
       const singleOccurrence = 'stripe integration guide';
-      const multipleOccurrences = 'stripe integration guide for stripe payments using stripe webhooks';
+      const multipleOccurrences =
+        'stripe integration guide for stripe payments using stripe webhooks';
       const avgDocLength = 10;
 
-      const singleScore = calculateBM25Score(query, singleOccurrence, avgDocLength);
-      const multipleScore = calculateBM25Score(query, multipleOccurrences, avgDocLength);
+      const singleScore = calculateBM25Score(query, singleOccurrence, { avgDocLength });
+      const multipleScore = calculateBM25Score(query, multipleOccurrences, { avgDocLength });
 
       expect(multipleScore).toBeGreaterThan(singleScore);
     });
@@ -89,7 +91,7 @@ describe('Document Ranking', () => {
       const document = 'Some content here';
       const avgDocLength = 10;
 
-      const score = calculateBM25Score(query, document, avgDocLength);
+      const score = calculateBM25Score(query, document, { avgDocLength });
 
       expect(score).toBe(0);
     });
@@ -99,7 +101,7 @@ describe('Document Ranking', () => {
       const document = '';
       const avgDocLength = 10;
 
-      const score = calculateBM25Score(query, document, avgDocLength);
+      const score = calculateBM25Score(query, document, { avgDocLength });
 
       expect(score).toBe(0);
     });
@@ -111,11 +113,19 @@ describe('Document Ranking', () => {
 
       // Term appears in 1 doc out of 10 (high IDF)
       const rareTermDfMap = new Map([['stripe', 1]]);
-      const rareScore = calculateBM25Score(query, document, avgDocLength, rareTermDfMap, 10);
+      const rareScore = calculateBM25Score(query, document, {
+        avgDocLength,
+        dfMap: rareTermDfMap,
+        totalDocs: 10,
+      });
 
       // Term appears in 9 docs out of 10 (low IDF)
       const commonTermDfMap = new Map([['stripe', 9]]);
-      const commonScore = calculateBM25Score(query, document, avgDocLength, commonTermDfMap, 10);
+      const commonScore = calculateBM25Score(query, document, {
+        avgDocLength,
+        dfMap: commonTermDfMap,
+        totalDocs: 10,
+      });
 
       // Rare term should have higher IDF and thus higher score
       expect(rareScore).toBeGreaterThan(commonScore);
@@ -153,9 +163,7 @@ describe('Document Ranking', () => {
     });
 
     it('should count each term only once per document (unique terms)', () => {
-      const docs = [
-        { pageContent: 'stripe stripe stripe payment payment' },
-      ];
+      const docs = [{ pageContent: 'stripe stripe stripe payment payment' }];
 
       const dfMap = buildDocFrequencyMap(docs);
 
@@ -165,10 +173,7 @@ describe('Document Ranking', () => {
     });
 
     it('should handle documents with empty content', () => {
-      const docs = [
-        { pageContent: '' },
-        { pageContent: 'stripe integration' },
-      ];
+      const docs = [{ pageContent: '' }, { pageContent: 'stripe integration' }];
 
       const dfMap = buildDocFrequencyMap(docs);
 
@@ -303,7 +308,9 @@ describe('Document Ranking', () => {
 
       const result = rerankDocuments(docs, 'stripe integration', 5);
 
-      const stripeDoc = result.find((d) => d.metadata?.documentTitle === 'Stripe Integration Guide');
+      const stripeDoc = result.find(
+        (d) => d.metadata?.documentTitle === 'Stripe Integration Guide'
+      );
       const otherDoc = result.find((d) => d.metadata?.documentTitle === 'Other Title');
 
       expect(stripeDoc.titleSimilarity).toBeGreaterThan(otherDoc.titleSimilarity);

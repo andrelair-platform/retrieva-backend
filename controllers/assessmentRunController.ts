@@ -33,18 +33,27 @@ export async function createAssessmentRun(req: Request, res: Response) {
 }
 
 /** POST /api/v1/assessment-runs/:id/resume  { confirmed, reason? } → advance a suspended human gate. */
-export async function resumeAssessmentRunHandler(req: Request, res: Response) {
+/** Validate resume-run inputs → the resolved args, or an { error } message to return as 400. */
+function validateResumeAssessmentRunInput(req: Request):
+  | { error: string }
+  | { organizationId: string; runId: string; confirmed: boolean; reason?: string } {
   const organizationId = req.user?.organizationId as string | undefined;
   const runId = String(req.params.id);
   const { confirmed, reason } = req.body ?? {};
-  if (!organizationId) return res.status(400).json({ error: 'no organization context' });
-  if (!UUID.test(runId)) return res.status(400).json({ error: 'invalid run id' });
-  if (typeof confirmed !== 'boolean') return res.status(400).json({ error: 'confirmed (boolean) is required' });
+  if (!organizationId) return { error: 'no organization context' };
+  if (!UUID.test(runId)) return { error: 'invalid run id' };
+  if (typeof confirmed !== 'boolean') return { error: 'confirmed (boolean) is required' };
+  return { organizationId, runId, confirmed, reason: typeof reason === 'string' ? reason : undefined };
+}
+
+export async function resumeAssessmentRunHandler(req: Request, res: Response) {
+  const input = validateResumeAssessmentRunInput(req);
+  if ('error' in input) return res.status(400).json({ error: input.error });
   try {
     const summary = await resumeAssessmentRun({
-      runId,
-      organizationId,
-      decision: { confirmed, reason: typeof reason === 'string' ? reason : undefined },
+      runId: input.runId,
+      organizationId: input.organizationId,
+      decision: { confirmed: input.confirmed, reason: input.reason },
     });
     return sendSuccess(res, 200, 'Assessment run resumed', summary);
   } catch (e) {
