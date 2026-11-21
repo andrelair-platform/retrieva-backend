@@ -53,12 +53,12 @@ describe('Drizzle non-tenant repos (RTV-49 pt3)', () => {
   });
 
   it('OrganizationMember invite: create → findByToken → activate; upsert refreshes', async () => {
-    const { member, rawToken } = await orgRepo.createInvite(
-      orgId,
-      'Invitee@X.io',
-      'analyst',
-      userId
-    );
+    const { member, rawToken } = await orgRepo.createInvite({
+      organizationId: orgId,
+      email: 'Invitee@X.io',
+      role: 'analyst',
+      invitedBy: userId,
+    });
     expect(member.status).toBe('pending');
     expect(member.email).toBe('invitee@x.io'); // lowercased
     expect(rawToken).toHaveLength(64);
@@ -68,7 +68,12 @@ describe('Drizzle non-tenant repos (RTV-49 pt3)', () => {
     expect(await orgRepo.findByToken('bogus')).toBeNull();
 
     // re-invite same email → upsert (no duplicate, new token)
-    const again = await orgRepo.createInvite(orgId, 'invitee@x.io', 'viewer', userId);
+    const again = await orgRepo.createInvite({
+      organizationId: orgId,
+      email: 'invitee@x.io',
+      role: 'viewer',
+      invitedBy: userId,
+    });
     expect(again.member.id).toBe(member.id);
     expect(again.member.role).toBe('viewer');
     const [{ n }] = await db
@@ -87,8 +92,18 @@ describe('Drizzle non-tenant repos (RTV-49 pt3)', () => {
   });
 
   it('countAdmins uses the org_admin enum value', async () => {
-    await orgRepo.createInvite(orgId, 'a@x.io', 'org_admin', userId);
-    await orgRepo.createInvite(orgId, 'b@x.io', 'analyst', userId);
+    await orgRepo.createInvite({
+      organizationId: orgId,
+      email: 'a@x.io',
+      role: 'org_admin',
+      invitedBy: userId,
+    });
+    await orgRepo.createInvite({
+      organizationId: orgId,
+      email: 'b@x.io',
+      role: 'analyst',
+      invitedBy: userId,
+    });
     // activate the admin so status=active
     const admin = await orgRepo
       .findByOrganization(orgId, 'pending')
@@ -99,11 +114,21 @@ describe('Drizzle non-tenant repos (RTV-49 pt3)', () => {
 
   it('findActiveByOrgAndEmail + findByOrganizationWithUser (retrieva-backend#10)', async () => {
     // an active member (activate an invite → status active, userId set)
-    await orgRepo.createInvite(orgId, 'Alice@X.io', 'org_admin', userId);
+    await orgRepo.createInvite({
+      organizationId: orgId,
+      email: 'Alice@X.io',
+      role: 'org_admin',
+      invitedBy: userId,
+    });
     const [pending] = await orgRepo.findByOrganization(orgId, 'pending');
     await orgRepo.activate(pending.id, userId);
     // a revoked member — must be excluded from findByOrganizationWithUser
-    await orgRepo.createInvite(orgId, 'gone@x.io', 'viewer', userId);
+    await orgRepo.createInvite({
+      organizationId: orgId,
+      email: 'gone@x.io',
+      role: 'viewer',
+      invitedBy: userId,
+    });
     const gone = (await orgRepo.findByOrganization(orgId, 'pending')).find(
       (m) => m.email === 'gone@x.io'
     );
