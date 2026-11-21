@@ -6,8 +6,7 @@
  * @module services/rag/retrievalEnhancements
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any -- retrieval enhancement runs over LangChain
-   chains + LLM output + heterogeneous RAG doc payloads; the intermediate shapes are untyped. */
+ 
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { createHash } from 'crypto';
@@ -348,90 +347,91 @@ export async function generateHypotheticalDocument(query: string) {
  * @param {string} query - User query for relevance filtering
  * @returns {Promise<Document[]>} Compressed documents with metadata about compression
  */
-export async function compressDocuments(docs: any[], query: string) {
-  // Patterns that indicate LLM returned a disclaimer instead of actual extracted content
-  const LLM_DISCLAIMER_PATTERNS = [
-    /trained on data/i,
-    /knowledge cutoff/i,
-    /i don'?t have (access|information)/i,
-    /cannot (find|extract|identify)/i,
-    /no relevant (sentences|information|content)/i,
-    /as an ai/i,
-  ];
+// Patterns that indicate the LLM returned a disclaimer instead of actual extracted content.
+const LLM_DISCLAIMER_PATTERNS = [
+  /trained on data/i,
+  /knowledge cutoff/i,
+  /i don'?t have (access|information)/i,
+  /cannot (find|extract|identify)/i,
+  /no relevant (sentences|information|content)/i,
+  /as an ai/i,
+];
 
-  /**
-   * Check if compressed content is a valid extraction (not an LLM disclaimer)
-   */
-  function isValidCompression(compressed: string, original: string) {
-    if (!compressed || compressed.trim().length < 20) return false;
-    // Reject LLM disclaimers
-    if (LLM_DISCLAIMER_PATTERNS.some((p) => p.test(compressed))) return false;
-    // Reject if compressed is significantly longer than original (shouldn't happen)
-    if (compressed.length > original.length * 1.2) return false;
-    return true;
+/** Check if compressed content is a valid extraction (not an LLM disclaimer). */
+function isValidCompression(compressed: string, original: string) {
+  if (!compressed || compressed.trim().length < 20) return false;
+  // Reject LLM disclaimers
+  if (LLM_DISCLAIMER_PATTERNS.some((p) => p.test(compressed))) return false;
+  // Reject if compressed is significantly longer than original (shouldn't happen)
+  if (compressed.length > original.length * 1.2) return false;
+  return true;
+}
+
+/** Compress one document via the chain; falls back to the original on any failure. */
+async function compressOneDocument(chain: any, doc: any, query: string) {
+  const originalContent = doc.pageContent;
+  try {
+    const compressed = await chain.invoke({
+      query,
+      document: originalContent.substring(0, 1500), // Limit input length
+    });
+
+    // Validate compression result - reject LLM disclaimers
+    const useCompressed = isValidCompression(compressed, originalContent);
+    const finalContent = useCompressed ? compressed : originalContent;
+
+    return {
+      ...doc,
+      pageContent: finalContent,
+      metadata: {
+        ...doc.metadata,
+        // Always preserve original for source display
+        _originalContent: originalContent,
+        compressed: useCompressed,
+        originalLength: originalContent.length,
+        compressedLength: finalContent.length,
+      },
+    };
+  } catch (err) {
+    logger.debug('Compression failed for document, using original', {
+      service: 'rag',
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return {
+      ...doc,
+      metadata: {
+        ...doc.metadata,
+        _originalContent: originalContent,
+      },
+    };
   }
+}
 
+/** Aggregate compression stats (count + average % reduction over the compressed docs). */
+function computeCompressionStats(compressedDocs: any[]) {
+  const compressedCount = compressedDocs.filter((d: any) => d.metadata?.compressed).length;
+  const avgReduction =
+    compressedDocs.reduce((sum: number, d: any) => {
+      if (d.metadata?.compressed) {
+        return (
+          sum +
+          ((d.metadata.originalLength - d.metadata.compressedLength) / d.metadata.originalLength) * 100
+        );
+      }
+      return sum;
+    }, 0) / compressedCount || 0;
+  return { totalDocs: compressedDocs.length, compressed: compressedCount, avgReduction };
+}
+
+export async function compressDocuments(docs: any[], query: string) {
   try {
     const chain = await initCompressionChain();
     const compressedDocs = await Promise.all(
-      docs.slice(0, 5).map(async (doc: any) => {
-        // Only compress top 5 to save time
-        const originalContent = doc.pageContent;
-
-        try {
-          const compressed = await chain.invoke({
-            query,
-            document: originalContent.substring(0, 1500), // Limit input length
-          });
-
-          // Validate compression result - reject LLM disclaimers
-          const useCompressed = isValidCompression(compressed, originalContent);
-          const finalContent = useCompressed ? compressed : originalContent;
-
-          return {
-            ...doc,
-            pageContent: finalContent,
-            metadata: {
-              ...doc.metadata,
-              // Always preserve original for source display
-              _originalContent: originalContent,
-              compressed: useCompressed,
-              originalLength: originalContent.length,
-              compressedLength: finalContent.length,
-            },
-          };
-        } catch (err) {
-          logger.debug('Compression failed for document, using original', {
-            service: 'rag',
-            error: err instanceof Error ? err.message : String(err),
-          });
-          return {
-            ...doc,
-            metadata: {
-              ...doc.metadata,
-              _originalContent: originalContent,
-            },
-          };
-        }
-      })
+      // Only compress top 5 to save time and costs.
+      docs.slice(0, 5).map((doc: any) => compressOneDocument(chain, doc, query))
     );
 
-    const compressionStats = {
-      totalDocs: compressedDocs.length,
-      compressed: compressedDocs.filter((d: any) => d.metadata?.compressed).length,
-      avgReduction:
-        compressedDocs.reduce((sum: number, d: any) => {
-          if (d.metadata?.compressed) {
-            return (
-              sum +
-              ((d.metadata.originalLength - d.metadata.compressedLength) /
-                d.metadata.originalLength) *
-                100
-            );
-          }
-          return sum;
-        }, 0) / compressedDocs.filter((d: any) => d.metadata?.compressed).length || 0,
-    };
+    const compressionStats = computeCompressionStats(compressedDocs);
 
     logger.info('Contextual compression applied', {
       service: 'rag',

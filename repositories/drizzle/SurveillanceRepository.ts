@@ -223,35 +223,58 @@ export class SurveillanceRepository {
         )
       );
 
-    let directArrangements = 0;
-    let nthPartyArrangements = 0;
-    const byFn = new Map<string, { id: string; name: string; criticalOrImportant: boolean; criticality: string | null }>();
-    let hasCriticalImpact = false;
-    for (const r of rows) {
-      if (r.providerId === providerNodeId) directArrangements += 1;
-      else nthPartyArrangements += 1;
-      if (CRITICAL.has(r.criticality ?? '') || r.bfFlag) hasCriticalImpact = true;
-      if (r.bfId) {
-        const prev = byFn.get(r.bfId);
-        // keep the strongest criticality seen for the function
-        const strongest = CRITICAL.has(r.criticality ?? '') ? r.criticality : prev?.criticality ?? r.criticality ?? null;
-        byFn.set(r.bfId, {
-          id: r.bfId,
-          name: r.bfName ?? r.bfId.slice(0, 8),
-          criticalOrImportant: r.bfFlag ?? prev?.criticalOrImportant ?? false,
-          criticality: strongest,
-        });
-      }
-    }
-    const affectedFunctions = [...byFn.values()];
-    return {
-      directArrangements,
-      nthPartyArrangements,
-      affectedFunctions,
-      functionCount: affectedFunctions.length,
-      hasCriticalImpact,
-    };
+    return aggregateBlastRadius(rows, providerNodeId);
   }
+}
+
+type BlastRadiusRow = {
+  providerId: string;
+  criticality: string | null;
+  bfId: string | null;
+  bfName: string | null;
+  bfFlag: boolean | null;
+};
+
+type AffectedFunction = { id: string; name: string; criticalOrImportant: boolean; criticality: string | null };
+
+/** Fold the arrangement rows into the blast-radius aggregate (direct vs nth-party counts + affected fns). */
+function aggregateBlastRadius(rows: BlastRadiusRow[], providerNodeId: string): BlastRadius {
+  let directArrangements = 0;
+  let nthPartyArrangements = 0;
+  const byFn = new Map<string, AffectedFunction>();
+  let hasCriticalImpact = false;
+  for (const r of rows) {
+    if (r.providerId === providerNodeId) directArrangements += 1;
+    else nthPartyArrangements += 1;
+    if (CRITICAL.has(r.criticality ?? '') || r.bfFlag) hasCriticalImpact = true;
+    accumulateAffectedFunction(byFn, r);
+  }
+  const affectedFunctions = [...byFn.values()];
+  return {
+    directArrangements,
+    nthPartyArrangements,
+    affectedFunctions,
+    functionCount: affectedFunctions.length,
+    hasCriticalImpact,
+  };
+}
+
+/** Upsert the affected-function record for a row, keeping the strongest criticality seen. */
+function accumulateAffectedFunction(byFn: Map<string, AffectedFunction>, r: BlastRadiusRow) {
+  if (!r.bfId) return;
+  const prev = byFn.get(r.bfId);
+  byFn.set(r.bfId, {
+    id: r.bfId,
+    name: r.bfName ?? r.bfId.slice(0, 8),
+    criticalOrImportant: r.bfFlag ?? prev?.criticalOrImportant ?? false,
+    criticality: strongestCriticality(r.criticality, prev?.criticality),
+  });
+}
+
+/** Keep the row's criticality if it's critical-tier, otherwise the strongest previously seen. */
+function strongestCriticality(rowCriticality: string | null, prevCriticality?: string | null): string | null {
+  if (CRITICAL.has(rowCriticality ?? '')) return rowCriticality;
+  return prevCriticality ?? rowCriticality ?? null;
 }
 
 export const surveillanceRepository = new SurveillanceRepository();

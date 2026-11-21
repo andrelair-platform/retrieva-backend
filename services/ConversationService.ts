@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- injectable repos/services stored as fields;
-   conversation/message rows and request payloads are heterogeneous. */
+ 
 import { and, eq, inArray, isNull, desc } from 'drizzle-orm';
 import { AppError } from '../utils/index.js';
 import { verifyOwnership } from '../utils/index.js';
@@ -152,11 +151,11 @@ class ConversationService {
 
   // RTV-73 — record a user rating on an assistant message and push it to Langfuse as a
   // `user_rating` score (the LLMOps feedback signal). feedback=null clears the rating.
-  async submitMessageFeedback(
+  // Validate ownership + that the target is an assistant message in this conversation.
+  private async loadFeedbackTargetMessage(
     conversationId: string,
     messageId: string,
-    userId: string,
-    feedback: 'positive' | 'negative' | null
+    userId: string
   ) {
     const conversation = await this.conversationRepo.findByIdUnscoped(conversationId);
     if (!conversation) throw new AppError('Conversation not found', 404);
@@ -169,23 +168,39 @@ class ConversationService {
     if (message.role !== 'assistant') {
       throw new AppError('Feedback can only be submitted on assistant messages', 400);
     }
+    return message;
+  }
+
+  // Best-effort LLMOps score — never fails the request. positive→1, negative→0; a
+  // cleared rating (null) has nothing to score. Skipped when the message has no trace id
+  // (tracing was off at answer time) or Langfuse is disabled (logFeedback no-ops).
+  private async recordFeedbackScore(
+    updated: any,
+    messageId: string,
+    feedback: 'positive' | 'negative' | null
+  ) {
+    if (!(feedback && updated?.langfuseTraceId)) return;
+    try {
+      await this.logFeedback(updated.langfuseTraceId, feedback === 'positive' ? 1 : 0);
+    } catch (e: any) {
+      this.logger.warn('Langfuse feedback score failed (non-fatal)', {
+        service: 'conversation',
+        messageId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  async submitMessageFeedback(
+    conversationId: string,
+    messageId: string,
+    userId: string,
+    feedback: 'positive' | 'negative' | null
+  ) {
+    await this.loadFeedbackTargetMessage(conversationId, messageId, userId);
 
     const updated = await this.messageRepo.setFeedback(messageId, feedback);
-
-    // Best-effort LLMOps score — never fails the request. positive→1, negative→0; a
-    // cleared rating (null) has nothing to score. Skipped when the message has no trace id
-    // (tracing was off at answer time) or Langfuse is disabled (logFeedback no-ops).
-    if (feedback && updated?.langfuseTraceId) {
-      try {
-        await this.logFeedback(updated.langfuseTraceId, feedback === 'positive' ? 1 : 0);
-      } catch (e: any) {
-        this.logger.warn('Langfuse feedback score failed (non-fatal)', {
-          service: 'conversation',
-          messageId,
-          error: e instanceof Error ? e.message : String(e),
-        });
-      }
-    }
+    await this.recordFeedbackScore(updated, messageId, feedback);
     return updated;
   }
 

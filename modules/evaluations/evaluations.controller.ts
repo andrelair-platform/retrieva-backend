@@ -34,46 +34,56 @@ const requireOrg = (req: Request, res: Response) => {
 // decision and the outcome. Side-effect-safe (recordAction never throws into the request path).
 const audit = (
   req: Request,
-  operation: string,
-  decision: 'allow' | 'deny',
-  result: 'success' | 'failure',
-  detail?: string
+  opts: {
+    operation: string;
+    decision: 'allow' | 'deny';
+    result: 'success' | 'failure';
+    detail?: string;
+  }
 ) =>
   recordAction({
     principalId: req.principal?.principalId ?? 'unknown',
     actorType: req.principal?.type === 'service' ? 'SERVICE' : 'HUMAN',
     tenantId: req.principal?.organizationId ?? '',
-    operation,
-    authorizationDecision: decision,
-    result,
-    detail: detail ?? null,
+    operation: opts.operation,
+    authorizationDecision: opts.decision,
+    result: opts.result,
+    detail: opts.detail ?? null,
   });
 // Capability gate (default-deny) — true if allowed; else audits the denial, writes 403, returns false.
 // The OAuth token's scopes are NOT consulted: can() resolves the principal's role_assignment, so a
 // token scope can never bypass the capability check.
 const requireCap = async (req: Request, res: Response, action: string, organizationId: string) => {
   if (await can(canUser(req), action, { organizationId })) return true;
-  await audit(req, action, 'deny', 'failure');
+  await audit(req, { operation: action, decision: 'deny', result: 'failure' });
   sendError(res, 403, 'Forbidden');
   return false;
 };
+
+// Pull the create-evaluation body fields (keeps the handler flat; title is required).
+const parseCreateEvaluationBody = (body: any) => ({
+  title: String(body?.title || '').trim(),
+  need: String(body?.need || ''),
+  legalEntityId: body?.legalEntityId || null,
+  criteria: Array.isArray(body?.criteria) ? body.criteria : undefined,
+});
 
 // POST /api/v1/evaluations — start an evaluation (the business need + optional criteria/entity).
 export const postEvaluation = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   if (!(await requireCap(req, res, 'evaluation:write', organizationId))) return;
-  const title = String(req.body?.title || '').trim();
+  const { title, need, legalEntityId, criteria } = parseCreateEvaluationBody(req.body);
   if (!title) return sendError(res, 400, 'title is required');
   const evaluation = await createEvaluation({
     organizationId,
     userId: actorId(req),
     title,
-    need: String(req.body?.need || ''),
-    legalEntityId: req.body?.legalEntityId || null,
-    criteria: Array.isArray(req.body?.criteria) ? req.body.criteria : undefined,
+    need,
+    legalEntityId,
+    criteria,
   });
-  await audit(req, 'evaluation.create', 'allow', 'success', evaluation?.id);
+  await audit(req, { operation: 'evaluation.create', decision: 'allow', result: 'success', detail: evaluation?.id });
   sendSuccess(res, 201, 'Evaluation created', { evaluation });
 });
 
@@ -101,6 +111,13 @@ export const getEvaluation = catchAsync(async (req: Request, res: Response) => {
   }
 });
 
+// Parse an optional uploaded contract file to text; '' when no file / no extractable text.
+const extractUploadedDocText = async (file: Express.Multer.File | undefined): Promise<string> => {
+  if (!file) return '';
+  const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
+  return (await parseFile(file.buffer, ext, file.originalname)) || '';
+};
+
 // POST /api/v1/evaluations/:id/candidates — add a candidate vendor (optional doc on field `contract`).
 export const postCandidate = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
@@ -112,11 +129,7 @@ export const postCandidate = catchAsync(async (req: Request, res: Response) => {
   const evaluation = await evaluationRepository.findByIdInOrg(organizationId, String(req.params.id));
   if (!evaluation) return sendError(res, 404, 'Evaluation not found');
 
-  let docText = '';
-  if (req.file) {
-    const ext = path.extname(req.file.originalname).replace('.', '').toLowerCase();
-    docText = (await parseFile(req.file.buffer, ext, req.file.originalname)) || '';
-  }
+  const docText = await extractUploadedDocText(req.file);
   const candidate = await addCandidate({
     organizationId,
     evaluationId: String(req.params.id),
@@ -124,7 +137,7 @@ export const postCandidate = catchAsync(async (req: Request, res: Response) => {
     need: evaluation.need || '',
     docText,
   });
-  await audit(req, 'evaluation.candidate.add', 'allow', 'success', candidate?.id);
+  await audit(req, { operation: 'evaluation.candidate.add', decision: 'allow', result: 'success', detail: candidate?.id });
   sendSuccess(res, 201, 'Candidate added', { candidate });
 });
 
@@ -143,13 +156,22 @@ export const patchCandidateScores = catchAsync(async (req: Request, res: Respons
       candidateId: String(req.params.candidateId),
       manualScores,
     });
-    await audit(req, 'evaluation.candidate.score', 'allow', 'success', String(req.params.candidateId));
+    await audit(req, { operation: 'evaluation.candidate.score', decision: 'allow', result: 'success', detail: String(req.params.candidateId) });
     sendSuccess(res, 200, 'Scores updated', { candidate });
   } catch (e: any) {
     if (e?.statusCode === 404) return sendError(res, 404, 'Candidate not found');
     throw e;
   }
 });
+
+// ADR-0004 hard guard: `select` is human-only. Audits + writes 403 and returns true when the
+// caller is a service principal (so the handler can early-return); false lets the request proceed.
+const denyServicePrincipalSelect = async (req: Request, res: Response): Promise<boolean> => {
+  if (req.principal?.type !== 'service') return false;
+  await audit(req, { operation: 'evaluation.select', decision: 'deny', result: 'failure', detail: 'service-principal-blocked' });
+  sendError(res, 403, 'Selection is a human-only decision; service principals may not select');
+  return true;
+};
 
 // POST /api/v1/evaluations/:id/select — select the winner → promote it to an arrangement (prospect).
 export const postSelectWinner = catchAsync(async (req: Request, res: Response) => {
@@ -159,10 +181,7 @@ export const postSelectWinner = catchAsync(async (req: Request, res: Response) =
   // service principal is denied here regardless of capabilities — defense-in-depth beside the
   // capability map (service_evaluator has no evaluation:select), so an inherited/wildcard grant can
   // never let a machine select. Then the normal capability gate (entity_admin/group_admin only).
-  if (req.principal?.type === 'service') {
-    await audit(req, 'evaluation.select', 'deny', 'failure', 'service-principal-blocked');
-    return sendError(res, 403, 'Selection is a human-only decision; service principals may not select');
-  }
+  if (await denyServicePrincipalSelect(req, res)) return;
   if (!(await requireCap(req, res, 'evaluation:select', organizationId))) return;
   const candidateId = String(req.body?.candidateId || '').trim();
   if (!candidateId) return sendError(res, 400, 'candidateId is required');
@@ -173,7 +192,7 @@ export const postSelectWinner = catchAsync(async (req: Request, res: Response) =
       evaluationId: String(req.params.id),
       candidateId,
     });
-    await audit(req, 'evaluation.select', 'allow', 'success', candidateId);
+    await audit(req, { operation: 'evaluation.select', decision: 'allow', result: 'success', detail: candidateId });
     sendSuccess(res, 200, 'Winner selected and promoted to an arrangement', result);
   } catch (e: any) {
     if (e?.statusCode) return sendError(res, e.statusCode, e.message);

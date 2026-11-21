@@ -7,7 +7,7 @@
  * Q&A pairs.
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any -- LLM instances + questionnaire rows/answers are untyped scoring inputs. */
+ 
 import { createLLM } from '../config/llmProvider.js';
 import { vendorQuestionnaireRepository } from '../repositories/drizzle/VendorQuestionnaireRepository.js';
 import logger from '../config/logger.js';
@@ -18,6 +18,41 @@ const SYSTEM_PROMPT = `You are a DORA (Digital Operational Resilience Act) compl
  * Score a single question answer via LLM.
  * Returns { score, gapLevel, reasoning } or falls back to heuristic on error.
  */
+// Derive the gapLevel: trust the model's label when it's one of the three, else bucket by score.
+function gapLevelFor(parsedGapLevel: unknown, score: number): 'covered' | 'partial' | 'missing' {
+  if (parsedGapLevel === 'covered' || parsedGapLevel === 'partial' || parsedGapLevel === 'missing') {
+    return parsedGapLevel;
+  }
+  if (score >= 80) return 'covered';
+  if (score >= 30) return 'partial';
+  return 'missing';
+}
+
+// Parse the LLM's JSON scoring response (possibly markdown-fenced) into the scored shape. Throws if
+// no JSON object is present (the caller falls back to the heuristic).
+function parseScoreResponse(text: string): { score: number; gapLevel: string; reasoning: string } {
+  // Extract JSON — handle cases where LLM wraps in markdown fences
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON found in LLM response');
+
+  const parsed = JSON.parse(jsonMatch[0]);
+  const score = Math.max(0, Math.min(100, Math.round(Number(parsed.score) || 0)));
+  const gapLevel = gapLevelFor(parsed.gapLevel, score);
+  return { score, gapLevel, reasoning: parsed.reasoning || '' };
+}
+
+// Length-based heuristic used when the LLM call/parse fails (keeps scoring resilient).
+function heuristicScore(answer: any): { score: number; gapLevel: string; reasoning: string } {
+  if (answer && answer.length > 200) {
+    return {
+      score: 50,
+      gapLevel: 'partial',
+      reasoning: 'Answer provided but could not be automatically scored.',
+    };
+  }
+  return { score: 10, gapLevel: 'missing', reasoning: 'Insufficient answer provided.' };
+}
+
 async function scoreQuestion(llm: any, { doraArticle, questionText, answer }: any) {
   const userPrompt = `Article: ${doraArticle}
 Obligation: ${questionText}
@@ -38,22 +73,7 @@ Scoring guide:
     ]);
 
     const text = (response.content || '').trim();
-
-    // Extract JSON — handle cases where LLM wraps in markdown fences
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON found in LLM response');
-
-    const parsed = JSON.parse(jsonMatch[0]);
-    const score = Math.max(0, Math.min(100, Math.round(Number(parsed.score) || 0)));
-    const gapLevel = ['covered', 'partial', 'missing'].includes(parsed.gapLevel)
-      ? parsed.gapLevel
-      : score >= 80
-        ? 'covered'
-        : score >= 30
-          ? 'partial'
-          : 'missing';
-
-    return { score, gapLevel, reasoning: parsed.reasoning || '' };
+    return parseScoreResponse(text);
   } catch (err) {
     logger.warn('LLM scoring failed for question, using heuristic fallback', {
       service: 'questionnaire-scorer',
@@ -61,14 +81,7 @@ Scoring guide:
       error: err instanceof Error ? err.message : String(err),
     });
     // Heuristic fallback based on answer length
-    if (answer && answer.length > 200) {
-      return {
-        score: 50,
-        gapLevel: 'partial',
-        reasoning: 'Answer provided but could not be automatically scored.',
-      };
-    }
-    return { score: 10, gapLevel: 'missing', reasoning: 'Insufficient answer provided.' };
+    return heuristicScore(answer);
   }
 }
 

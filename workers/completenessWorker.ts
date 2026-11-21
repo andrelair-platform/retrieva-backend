@@ -42,67 +42,93 @@ export interface ProcessCompletenessDeps {
  * Diffs the current gaps against the open inbox: inserts NEW findings, auto-resolves FIXED ones,
  * records one audit entry, and writes the run summary. Re-throws on failure so BullMQ retries.
  */
-export async function processCompletenessJob(job: Job<CompletenessRunJobData>, deps: ProcessCompletenessDeps = {}) {
-  const repo = deps.repo ?? completenessRepository;
-  const runAudit = deps.runAuditFn ?? runCompletenessAudit;
-  const recordAuditFn = deps.recordAuditFn ?? recordAudit;
-  const resolveScope = deps.resolveEntityScopeFn ?? resolveEntityScope;
-  const withScope = deps.runWithEntityScopeFn ?? runWithEntityScope;
+interface ResolvedCompletenessDeps {
+  repo: typeof completenessRepository;
+  runAudit: typeof runCompletenessAudit;
+  recordAuditFn: typeof recordAudit;
+  resolveScope: typeof resolveEntityScope;
+  withScope: typeof runWithEntityScope;
+}
 
-  const { runId, organizationId, userId = null } = job.data;
-  logger.info('completeness.job.started', { service: 'completeness-worker', runId, jobId: job.id });
-  await repo.markRunning(runId);
+/** Resolve the injectable collaborators, each defaulting to its production implementation. */
+function resolveCompletenessDeps(deps: ProcessCompletenessDeps): ResolvedCompletenessDeps {
+  return {
+    repo: deps.repo ?? completenessRepository,
+    runAudit: deps.runAuditFn ?? runCompletenessAudit,
+    recordAuditFn: deps.recordAuditFn ?? recordAudit,
+    resolveScope: deps.resolveEntityScopeFn ?? resolveEntityScope,
+    withScope: deps.runWithEntityScopeFn ?? runWithEntityScope,
+  };
+}
 
-  try {
-    const scope = userId
-      ? await resolveScope({ userId } as Parameters<typeof resolveEntityScope>[0])
-      : SYSTEM_SCOPE;
+/** Run the audit in the caller's entity scope, diff against the inbox, persist + audit (the happy path). */
+async function runAndPersistAudit(
+  r: ResolvedCompletenessDeps,
+  ctx: { runId: string; organizationId: string; userId: string | null }
+) {
+  const { repo, runAudit, recordAuditFn, resolveScope, withScope } = r;
+  const { runId, organizationId, userId } = ctx;
 
-    // Run the audit inside the caller's entity scope (so loadSnapshot's reads are scoped identically).
-    const result = await withScope(scope, () =>
-      runAudit({ organizationId, deps: { loadSnapshot: (org) => repo.loadSnapshot(org) } })
-    );
+  const scope = userId
+    ? await resolveScope({ userId } as Parameters<typeof resolveEntityScope>[0])
+    : SYSTEM_SCOPE;
 
-    // Inbox diff (org-wide, not entity-scoped — dedup spans the org).
-    const knownOpen = new Set(await repo.listOpenFindingKeys(organizationId));
-    const currentKeys = new Set(result.findings.map((f) => findingKey(f)));
-    const newFindings = result.findings.filter((f) => !knownOpen.has(findingKey(f)));
+  // Run the audit inside the caller's entity scope (so loadSnapshot's reads are scoped identically).
+  const result = await withScope(scope, () =>
+    runAudit({ organizationId, deps: { loadSnapshot: (org) => repo.loadSnapshot(org) } })
+  );
 
-    if (newFindings.length) await repo.saveFindings(runId, organizationId, newFindings);
-    const resolvedGaps = await repo.resolveStaleFindings(organizationId, currentKeys);
+  // Inbox diff (org-wide, not entity-scoped — dedup spans the org).
+  const knownOpen = new Set(await repo.listOpenFindingKeys(organizationId));
+  const currentKeys = new Set(result.findings.map((f) => findingKey(f)));
+  const newFindings = result.findings.filter((f) => !knownOpen.has(findingKey(f)));
 
-    await repo.completeRun(runId, {
+  if (newFindings.length) await repo.saveFindings(runId, organizationId, newFindings);
+  const resolvedGaps = await repo.resolveStaleFindings(organizationId, currentKeys);
+
+  await repo.completeRun(runId, {
+    scanned: result.scanned,
+    gaps: result.findings.length,
+    newGaps: newFindings.length,
+    resolvedGaps,
+    bySeverity: result.bySeverity,
+  });
+
+  await recordAuditFn({
+    organizationId,
+    actor: userId,
+    action: 'completeness.audit.run',
+    targetType: 'register',
+    targetId: runId,
+    metadata: {
       scanned: result.scanned,
       gaps: result.findings.length,
       newGaps: newFindings.length,
       resolvedGaps,
       bySeverity: result.bySeverity,
-    });
+    },
+  });
 
-    await recordAuditFn({
-      organizationId,
-      actor: userId,
-      action: 'completeness.audit.run',
-      targetType: 'register',
-      targetId: runId,
-      metadata: {
-        scanned: result.scanned,
-        gaps: result.findings.length,
-        newGaps: newFindings.length,
-        resolvedGaps,
-        bySeverity: result.bySeverity,
-      },
-    });
+  logger.info('completeness.job.completed', {
+    service: 'completeness-worker', runId,
+    scanned: result.scanned, gaps: result.findings.length, newGaps: newFindings.length, resolvedGaps,
+  });
+  return { runId, gaps: result.findings.length, newGaps: newFindings.length };
+}
 
-    logger.info('completeness.job.completed', {
-      service: 'completeness-worker', runId,
-      scanned: result.scanned, gaps: result.findings.length, newGaps: newFindings.length, resolvedGaps,
-    });
-    return { runId, gaps: result.findings.length, newGaps: newFindings.length };
+export async function processCompletenessJob(job: Job<CompletenessRunJobData>, deps: ProcessCompletenessDeps = {}) {
+  const r = resolveCompletenessDeps(deps);
+
+  const { runId, organizationId, userId = null } = job.data;
+  logger.info('completeness.job.started', { service: 'completeness-worker', runId, jobId: job.id });
+  await r.repo.markRunning(runId);
+
+  try {
+    return await runAndPersistAudit(r, { runId, organizationId, userId });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error('completeness.job.failed', { service: 'completeness-worker', runId, error: msg });
-    await repo.failRun(runId, msg);
+    await r.repo.failRun(runId, msg);
     throw err;
   }
 }

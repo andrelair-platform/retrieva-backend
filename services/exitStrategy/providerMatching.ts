@@ -134,6 +134,59 @@ async function llmMatch(ctx: ArrangementContext, sessionId?: string): Promise<Al
  * sources still produce a draft; a hard-coded floor is the last resort. `usedFallback` = the LLM did not
  * contribute (the result is purely deterministic).
  */
+/** Load curated Verified Substitutes Registry alternatives; fail-safe → [] on error. */
+async function loadCatalogAlternatives(
+  ctx: ArrangementContext,
+  type: string,
+  loadCatalog: NonNullable<MatchDeps['loadCatalog']>
+): Promise<AlternativeProvider[]> {
+  try {
+    return catalogAlternatives(ctx, await loadCatalog(type));
+  } catch (err) {
+    logger.warn('exit.providerMatch.catalog.failed', {
+      service: 'exit-strategy',
+      arrangementId: ctx.arrangementId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
+}
+
+/** Run the LLM matcher (ai_proposed); fail-safe → [] + `failed=true` on error. */
+async function loadAiAlternatives(
+  ctx: ArrangementContext,
+  generate: (c: ArrangementContext) => Promise<AlternativeProvider[]>
+): Promise<{ ai: AlternativeProvider[]; llmFailed: boolean }> {
+  try {
+    // Stamp the provenance — whatever the generator returns IS the ai_proposed source.
+    const ai = (await generate(ctx)).map((a) => ({ ...a, source: 'ai_proposed' as AlternativeSource }));
+    return { ai, llmFailed: false };
+  } catch (err) {
+    logger.warn('exit.providerMatch.llm.fallback', {
+      service: 'exit-strategy',
+      arrangementId: ctx.arrangementId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { ai: [], llmFailed: true };
+  }
+}
+
+/** Merge (vetted registry first, then catalog, then AI), dedup by normalised name, drop the incumbent. */
+function mergeAlternatives(
+  sources: AlternativeProvider[],
+  incumbent: string
+): AlternativeProvider[] {
+  const seen = new Set<string>();
+  const merged: AlternativeProvider[] = [];
+  for (const a of sources) {
+    const key = norm(a.name);
+    if (!key || key === incumbent || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(a);
+  }
+  return merged;
+}
+
 export async function matchAlternativeProviders(
   ctx: ArrangementContext,
   deps: MatchDeps = {}
@@ -144,45 +197,16 @@ export async function matchAlternativeProviders(
   const registry = registryAlternatives(ctx);
 
   // 2. curated Verified Substitutes Registry
-  let catalog: AlternativeProvider[] = [];
-  if (deps.loadCatalog) {
-    try {
-      catalog = catalogAlternatives(ctx, await deps.loadCatalog(type));
-    } catch (err) {
-      logger.warn('exit.providerMatch.catalog.failed', {
-        service: 'exit-strategy',
-        arrangementId: ctx.arrangementId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
+  const catalog = deps.loadCatalog
+    ? await loadCatalogAlternatives(ctx, type, deps.loadCatalog)
+    : [];
 
   // 3. LLM (ai_proposed)
   const generate = deps.generate ?? ((c: ArrangementContext) => llmMatch(c, deps.sessionId));
-  let ai: AlternativeProvider[] = [];
-  let llmFailed = false;
-  try {
-    // Stamp the provenance — whatever the generator returns IS the ai_proposed source.
-    ai = (await generate(ctx)).map((a) => ({ ...a, source: 'ai_proposed' as AlternativeSource }));
-  } catch (err) {
-    llmFailed = true;
-    logger.warn('exit.providerMatch.llm.fallback', {
-      service: 'exit-strategy',
-      arrangementId: ctx.arrangementId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
+  const { ai, llmFailed } = await loadAiAlternatives(ctx, generate);
 
-  // Merge (vetted registry first, then catalog, then AI), dedup by normalised name, drop the incumbent.
   const incumbent = norm(ctx.providerName);
-  const seen = new Set<string>();
-  const merged: AlternativeProvider[] = [];
-  for (const a of [...registry, ...catalog, ...ai]) {
-    const key = norm(a.name);
-    if (!key || key === incumbent || seen.has(key)) continue;
-    seen.add(key);
-    merged.push(a);
-  }
+  const merged = mergeAlternatives([...registry, ...catalog, ...ai], incumbent);
 
   let usedFallback = llmFailed || ai.length === 0;
   if (!merged.length) {

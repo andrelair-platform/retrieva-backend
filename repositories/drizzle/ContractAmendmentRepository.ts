@@ -80,13 +80,14 @@ export class ContractAmendmentRepository {
    * Persist new drafts; dedup on (org, assessment, article) via the unique index. Returns inserted rows
    * (a re-draft that collides is silently skipped).
    */
-  async saveDrafts(
-    organizationId: string,
-    assessmentId: string,
-    vendorName: string,
-    drafts: AmendmentDraft[],
-    createdBy?: string | null
-  ) {
+  async saveDrafts(opts: {
+    organizationId: string;
+    assessmentId: string;
+    vendorName: string;
+    drafts: AmendmentDraft[];
+    createdBy?: string | null;
+  }) {
+    const { organizationId, assessmentId, vendorName, drafts, createdBy } = opts;
     if (!drafts.length) return [];
     return this.db
       .insert(contractAmendments)

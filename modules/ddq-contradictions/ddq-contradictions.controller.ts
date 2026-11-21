@@ -33,14 +33,14 @@ export const run = catchAsync(async (req: Request, res: Response) => {
     },
   });
 
-  const persisted = await ddqContradictionRepository.saveContradictions(
+  const persisted = await ddqContradictionRepository.saveContradictions({
     organizationId,
     questionnaireId,
-    result.vendorName,
-    result.arrangementId,
-    result.contradictions,
-    req.user?.userId
-  );
+    vendorName: result.vendorName,
+    arrangementId: result.arrangementId,
+    findings: result.contradictions,
+    createdBy: req.user?.userId,
+  });
 
   sendSuccess(res, 200, 'Contradiction detection complete', {
     vendorName: result.vendorName,

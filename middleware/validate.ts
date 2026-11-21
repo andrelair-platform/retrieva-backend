@@ -14,7 +14,7 @@ export const validate = (schema: ZodTypeAny, source: ValidationSource = 'body'):
   return async (req, res, next) => {
     try {
       // Handle undefined/null data - default to empty object for body
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic request part by source key
+       
       const dataToValidate = (req as any)[source] ?? (source === 'body' ? {} : {});
 
       // Validate and parse data - this validates the input
@@ -26,7 +26,7 @@ export const validate = (schema: ZodTypeAny, source: ValidationSource = 'body'):
 
       // For body, we can replace it directly
       if (source === 'body') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Express 5 types req.body read-only; we intentionally replace it with the parsed value
+         
         (req as any).body = validatedData;
       }
       // For query/params in Express 5, the objects may be read-only

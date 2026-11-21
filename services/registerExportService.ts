@@ -10,7 +10,7 @@ import XLSX from 'xlsx';
 import { RT0201_TEMPLATES, RT0201_TEMPLATE_ORDER } from '../config/register/rt0201FieldMap.js';
 
 type TemplateKey = keyof typeof RT0201_TEMPLATES;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- the register read model is a heterogeneous projection
+ 
 type ReadModel = any;
 
 const cell = (v: unknown) => (v === undefined || v === null ? '' : v);
@@ -45,7 +45,7 @@ export function generateRegisterWorkbook(readModel: ReadModel) {
   // Gaps sheet — required fields the graph can't yet satisfy (AC-4), never silently dropped.
   const gapRows = [
     ['Template', 'Field code', 'Field', 'Record', 'Reason'],
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- gap rows are heterogeneous
+     
     ...readModel.gaps.map((g: any) => [g.template, g.code, g.label, cell(g.ref), g.reason]),
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(gapRows), 'Gaps');

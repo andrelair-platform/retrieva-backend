@@ -21,11 +21,14 @@ const isCritical = (tier: string | null) => CRITICAL.has(tier ?? '');
 const DAY_MS = 86_400_000;
 const EXPIRING_SOON_DAYS = 30; // lead time to flag a lapsing contract before it expires
 
-/** Gaps on a single arrangement (the fact) + the one cross-entity consistency check on its function.
- *  `now` is injectable so the contract-expiry rule is deterministic in tests. */
-export function auditArrangement(a: ArrangementInput, now: Date = new Date()): CompletenessFinding[] {
+/** True when a string is absent or whitespace-only. */
+const isBlank = (v: string | null | undefined) => !v || !v.trim();
+/** True when a value is not a non-empty array. */
+const isEmptyArray = (v: unknown) => !Array.isArray(v) || v.length === 0;
+
+/** Required-field gaps on an arrangement (severity scales with the arrangement's own criticality). */
+function auditArrangementFields(a: ArrangementInput): CompletenessFinding[] {
   const out: CompletenessFinding[] = [];
-  // severity for a field gap scales with the arrangement's own criticality
   const sev: GapSeverity = isCritical(a.criticality) ? 'high' : 'medium';
   const miss = (field: string, detail: string, severity: GapSeverity = sev) =>
     out.push({ entityType: 'arrangement', entityId: a.id, entityName: a.label, gapType: 'missing_field', field, detail, severity });
@@ -36,49 +39,61 @@ export function auditArrangement(a: ArrangementInput, now: Date = new Date()): C
   if (isCritical(a.criticality) && !a.exitDifficulty)
     miss('exitDifficulty', 'Critical/important arrangement has no exit-difficulty assessed', 'high');
   if (!a.ictServiceId) miss('ictServiceId', 'Arrangement is not linked to an ICT service');
-  if (!a.dataResidency || !a.dataResidency.trim()) miss('dataResidency', 'Arrangement has no data-residency recorded');
-  if (!Array.isArray(a.dataClasses) || a.dataClasses.length === 0)
+  if (isBlank(a.dataResidency)) miss('dataResidency', 'Arrangement has no data-residency recorded');
+  if (isEmptyArray(a.dataClasses))
     miss('dataClasses', 'Arrangement has no data classes recorded');
-
-  // Contract expiry — a current contract is a DORA register obligation; an expired (or lapsing)
-  // governing contract/evidence is a gap the register must surface before a regulator does. Expired =
-  // high (CIF) / medium; expiring within the lead window = medium. No recorded date → not flagged here
-  // (that's the evidence-collection concern, not an expiry fact we can assert).
-  if (a.contractValidUntil) {
-    const until = new Date(a.contractValidUntil);
-    if (!Number.isNaN(until.getTime())) {
-      const expired = until.getTime() < now.getTime();
-      const soon = !expired && until.getTime() - now.getTime() <= EXPIRING_SOON_DAYS * DAY_MS;
-      const day = until.toISOString().slice(0, 10);
-      if (expired) {
-        out.push({
-          entityType: 'arrangement', entityId: a.id, entityName: a.label, gapType: 'contract_expiry',
-          field: 'contractValidUntil', severity: isCritical(a.criticality) ? 'high' : 'medium',
-          detail: `Governing contract/evidence expired on ${day} — renew or re-evidence to keep the register current`,
-        });
-      } else if (soon) {
-        out.push({
-          entityType: 'arrangement', entityId: a.id, entityName: a.label, gapType: 'contract_expiry',
-          field: 'contractValidUntil', severity: 'medium',
-          detail: `Governing contract/evidence expires on ${day} (within ${EXPIRING_SOON_DAYS} days) — plan renewal`,
-        });
-      }
-    }
-  }
-
-  // Consistency: a critical/important arrangement whose business function isn't flagged critical-or-important.
-  if (isCritical(a.criticality) && !a.businessFunctionCriticalFlag) {
-    out.push({
-      entityType: 'business_function',
-      entityId: a.businessFunctionId,
-      entityName: a.businessFunctionName,
-      gapType: 'inconsistent_flag',
-      field: 'criticalOrImportant',
-      severity: 'high',
-      detail: `Business function supports a ${a.criticality} arrangement but is not flagged critical-or-important`,
-    });
-  }
   return out;
+}
+
+/** Contract-expiry gaps — an expired (high/medium) or soon-to-lapse (medium) governing contract.
+ *  No recorded date → nothing flagged here (that's an evidence-collection concern, not an expiry fact). */
+function auditContractExpiry(a: ArrangementInput, now: Date): CompletenessFinding[] {
+  if (!a.contractValidUntil) return [];
+  const until = new Date(a.contractValidUntil);
+  if (Number.isNaN(until.getTime())) return [];
+
+  const expired = until.getTime() < now.getTime();
+  const soon = !expired && until.getTime() - now.getTime() <= EXPIRING_SOON_DAYS * DAY_MS;
+  const day = until.toISOString().slice(0, 10);
+  if (expired) {
+    return [{
+      entityType: 'arrangement', entityId: a.id, entityName: a.label, gapType: 'contract_expiry',
+      field: 'contractValidUntil', severity: isCritical(a.criticality) ? 'high' : 'medium',
+      detail: `Governing contract/evidence expired on ${day} — renew or re-evidence to keep the register current`,
+    }];
+  }
+  if (soon) {
+    return [{
+      entityType: 'arrangement', entityId: a.id, entityName: a.label, gapType: 'contract_expiry',
+      field: 'contractValidUntil', severity: 'medium',
+      detail: `Governing contract/evidence expires on ${day} (within ${EXPIRING_SOON_DAYS} days) — plan renewal`,
+    }];
+  }
+  return [];
+}
+
+/** Consistency: a critical/important arrangement whose business function isn't flagged critical-or-important. */
+function auditFunctionConsistency(a: ArrangementInput): CompletenessFinding[] {
+  if (!(isCritical(a.criticality) && !a.businessFunctionCriticalFlag)) return [];
+  return [{
+    entityType: 'business_function',
+    entityId: a.businessFunctionId,
+    entityName: a.businessFunctionName,
+    gapType: 'inconsistent_flag',
+    field: 'criticalOrImportant',
+    severity: 'high',
+    detail: `Business function supports a ${a.criticality} arrangement but is not flagged critical-or-important`,
+  }];
+}
+
+/** Gaps on a single arrangement (the fact) + the one cross-entity consistency check on its function.
+ *  `now` is injectable so the contract-expiry rule is deterministic in tests. */
+export function auditArrangement(a: ArrangementInput, now: Date = new Date()): CompletenessFinding[] {
+  return [
+    ...auditArrangementFields(a),
+    ...auditContractExpiry(a, now),
+    ...auditFunctionConsistency(a),
+  ];
 }
 
 /** Gaps on a legal entity — LEI + country are RT.02.01 mandatory identifiers. */

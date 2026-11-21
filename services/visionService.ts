@@ -15,7 +15,7 @@
  * A 40-page text contract = 0 calls; a 3-chart deck = ~3 calls.
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any -- VLM captioning over untyped figure payloads + LLM output. */
+ 
 import { resolveVisionCaptionPrompt } from '../config/promptManager.js';
 import logger from '../config/logger.js';
 
@@ -44,19 +44,20 @@ export function isVlmCaptionEnabled() {
   return VLM_ENABLED && !!GW_KEY;
 }
 
+/** With a Docling bbox (w,h both > 0), enforce the min size + aspect-ratio bounds. */
+function bboxPassesFilter(w: number, h: number) {
+  if (!(w > 0 && h > 0)) return true; // no bbox → size/aspect not enforced (bytes already checked)
+  if (w < MIN_PT || h < MIN_PT) return false;
+  const aspect = w / h;
+  return aspect >= MIN_ASPECT && aspect <= MAX_ASPECT;
+}
+
 /** A figure survives the pre-filter (so it's worth a VLM call). */
 export function figurePassesFilter(fig: any) {
   if (!fig || typeof fig.dataUrl !== 'string') return false;
   if ((fig.bytes || fig.dataUrl.length) < MIN_BYTES) return false;
-  const w = fig.width || 0;
-  const h = fig.height || 0;
   // If Docling gave a bbox, enforce min size + aspect; if not (0), fall back to bytes only.
-  if (w > 0 && h > 0) {
-    if (w < MIN_PT || h < MIN_PT) return false;
-    const aspect = w / h;
-    if (aspect < MIN_ASPECT || aspect > MAX_ASPECT) return false;
-  }
-  return true;
+  return bboxPassesFilter(fig.width || 0, fig.height || 0);
 }
 
 async function captionOne(dataUrl: any, promptText: any) {
@@ -89,6 +90,48 @@ async function captionOne(dataUrl: any, promptText: any) {
     return (json?.choices?.[0]?.message?.content || '').trim();
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/** Start a Langfuse multimodal generation for one figure (no-op when no trace). */
+function startFigureGeneration(trace: any, vp: any, ctx: { i: number; fig: any; promptText: any; fileName: any }) {
+  const { i, fig, promptText, fileName } = ctx;
+  return trace?.generation?.({
+    name: `figure-caption-${i + 1}`,
+    model: VLM_MODEL,
+    ...(vp.langfusePrompt ? { prompt: vp.langfusePrompt } : {}),
+    input: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: promptText },
+          { type: 'image_url', image_url: { url: fig.dataUrl } },
+        ],
+      },
+    ],
+    metadata: {
+      fileName,
+      width: Math.round(fig.width || 0),
+      height: Math.round(fig.height || 0),
+      bytes: fig.bytes,
+    },
+  });
+}
+
+/** Caption one figure; best-effort — a failure logs + ends the generation as ERROR and returns null. */
+async function captionFigureSafely(ctx: { fig: any; promptText: any; gen: any; i: number; fileName: any }) {
+  const { fig, promptText, gen, i, fileName } = ctx;
+  try {
+    const caption = await captionOne(fig.dataUrl, promptText);
+    gen?.end?.({ output: caption });
+    return caption;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn('VLM caption failed for a figure (skipping)', {
+      service: 'vision', fileName, index: i, error: message,
+    });
+    gen?.end?.({ output: null, level: 'ERROR', statusMessage: message });
+    return null; // best-effort: one bad figure never fails ingestion
   }
 }
 
@@ -138,39 +181,9 @@ export async function captionFigures(figures: any, { fileName, trace }: any = {}
       const i = next++;
       const fig = kept[i];
       // Multimodal generation (RTV-14 gap 3): log the figure image as the input so
-      // visual inputs appear in the retrieva Langfuse project. The core SDK extracts
-      // the base64 data-URI and stores it as media. No-op when no trace/disabled.
-      const gen = trace?.generation?.({
-        name: `figure-caption-${i + 1}`,
-        model: VLM_MODEL,
-        ...(vp.langfusePrompt ? { prompt: vp.langfusePrompt } : {}),
-        input: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: promptText },
-              { type: 'image_url', image_url: { url: fig.dataUrl } },
-            ],
-          },
-        ],
-        metadata: {
-          fileName,
-          width: Math.round(fig.width || 0),
-          height: Math.round(fig.height || 0),
-          bytes: fig.bytes,
-        },
-      });
-      try {
-        const caption = await captionOne(fig.dataUrl, promptText);
-        captions[i] = caption;
-        gen?.end?.({ output: caption });
-      } catch (err) {
-        logger.warn('VLM caption failed for a figure (skipping)', {
-          service: 'vision', fileName, index: i, error: (err instanceof Error ? err.message : String(err)),
-        });
-        captions[i] = null; // best-effort: one bad figure never fails ingestion
-        gen?.end?.({ output: null, level: 'ERROR', statusMessage: (err instanceof Error ? err.message : String(err)) });
-      }
+      // visual inputs appear in the retrieva Langfuse project. No-op when no trace/disabled.
+      const gen = startFigureGeneration(trace, vp, { i, fig, promptText, fileName });
+      captions[i] = await captionFigureSafely({ fig, promptText, gen, i, fileName });
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, kept.length) }, worker));

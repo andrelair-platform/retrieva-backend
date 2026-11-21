@@ -94,7 +94,7 @@ export async function searchArrangementSpans(
       limit: topK,
       with_payload: true,
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Qdrant hit payloads are untyped
+     
     return (hits as any[])
       .filter((h) => String(h.payload?.pageContent || '').length > 20)
       .map((h) => ({
@@ -126,7 +126,7 @@ export async function scrollArrangementChunks(arrangementId: string, limit = 50)
       with_payload: true,
       with_vector: false,
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Qdrant point payloads are untyped
+     
     return (res.points as any[])
       .map((p) => ({
         id: String(p.id),

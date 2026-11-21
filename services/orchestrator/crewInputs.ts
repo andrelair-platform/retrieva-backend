@@ -32,7 +32,7 @@ export interface CrewInputsDeps {
   /** Scroll the arrangement's indexed document chunks (default: Qdrant via arrangementRag). */
   scrollChunks?: (arrangementId: string) => Promise<DocChunk[]>;
   /** Resolve the arrangement's applicable RTV-37 evidence records (default: evidenceRepository). */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- evidence rows are heterogeneous domain objects
+   
   resolveEvidence?: (organizationId: string, arrangementId: string) => Promise<any[]>;
   /** Resolve the applicable DORA controls for the arrangement (default: the real control library). */
   resolveControls?: (organizationId: string, arrangementId: string) => Promise<Control[]>;
@@ -58,7 +58,7 @@ async function defaultResolveControls(organizationId: string, arrangementId: str
     criticality: arrangement.criticality,
     criticalOrImportant: fn?.criticalOrImportant,
   });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- library control is a heterogeneous record
+   
   return (controls as Array<Record<string, any>>).map((c) => ({
     ref: String(c.id),
     doraArticleRef: c.doraArticleRef ? String(c.doraArticleRef) : undefined,
@@ -92,23 +92,35 @@ export async function buildCrewAssessmentInputs(
     .slice(0, maxClauses)
     .map((c) => ({ ref: c.id, text: c.text }));
 
-  // Evidence refs = the document chunks (the crew can fetch them from the collection) ∪ the RTV-37
-  // evidence records (metadata evidence). Dedup by id; keep first-seen (chunks before records).
+  const evidenceRefs = buildEvidenceRefs(arrangementId, chunks, records as Array<Record<string, unknown>>);
+  return { clauses, evidenceRefs, controls };
+}
+
+/**
+ * Evidence refs = the document chunks (the crew can fetch them from the collection) ∪ the RTV-37
+ * evidence records (metadata evidence). Dedup by id; keep first-seen (chunks before records).
+ */
+function buildEvidenceRefs(
+  arrangementId: string,
+  chunks: DocChunk[],
+  records: Array<Record<string, unknown>>
+): EvidenceRef[] {
   const collection = arrangementCollectionName(arrangementId);
   const seen = new Set<string>();
   const evidenceRefs: EvidenceRef[] = [];
-  for (const c of chunks) {
-    if (!c.id || seen.has(c.id)) continue;
-    seen.add(c.id);
-    evidenceRefs.push({ id: c.id, collection, source: c.source || undefined });
-  }
-  for (const r of records as Array<Record<string, unknown>>) {
-    const id = r.id != null ? String(r.id) : '';
-    if (!id || seen.has(id)) continue;
+  // first-seen wins (chunks before records) — pushRef no-ops on a blank/duplicate id.
+  const pushRef = (id: string, ref: EvidenceRef): void => {
+    if (!id || seen.has(id)) return;
     seen.add(id);
-    const source = (r.source as string) || (r.document as string) || undefined;
-    evidenceRefs.push({ id, source });
+    evidenceRefs.push(ref);
+  };
+  for (const c of chunks) {
+    pushRef(c.id, { id: c.id, collection, source: c.source || undefined });
   }
-
-  return { clauses, evidenceRefs, controls };
+  for (const r of records) {
+    const id = r.id != null ? String(r.id) : '';
+    const source = (r.source as string) || (r.document as string) || undefined;
+    pushRef(id, { id, source });
+  }
+  return evidenceRefs;
 }

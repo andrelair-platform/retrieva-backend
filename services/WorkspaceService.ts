@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- injectable repos/services stored as fields;
-   workspace/member/user rows + request payloads are heterogeneous. */
+ 
 import { AppError } from '../utils/index.js';
 import { workspaceRepository } from '../repositories/drizzle/WorkspaceRepository.js';
 import { workspaceMemberRepository } from '../repositories/drizzle/WorkspaceMemberRepository.js';
@@ -34,6 +33,119 @@ export function serializeWorkspace(ws: any, extras: any = {}) {
   };
 }
 
+/** Coerce an ISO-ish value to a Date, or null when falsy. */
+function toDateOrNull(value: any): Date | null {
+  return value ? new Date(value) : null;
+}
+
+/** Trim a string (optional-chained), falling back to '' when empty/absent. */
+function trimOrEmpty(value: any): string {
+  return value?.trim() || '';
+}
+
+/** Any falsy value becomes null (used for nullable FK/enum columns). */
+function orNull<T>(value: T): T | null {
+  return value || null;
+}
+
+/** Build the row passed to workspaceRepo.create (extracted to keep createWorkspace flat). */
+function buildCreateWorkspaceRow(userId: string, data: any, orgMembership: any) {
+  const {
+    name,
+    description,
+    vendorTier,
+    serviceType,
+    country,
+    contractStart,
+    contractEnd,
+    noticePeriodDays,
+    priceReviewDate,
+    priceEscalation,
+    vendorFunctions,
+  } = data;
+
+  return {
+    name: name.trim(),
+    description: trimOrEmpty(description),
+    userId,
+    organizationId: orNull(orgMembership?.organizationId),
+    vendorTier: orNull(vendorTier),
+    serviceType: orNull(serviceType),
+    country: trimOrEmpty(country),
+    contractStart: toDateOrNull(contractStart),
+    contractEnd: toDateOrNull(contractEnd),
+    noticePeriodDays: noticePeriodDays ?? null,
+    priceReviewDate: toDateOrNull(priceReviewDate),
+    priceEscalation: priceEscalation ?? null,
+    vendorFunctions: Array.isArray(vendorFunctions) ? vendorFunctions : [],
+  };
+}
+
+// A patch-field spec: given the raw request value, decide whether to set the
+// patch key and to what. Returns null to skip the field. Extracted so
+// updateWorkspace stays a thin orchestrator (keeps each branch out of its body).
+type PatchFieldSpec = (value: any) => { value: any } | null;
+
+const definedOr = (fallback: any): PatchFieldSpec => (v) =>
+  v !== undefined ? { value: v || fallback } : null;
+const definedNullish = (): PatchFieldSpec => (v) => (v !== undefined ? { value: v ?? null } : null);
+const definedDate = (): PatchFieldSpec => (v) =>
+  v !== undefined ? { value: toDateOrNull(v) } : null;
+const definedRaw = (): PatchFieldSpec => (v) => (v !== undefined ? { value: v } : null);
+const arrayOnly = (): PatchFieldSpec => (v) => (Array.isArray(v) ? { value: v } : null);
+
+const UPDATE_WORKSPACE_FIELDS: Record<string, PatchFieldSpec> = {
+  name: (v) => (v?.trim() ? { value: v.trim() } : null),
+  description: (v) => (v !== undefined ? { value: v?.trim() || '' } : null),
+  vendorTier: definedOr(null),
+  country: (v) => (v !== undefined ? { value: v?.trim() || '' } : null),
+  serviceType: definedOr(null),
+  contractStart: definedDate(),
+  contractEnd: definedDate(),
+  noticePeriodDays: definedNullish(),
+  priceReviewDate: definedDate(),
+  priceEscalation: definedNullish(),
+  nextReviewDate: definedDate(),
+  vendorStatus: definedRaw(),
+  certifications: arrayOnly(),
+  vendorFunctions: arrayOnly(),
+  exitStrategyDoc: definedOr(null),
+};
+
+/** Build the sparse update patch (extracted to keep updateWorkspace flat). */
+function buildUpdateWorkspacePatch(data: any): Record<string, any> {
+  const patch: Record<string, any> = {};
+  for (const [key, spec] of Object.entries(UPDATE_WORKSPACE_FIELDS)) {
+    const result = spec(data[key]);
+    if (result) patch[key] = result.value;
+  }
+  return patch;
+}
+
+/** Build the sparse member update patch (role + merged permissions). */
+function buildMemberPatch(member: any, { role, permissions }: any): Record<string, any> {
+  const patch: Record<string, any> = {};
+  const roleIsSettable = role && ['member', 'viewer'].includes(role);
+  const nextRole = roleIsSettable ? role : member.role;
+  if (roleIsSettable) patch.role = role;
+
+  if (permissions) {
+    patch.permissions = {
+      ...member.permissions,
+      ...permissions,
+      canInvite: permissions.canInvite === true && nextRole !== 'viewer',
+    };
+  }
+  return patch;
+}
+
+/** Guard: an inviter must be an owner, or hold the canInvite permission. */
+function assertCanInvite(inviterMembership: any) {
+  if (inviterMembership.role !== 'owner' && !inviterMembership.permissions?.canInvite) {
+    throw new AppError('You do not have permission to invite members', 403);
+  }
+}
+
 class WorkspaceService {
   workspaceRepo: any;
   memberRepo: any;
@@ -46,49 +158,24 @@ class WorkspaceService {
   emailService: any;
 
   constructor(deps: Record<string, any> = {}) {
-    this.workspaceRepo = deps.workspaceRepo || workspaceRepository;
-    this.memberRepo = deps.memberRepo || workspaceMemberRepository;
-    this.orgMemberRepo = deps.orgMemberRepo || organizationMemberRepository;
-    this.userRepo = deps.userRepo || userRepository;
-    this.assessmentRepo = deps.assessmentRepo || assessmentRepository;
-    this.deleteAssessmentCollection = deps.deleteAssessmentCollection || deleteAssessmentCollection;
-    this.storage = deps.storage || storageModule;
-    this.logger = deps.logger || logger;
-    this.emailService = deps.emailService || emailService;
+    const d = (key: string, fallback: any) => deps[key] || fallback;
+    this.workspaceRepo = d('workspaceRepo', workspaceRepository);
+    this.memberRepo = d('memberRepo', workspaceMemberRepository);
+    this.orgMemberRepo = d('orgMemberRepo', organizationMemberRepository);
+    this.userRepo = d('userRepo', userRepository);
+    this.assessmentRepo = d('assessmentRepo', assessmentRepository);
+    this.deleteAssessmentCollection = d('deleteAssessmentCollection', deleteAssessmentCollection);
+    this.storage = d('storage', storageModule);
+    this.logger = d('logger', logger);
+    this.emailService = d('emailService', emailService);
   }
 
   async createWorkspace(userId: string, data: any) {
-    const {
-      name,
-      description,
-      vendorTier,
-      serviceType,
-      country,
-      contractStart,
-      contractEnd,
-      noticePeriodDays,
-      priceReviewDate,
-      priceEscalation,
-      vendorFunctions,
-    } = data;
-
     const orgMembership = await this.orgMemberRepo.findActiveByUserId(userId);
 
-    const workspace = await this.workspaceRepo.create({
-      name: name.trim(),
-      description: description?.trim() || '',
-      userId,
-      organizationId: orgMembership?.organizationId || null,
-      vendorTier: vendorTier || null,
-      serviceType: serviceType || null,
-      country: country?.trim() || '',
-      contractStart: contractStart ? new Date(contractStart) : null,
-      contractEnd: contractEnd ? new Date(contractEnd) : null,
-      noticePeriodDays: noticePeriodDays ?? null,
-      priceReviewDate: priceReviewDate ? new Date(priceReviewDate) : null,
-      priceEscalation: priceEscalation ?? null,
-      vendorFunctions: Array.isArray(vendorFunctions) ? vendorFunctions : [],
-    });
+    const workspace = await this.workspaceRepo.create(
+      buildCreateWorkspaceRow(userId, data, orgMembership)
+    );
 
     await this.memberRepo.addOwner(workspace.id, userId);
 
@@ -126,43 +213,7 @@ class WorkspaceService {
     const workspace = await this.workspaceRepo.findById(workspaceId);
     if (!workspace) throw new AppError('Workspace not found', 404);
 
-    const {
-      name,
-      description,
-      vendorTier,
-      country,
-      serviceType,
-      contractStart,
-      contractEnd,
-      noticePeriodDays,
-      priceReviewDate,
-      priceEscalation,
-      nextReviewDate,
-      vendorStatus,
-      certifications,
-      exitStrategyDoc,
-      vendorFunctions,
-    } = data;
-
-    const patch: Record<string, any> = {};
-    if (name?.trim()) patch.name = name.trim();
-    if (description !== undefined) patch.description = description?.trim() || '';
-    if (vendorTier !== undefined) patch.vendorTier = vendorTier || null;
-    if (country !== undefined) patch.country = country?.trim() || '';
-    if (serviceType !== undefined) patch.serviceType = serviceType || null;
-    if (contractStart !== undefined)
-      patch.contractStart = contractStart ? new Date(contractStart) : null;
-    if (contractEnd !== undefined) patch.contractEnd = contractEnd ? new Date(contractEnd) : null;
-    if (noticePeriodDays !== undefined) patch.noticePeriodDays = noticePeriodDays ?? null;
-    if (priceReviewDate !== undefined)
-      patch.priceReviewDate = priceReviewDate ? new Date(priceReviewDate) : null;
-    if (priceEscalation !== undefined) patch.priceEscalation = priceEscalation ?? null;
-    if (nextReviewDate !== undefined)
-      patch.nextReviewDate = nextReviewDate ? new Date(nextReviewDate) : null;
-    if (vendorStatus !== undefined) patch.vendorStatus = vendorStatus;
-    if (Array.isArray(certifications)) patch.certifications = certifications;
-    if (Array.isArray(vendorFunctions)) patch.vendorFunctions = vendorFunctions;
-    if (exitStrategyDoc !== undefined) patch.exitStrategyDoc = exitStrategyDoc || null;
+    const patch = buildUpdateWorkspacePatch(data);
 
     const updated =
       Object.keys(patch).length > 0
@@ -218,25 +269,7 @@ class WorkspaceService {
 
     // 2. Qdrant per-assessment collections + 3. stored files.
     for (const a of assessments) {
-      try {
-        await this.deleteAssessmentCollection(String(a.id));
-      } catch (err) {
-        this.logger.warn('Purge: failed to delete assessment collection', {
-          assessmentId: String(a.id),
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-      for (const doc of a.documents || []) {
-        if (!doc?.storageKey) continue;
-        try {
-          await this.storage.deleteFile(doc.storageKey);
-        } catch (err) {
-          this.logger.warn('Purge: failed to delete file', {
-            key: doc.storageKey,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
+      await this._purgeAssessment(a);
     }
 
     this.logger.info('Workspace data purged', {
@@ -244,6 +277,29 @@ class WorkspaceService {
       workspaceId: wid,
       assessments: assessments.length,
     });
+  }
+
+  /** Erase one assessment's Qdrant collection + stored files (best-effort, isolated). */
+  async _purgeAssessment(a: any) {
+    try {
+      await this.deleteAssessmentCollection(String(a.id));
+    } catch (err) {
+      this.logger.warn('Purge: failed to delete assessment collection', {
+        assessmentId: String(a.id),
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    for (const doc of a.documents || []) {
+      if (!doc?.storageKey) continue;
+      try {
+        await this.storage.deleteFile(doc.storageKey);
+      } catch (err) {
+        this.logger.warn('Purge: failed to delete file', {
+          key: doc.storageKey,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
   }
 
   async getMyWorkspaces(userId: string) {
@@ -302,22 +358,12 @@ class WorkspaceService {
     const inviterMembership = await this.memberRepo.findMembership(workspaceId, inviterId);
     if (!inviterMembership) throw new AppError('You are not a member of this workspace', 403);
 
-    if (inviterMembership.role !== 'owner' && !inviterMembership.permissions?.canInvite) {
-      throw new AppError('You do not have permission to invite members', 403);
-    }
+    assertCanInvite(inviterMembership);
 
     const workspace = await this.workspaceRepo.findById(workspaceId);
     if (!workspace) throw new AppError('Workspace not found', 404);
 
-    let membership;
-    try {
-      membership = await this.memberRepo.inviteMember(workspaceId, userToInvite.id, inviterId, role);
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('already a member')) {
-        throw new AppError('User is already a member of this workspace', 409);
-      }
-      throw err;
-    }
+    const membership = await this._inviteMemberRow(workspaceId, userToInvite.id, inviterId, role);
 
     const inviter = await this.userRepo.findById(inviterId);
 
@@ -329,6 +375,36 @@ class WorkspaceService {
       role,
     });
 
+    this._sendInvitationEmail({ userToInvite, inviter, workspace, role });
+
+    return {
+      membership: {
+        id: membership.id,
+        userId: userToInvite.id,
+        email: userToInvite.email,
+        name: userToInvite.name,
+        role: membership.role,
+        status: membership.status,
+      },
+      inviteeName: userToInvite.name || email,
+      workspaceName: workspace.name,
+    };
+  }
+
+  /** Create the membership row, mapping the "already a member" error to a 409. */
+  async _inviteMemberRow(workspaceId: string, inviteeId: any, inviterId: string, role: any) {
+    try {
+      return await this.memberRepo.inviteMember(workspaceId, inviteeId, inviterId, role);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('already a member')) {
+        throw new AppError('User is already a member of this workspace', 409);
+      }
+      throw err;
+    }
+  }
+
+  /** Fire-and-forget invitation email (extracted; errors logged, never thrown). */
+  _sendInvitationEmail({ userToInvite, inviter, workspace, role }: any) {
     this.emailService
       .sendWorkspaceInvitation({
         toEmail: userToInvite.email,
@@ -344,19 +420,6 @@ class WorkspaceService {
           error: err instanceof Error ? err.message : String(err),
         });
       });
-
-    return {
-      membership: {
-        id: membership.id,
-        userId: userToInvite.id,
-        email: userToInvite.email,
-        name: userToInvite.name,
-        role: membership.role,
-        status: membership.status,
-      },
-      inviteeName: userToInvite.name || email,
-      workspaceName: workspace.name,
-    };
   }
 
   async revokeMember(workspaceId: string, requesterId: string, memberId: string) {
@@ -390,17 +453,7 @@ class WorkspaceService {
     }
     if (member.role === 'owner') throw new AppError('Cannot modify owner permissions', 400);
 
-    const patch: Record<string, any> = {};
-    const nextRole = role && ['member', 'viewer'].includes(role) ? role : member.role;
-    if (role && ['member', 'viewer'].includes(role)) patch.role = role;
-
-    if (permissions) {
-      patch.permissions = {
-        ...member.permissions,
-        ...permissions,
-        canInvite: permissions.canInvite === true && nextRole !== 'viewer',
-      };
-    }
+    const patch = buildMemberPatch(member, { role, permissions });
 
     const updated =
       Object.keys(patch).length > 0 ? await this.memberRepo.updateById(memberId, patch) : member;

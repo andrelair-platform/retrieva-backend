@@ -37,7 +37,7 @@ const langfuseEnabled = !!(LF_PUBLIC && LF_SECRET);
 // langfuse is imported DYNAMICALLY (top-level await) so a missing/optional dependency never breaks
 // module load — tracing simply stays disabled. In production the package is present (backend image),
 // so the client initialises at boot; if it can't be resolved, we log and degrade to no-op.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- external Langfuse SDK (dynamically imported)
+ 
 let langfuse: any = null;
 if (langfuseEnabled) {
   try {
@@ -163,12 +163,33 @@ interface GetCallbacksOptions {
   feature?: string;
 }
 
+/** Resolve the model name from LangChain extraParams/llm, defaulting to 'unknown'. */
+function resolveModelName(llm: Serialized, extraParams?: any): string {
+  return (
+    extraParams?.invocation_params?.model ||
+    extraParams?.invocation_params?.model_name ||
+    (llm as any)?.kwargs?.model ||
+    'unknown'
+  );
+}
+
+/** Pull the generated text out of an LLMResult (text or chat-message content). */
+function extractGenerationText(output: LLMResult): unknown {
+  const gen0 = output?.generations?.[0]?.[0];
+  return (gen0 as any)?.text ?? (gen0 as any)?.message?.content;
+}
+
+/** Pull token usage (real or estimated) out of an LLMResult, or undefined. */
+function extractTokenUsage(output: LLMResult): any {
+  return output?.llmOutput?.tokenUsage || output?.llmOutput?.estimatedTokenUsage;
+}
+
 class LangfuseCallbackHandler extends BaseCallbackHandler {
   name = 'langfuse_callback_handler';
   private opts: GetCallbacksOptions;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Langfuse SDK objects
+   
   private trace: any = null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- runId -> Langfuse generation
+   
   private gens = new Map<string, any>();
 
   constructor(opts: GetCallbacksOptions = {}) {
@@ -189,16 +210,11 @@ class LangfuseCallbackHandler extends BaseCallbackHandler {
     return this.trace;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- extraParams shape varies by provider
+
   private startGen(llm: Serialized, input: unknown, runId: string, extraParams?: any) {
     try {
       if (!langfuse) return;
-      const model =
-        extraParams?.invocation_params?.model ||
-        extraParams?.invocation_params?.model_name ||
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (llm as any)?.kwargs?.model ||
-        'unknown';
+      const model = resolveModelName(llm, extraParams);
       const gen = this.ensureTrace().generation({
         name: this.opts.feature || 'llm',
         model,
@@ -211,10 +227,12 @@ class LangfuseCallbackHandler extends BaseCallbackHandler {
     }
   }
 
+  // eslint-disable-next-line max-params -- LangChain BaseCallbackHandler interface signature (tracked minicloud-gitops#2353)
   handleLLMStart(llm: Serialized, prompts: string[], runId: string, _p?: string, extraParams?: Record<string, unknown>) {
     this.startGen(llm, prompts, runId, extraParams);
   }
 
+  // eslint-disable-next-line max-params -- LangChain BaseCallbackHandler interface signature (tracked minicloud-gitops#2353)
   handleChatModelStart(
     llm: Serialized,
     messages: BaseMessage[][],
@@ -225,7 +243,7 @@ class LangfuseCallbackHandler extends BaseCallbackHandler {
     let input: unknown = messages;
     try {
       input = (messages?.[0] || []).map((m) => ({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         role: (m as any)?._getType?.() ?? 'message',
         content: typeof m?.content === 'string' ? m.content : JSON.stringify(m?.content),
       }));
@@ -239,11 +257,8 @@ class LangfuseCallbackHandler extends BaseCallbackHandler {
     try {
       const gen = this.gens.get(runId);
       if (!gen) return;
-      const gen0 = output?.generations?.[0]?.[0];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const text = (gen0 as any)?.text ?? (gen0 as any)?.message?.content;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tu: any = output?.llmOutput?.tokenUsage || output?.llmOutput?.estimatedTokenUsage;
+      const text = extractGenerationText(output);
+      const tu = extractTokenUsage(output);
       gen.end({
         output: text,
         ...(tu

@@ -99,6 +99,15 @@ function rate(score: number, isCIF: boolean, penalty: number): DoraRating {
   return 'GREEN';
 }
 
+// Positive base = weighted mean of the pillars present (re-normalised if only one is present).
+// Precondition: at least one of gapScore/ddqScore is non-null.
+function computeBaseScore(gapScore: number | null, ddqScore: number | null): number {
+  if (gapScore !== null && ddqScore !== null) return W_GAP * gapScore + W_DDQ * ddqScore;
+  return (gapScore ?? ddqScore)!;
+}
+
+const roundOrNull = (v: number | null): number | null => (v === null ? null : Math.round(v));
+
 /** Roll the pillars + penalty into a single 0–100 vendor DORA score + RAG rating + breakdown. PURE. */
 export function computeUnifiedScore(inputs: ScoreInputs): UnifiedScoreBreakdown {
   const cifMultiplier = inputs.isCIF ? CIF_MULTIPLIER : 1.0;
@@ -107,8 +116,8 @@ export function computeUnifiedScore(inputs: ScoreInputs): UnifiedScoreBreakdown 
   const penalty = computeRiskPenalty(inputs.openRisks, cifMultiplier);
 
   const components = {
-    gapAnalysisScore: gapScore === null ? null : Math.round(gapScore),
-    ddqVerificationScore: ddqScore === null ? null : Math.round(ddqScore),
+    gapAnalysisScore: roundOrNull(gapScore),
+    ddqVerificationScore: roundOrNull(ddqScore),
     openRiskPenalty: Math.round(penalty),
   };
   const metrics = {
@@ -123,11 +132,7 @@ export function computeUnifiedScore(inputs: ScoreInputs): UnifiedScoreBreakdown 
     return { assessed: false, unifiedScore: null, rating: null, trend30Days: 0, components, metrics };
   }
 
-  // Positive base = weighted mean of the pillars present (re-normalised if only one is present).
-  let base: number;
-  if (gapScore !== null && ddqScore !== null) base = W_GAP * gapScore + W_DDQ * ddqScore;
-  else base = (gapScore ?? ddqScore)!;
-
+  const base = computeBaseScore(gapScore, ddqScore);
   const unifiedScore = Math.max(0, Math.min(100, Math.round(base - penalty)));
   const rating = rate(unifiedScore, inputs.isCIF, penalty);
   const trend30Days = typeof inputs.previousScore === 'number' ? unifiedScore - inputs.previousScore : 0;

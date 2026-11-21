@@ -45,15 +45,8 @@ const VERDICTS = [
   'not_applicable',
 ] as const;
 
-/** Assemble the onboarding decision pack from already-produced signals. Pure + deterministic. */
-export function buildOnboardingDecision({
-  arrangement,
-  findings = [],
-  concentration = {},
-  transitions = [],
-  subcontractors = [],
-}: OnboardingDecisionInput) {
-  // ── assessment roll-up ──────────────────────────────────────────────────────
+// ── assessment roll-up ──────────────────────────────────────────────────────
+function buildAssessmentRollup(findings: FindingLike[]) {
   const byVerdict: Record<string, number> = Object.fromEntries(VERDICTS.map((v) => [v, 0]));
   for (const f of findings) {
     const v = String(f.verdict || '');
@@ -67,15 +60,21 @@ export function buildOnboardingDecision({
       severity: severityForVerdict(f.verdict),
       confidence: typeof f.confidence === 'number' ? f.confidence : null,
     }));
-  const assessment = {
+  return {
     total: findings.length,
     byVerdict,
     gaps,
     blocking: byVerdict.non_compliant, // confirmed breaches
     needsEvidence: byVerdict.insufficient_evidence, // vendor documentation still required
   };
+}
 
-  // ── concentration signal (for the entity) ───────────────────────────────────
+// ── concentration signal (for the entity) ───────────────────────────────────
+function buildConcentrationSignal(
+  arrangement: OnboardingDecisionInput['arrangement'],
+  concentration: ConcentrationLike,
+  subcontractors: string[]
+) {
   const ranked = (concentration.providerConcentration ?? []).filter((p) => (p.weightedScore ?? 0) > 0);
   const entityTopProvider = ranked.length
     ? { name: ranked[0].name ?? null, weightedScore: ranked[0].weightedScore ?? 0 }
@@ -91,28 +90,34 @@ export function buildOnboardingDecision({
     && (concentration.singlePointsOfFailure ?? []).some(
       (s) => String(s.functionId) === String(arrangement.businessFunctionId)
     );
-  const concentrationSignal = {
+  return {
     entityTopProvider,
     functionIsSpof,
     sharedSubstrate: substrateNames,
     addsToSharedSubstrate,
   };
+}
 
-  // ── exit posture ─────────────────────────────────────────────────────────────
-  const difficulty = ['low', 'medium', 'high'].includes(String(arrangement.exitDifficulty))
-    ? (arrangement.exitDifficulty as string)
-    : 'unknown';
-
-  // ── the human gate ────────────────────────────────────────────────────────────
+// ── the human gate ────────────────────────────────────────────────────────────
+function buildGate(
+  arrangement: OnboardingDecisionInput['arrangement'],
+  transitions: TransitionLike[]
+) {
   const names = new Set(transitions.map((t) => t.transition));
-  const gate = {
+  return {
     state: arrangement.lifecycleStatus ?? null,
     canApproveOnboarding: names.has('approve_onboarding'),
     canReject: names.has('reject'),
     transitions: [...names],
   };
+}
 
-  // ── advisory recommendation (HITL still decides) ───────────────────────────────
+// ── advisory recommendation (HITL still decides) ───────────────────────────────
+function buildRecommendation(
+  assessment: { total: number; blocking: number; needsEvidence: number; gaps: unknown[] },
+  concentrationSignal: { addsToSharedSubstrate: boolean; functionIsSpof: boolean }
+) {
+  const { addsToSharedSubstrate, functionIsSpof } = concentrationSignal;
   const reasons: string[] = [];
   let recommendation: 'ready' | 'review' | 'blocked';
   if (assessment.total === 0) {
@@ -121,7 +126,7 @@ export function buildOnboardingDecision({
   } else if (assessment.blocking > 0) {
     recommendation = 'blocked';
     reasons.push(`${assessment.blocking} non-compliant control(s).`);
-  } else if (assessment.needsEvidence > 0 || addsToSharedSubstrate || gaps.length > 0) {
+  } else if (assessment.needsEvidence > 0 || addsToSharedSubstrate || assessment.gaps.length > 0) {
     recommendation = 'review';
     if (assessment.needsEvidence > 0)
       reasons.push(`${assessment.needsEvidence} control(s) lack vendor evidence.`);
@@ -132,6 +137,27 @@ export function buildOnboardingDecision({
     recommendation = 'ready';
     reasons.push('No blocking findings; evidence sufficient.');
   }
+  return { recommendation, reasons };
+}
+
+/** Assemble the onboarding decision pack from already-produced signals. Pure + deterministic. */
+export function buildOnboardingDecision({
+  arrangement,
+  findings = [],
+  concentration = {},
+  transitions = [],
+  subcontractors = [],
+}: OnboardingDecisionInput) {
+  const assessment = buildAssessmentRollup(findings);
+  const concentrationSignal = buildConcentrationSignal(arrangement, concentration, subcontractors);
+
+  // ── exit posture ─────────────────────────────────────────────────────────────
+  const difficulty = ['low', 'medium', 'high'].includes(String(arrangement.exitDifficulty))
+    ? (arrangement.exitDifficulty as string)
+    : 'unknown';
+
+  const gate = buildGate(arrangement, transitions);
+  const { recommendation, reasons } = buildRecommendation(assessment, concentrationSignal);
 
   return { recommendation, reasons, assessment, concentration: concentrationSignal, exit: { difficulty }, gate };
 }
@@ -176,6 +202,30 @@ export interface Readiness {
  * attempts activation, not only as a 409 at approval time. `canActivate` is derived from the SAME
  * activationBlockers() the controller enforces, so the checklist and the hard gate can never diverge.
  */
+function findingsReadinessItem(total: number, blocking: number): ReadinessItem {
+  let status: ReadinessStatus;
+  if (total === 0) status = 'pending';
+  else if (blocking > 0) status = 'fail';
+  else status = 'pass';
+
+  let detail: string;
+  if (total === 0) detail = 'Run the assessment to evaluate findings.';
+  else if (blocking > 0)
+    detail = `${blocking} non-compliant control(s) — resolve or formally accept the risk.`;
+  else detail = 'No blocking (non-compliant) findings.';
+
+  return { key: 'findings', status, detail };
+}
+
+function evidenceReadinessItem(total: number, needsEvidence: number): ReadinessItem {
+  const status: ReadinessStatus = total === 0 ? 'pending' : needsEvidence > 0 ? 'pending' : 'pass';
+  const detail =
+    needsEvidence > 0
+      ? `${needsEvidence} control(s) still lack vendor evidence.`
+      : 'Evidence sufficient for the assessed controls.';
+  return { key: 'evidence', status, detail };
+}
+
 export function buildReadiness(
   decision: ReturnType<typeof buildOnboardingDecision>,
   opts: { intakeComplete?: boolean } = {}
@@ -193,24 +243,8 @@ export function buildReadiness(
     status: total > 0 ? 'pass' : 'fail',
     detail: total > 0 ? `${total} control(s) assessed.` : 'Pre-contract assessment has not run yet.',
   });
-  items.push({
-    key: 'findings',
-    status: total === 0 ? 'pending' : blocking > 0 ? 'fail' : 'pass',
-    detail:
-      total === 0
-        ? 'Run the assessment to evaluate findings.'
-        : blocking > 0
-          ? `${blocking} non-compliant control(s) — resolve or formally accept the risk.`
-          : 'No blocking (non-compliant) findings.',
-  });
-  items.push({
-    key: 'evidence',
-    status: total === 0 ? 'pending' : needsEvidence > 0 ? 'pending' : 'pass',
-    detail:
-      needsEvidence > 0
-        ? `${needsEvidence} control(s) still lack vendor evidence.`
-        : 'Evidence sufficient for the assessed controls.',
-  });
+  items.push(findingsReadinessItem(total, blocking));
+  items.push(evidenceReadinessItem(total, needsEvidence));
 
   const blockers = activationBlockers(decision);
   return { items, canActivate: blockers.length === 0, blockers };

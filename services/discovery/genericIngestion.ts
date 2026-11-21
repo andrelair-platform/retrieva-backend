@@ -158,16 +158,22 @@ export async function inferColumnMapping(rows: Row[], deps: InferDeps = {}): Pro
 }
 
 /** Apply a mapping to every row → DiscoveredApp[] (pure; no LLM). Rows with no provider value are dropped. */
+/** Build the per-app `meta` map (optional mapped columns + the provenance sourceRow). */
+function buildAppMeta(row: Row, mapping: ColumnMapping): Record<string, string> {
+  const meta: Record<string, string> = {};
+  if (mapping.service && row[mapping.service]) meta.service = str(row[mapping.service]);
+  if (mapping.spend && row[mapping.spend]) meta.spend = str(row[mapping.spend]);
+  if (mapping.criticality && row[mapping.criticality]) meta.criticality = str(row[mapping.criticality]);
+  meta.sourceRow = JSON.stringify(row).slice(0, 500); // provenance — the original row
+  return meta;
+}
+
 export function rowsToDiscoveredApps(rows: Row[], mapping: ColumnMapping): DiscoveredApp[] {
   const apps: DiscoveredApp[] = [];
   rows.forEach((row, i) => {
     const label = str(row[mapping.provider]);
     if (!label) return; // no vendor name → nothing to discover
-    const meta: Record<string, string> = {};
-    if (mapping.service && row[mapping.service]) meta.service = str(row[mapping.service]);
-    if (mapping.spend && row[mapping.spend]) meta.spend = str(row[mapping.spend]);
-    if (mapping.criticality && row[mapping.criticality]) meta.criticality = str(row[mapping.criticality]);
-    meta.sourceRow = JSON.stringify(row).slice(0, 500); // provenance — the original row
+    const meta = buildAppMeta(row, mapping);
     const id = (mapping.id && str(row[mapping.id])) || `generic-${slug(label)}-${i}`;
     apps.push({ id, label, name: slug(label) || id, source: 'generic', meta });
   });

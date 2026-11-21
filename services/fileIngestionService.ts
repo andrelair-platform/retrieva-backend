@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- IO/LLM adapter over untyped PDF/DOCX/zip/LLM payloads. */
+ 
 /**
  * File Ingestion Service
  *
@@ -118,6 +118,45 @@ async function parseDocx(buffer: any) {
  * @param {string} fileType  lowercased extension ('pdf'|'xlsx'|'xls'|'docx'|'png'|…)
  * @param {string} [fileName] original filename (drives server-side type routing)
  */
+/**
+ * Convert a PDF via the markitdown/Docling conversion services, with a graceful
+ * fall-through to the local pdf-parse when those services are disabled/unreachable
+ * or yield no usable text.
+ */
+async function parsePdfFile(buffer: any, fileName: any) {
+  if (isDoclingEnabled()) {
+    const converted = await convertPdfViaServices(buffer, fileName);
+    if (converted !== null) return converted;
+  }
+  return parsePdf(buffer); // local fallback (services disabled/unreachable)
+}
+
+/**
+ * Try the markitdown-proxy (fast text path) then Docling OCR for a PDF. Returns
+ * the extracted text when usable, or `null` to signal "fall back to local parse".
+ */
+async function convertPdfViaServices(buffer: any, fileName: any): Promise<string | null> {
+  try {
+    // Fast path: markitdown-proxy (PyMuPDF) — text-based PDFs + table recovery.
+    const md = await convertToMarkdown(buffer, fileName);
+    if (md && md.trim().length >= MIN_USABLE_TEXT) return md;
+    // Scanned / image-only PDF → PyMuPDF found no text → OCR via Docling.
+    logger.info('PDF has little extractable text; falling back to Docling OCR', {
+      service: 'file-ingestion',
+      fileName,
+    });
+    const ocr = await convertViaDocling(buffer, fileName);
+    if (ocr && ocr.trim().length >= MIN_USABLE_TEXT) return ocr;
+  } catch (err) {
+    logger.warn('Docling/markitdown conversion failed; falling back to local pdf-parse', {
+      service: 'file-ingestion',
+      fileName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return null;
+}
+
 export async function parseFile(buffer: any, fileType: any, fileName: any) {
   const ext = (fileType || '').toLowerCase();
 
@@ -127,27 +166,7 @@ export async function parseFile(buffer: any, fileType: any, fileName: any) {
   }
 
   if (ext === 'pdf') {
-    if (isDoclingEnabled()) {
-      try {
-        // Fast path: markitdown-proxy (PyMuPDF) — text-based PDFs + table recovery.
-        const md = await convertToMarkdown(buffer, fileName);
-        if (md && md.trim().length >= MIN_USABLE_TEXT) return md;
-        // Scanned / image-only PDF → PyMuPDF found no text → OCR via Docling.
-        logger.info('PDF has little extractable text; falling back to Docling OCR', {
-          service: 'file-ingestion',
-          fileName,
-        });
-        const ocr = await convertViaDocling(buffer, fileName);
-        if (ocr && ocr.trim().length >= MIN_USABLE_TEXT) return ocr;
-      } catch (err) {
-        logger.warn('Docling/markitdown conversion failed; falling back to local pdf-parse', {
-          service: 'file-ingestion',
-          fileName,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-    return parsePdf(buffer); // local fallback (services disabled/unreachable)
+    return parsePdfFile(buffer, fileName);
   }
 
   switch (ext) {
@@ -164,6 +183,26 @@ export async function parseFile(buffer: any, fileType: any, fileName: any) {
 // ---------------------------------------------------------------------------
 // Chunking
 // ---------------------------------------------------------------------------
+
+/**
+ * Split a single oversized paragraph into sentence-grouped chunks. Pushes any
+ * completed chunks onto `chunks` and returns the trailing remainder (may be empty)
+ * for the caller to carry forward as `current`.
+ */
+function splitOversizedParagraph(para: any, chunkSize: number, chunks: any[]): string {
+  const sentences = para.match(/[^.!?]+[.!?]+/g) || [para];
+  let sentBuf = '';
+  for (const s of sentences) {
+    const candidate2 = sentBuf ? `${sentBuf} ${s}` : s;
+    if (candidate2.length <= chunkSize) {
+      sentBuf = candidate2;
+    } else {
+      if (sentBuf) chunks.push(sentBuf.trim());
+      sentBuf = s;
+    }
+  }
+  return sentBuf;
+}
 
 /**
  * Split text into overlapping chunks at paragraph/sentence boundaries.
@@ -186,27 +225,14 @@ export function chunkText(text: any, chunkSize = CHUNK_SIZE, overlap = CHUNK_OVE
 
     if (candidate.length <= chunkSize) {
       current = candidate;
+    } else if (current) {
+      chunks.push(current.trim());
+      // Overlap: carry last `overlap` chars of current into next chunk
+      const overlapText = current.slice(-overlap);
+      current = overlapText ? `${overlapText}\n\n${para}` : para;
     } else {
-      if (current) {
-        chunks.push(current.trim());
-        // Overlap: carry last `overlap` chars of current into next chunk
-        const overlapText = current.slice(-overlap);
-        current = overlapText ? `${overlapText}\n\n${para}` : para;
-      } else {
-        // Single paragraph larger than chunk size — split by sentence
-        const sentences = para.match(/[^.!?]+[.!?]+/g) || [para];
-        let sentBuf = '';
-        for (const s of sentences) {
-          const candidate2 = sentBuf ? `${sentBuf} ${s}` : s;
-          if (candidate2.length <= chunkSize) {
-            sentBuf = candidate2;
-          } else {
-            if (sentBuf) chunks.push(sentBuf.trim());
-            sentBuf = s;
-          }
-        }
-        if (sentBuf) current = sentBuf;
-      }
+      // Single paragraph larger than chunk size — split by sentence
+      current = splitOversizedParagraph(para, chunkSize, chunks);
     }
   }
 
@@ -255,6 +281,134 @@ export async function deleteAssessmentCollection(assessmentId: any) {
 // Main indexing function
 // ---------------------------------------------------------------------------
 
+const SURROGATE_RE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+function sanitizeText(t: any) {
+  return typeof t === 'string' ? t.replace(SURROGATE_RE, '�') : t;
+}
+
+/**
+ * Parse a buffer to raw text for ingestion. When figure captioning is enabled
+ * (RTV-14 Phase 2), PDFs/images go through Docling's figure-aware conversion and
+ * gated VLM captions are appended; otherwise the Phase 1 text/OCR path is used.
+ */
+async function extractRawTextForIngestion(buffer: any, fileType: any, fileName: any, trace: any) {
+  const ext = (fileType || '').toLowerCase();
+  const figureAware = isVlmCaptionEnabled() && (ext === 'pdf' || IMAGE_EXTS.has(ext));
+  if (!figureAware) {
+    return parseFile(buffer, fileType, fileName);
+  }
+  try {
+    const { markdown, figures } = await convertWithFigures(buffer, fileName);
+    let rawText = markdown || '';
+    // Pass the trace so each captioned figure is logged as a multimodal
+    // generation (image input) in the retrieva Langfuse project.
+    const captions = await captionFigures(figures, { fileName, trace });
+    if (captions.length) {
+      rawText += `\n\n## Figures\n\n${captions.join('\n\n')}`;
+      logger.info('Appended VLM figure captions', {
+        service: 'file-ingestion',
+        fileName,
+        captions: captions.length,
+      });
+    }
+    return rawText;
+  } catch (err) {
+    logger.warn('Figure-aware ingestion failed; falling back to text parse', {
+      service: 'file-ingestion',
+      fileName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return parseFile(buffer, fileType, fileName);
+  }
+}
+
+/**
+ * Upsert chunk vectors into the per-assessment Qdrant collection in batches,
+ * reporting indexing progress.
+ */
+async function upsertChunksToAssessmentCollection(
+  client: any,
+  collectionName: any,
+  { chunks, vectors, assessmentId, fileName, fileType, vendorName, onProgress }: any
+) {
+  const BATCH_SIZE = 100;
+  let upserted = 0;
+
+  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+    const batchChunks = chunks.slice(i, i + BATCH_SIZE);
+    const batchVectors = vectors.slice(i, i + BATCH_SIZE);
+
+    const points = batchChunks.map((chunk: any, j: number) => {
+      const h = contentHash(`${assessmentId}:${fileName}:${String(i + j)}`);
+      const pointId = `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+      return {
+        id: pointId,
+        vector: batchVectors[j],
+        payload: {
+          pageContent: sanitizeText(chunk),
+          metadata: {
+            assessmentId,
+            vendorName,
+            fileName,
+            fileType,
+            chunkIndex: i + j,
+            totalChunks: chunks.length,
+          },
+        },
+      };
+    });
+
+    await client.upsert(collectionName, { wait: true, points });
+    upserted += batchChunks.length;
+
+    if (onProgress) onProgress({ indexed: upserted, total: chunks.length, phase: 'indexing' });
+  }
+}
+
+/**
+ * Dual-write (issue #394): also index the same chunks into the shared workspace
+ * collection so the chat (tenant-filtered on metadata.workspaceId) can retrieve
+ * this vendor's documents. Reuses the vectors — no re-embedding. Best-effort: a
+ * failure here must not fail the assessment.
+ */
+async function dualWriteToWorkspaceCollection({
+  chunks,
+  vectors,
+  workspaceId,
+  assessmentId,
+  vendorName,
+  fileName,
+  fileType,
+}: any) {
+  try {
+    // Lazy import: keep the heavy vectorStore (and its module-load side effects)
+    // out of the app's eager import graph; only needed when actually ingesting.
+    const { upsertChunksToWorkspaceCollection } = await import('../config/vectorStore.js');
+    await upsertChunksToWorkspaceCollection({
+      chunks,
+      vectors,
+      metadata: {
+        workspaceId,
+        assessmentId,
+        vendorName,
+        fileName,
+        fileType,
+        source: 'assessment',
+      },
+    });
+  } catch (err) {
+    logger.warn('Dual-write to workspace collection failed (chat may miss this doc)', {
+      service: 'file-ingestion',
+      assessmentId,
+      workspaceId,
+      fileName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 /**
  * Parse a file buffer, chunk it, embed, and store in Qdrant.
  *
@@ -294,38 +448,8 @@ export async function ingestFile({
     metadata: { assessmentId, workspaceId, vendorName },
   });
 
-  // 1. Parse. Phase 2 (RTV-14): when figure captioning is enabled, PDFs/images go
-  //    through Docling's figure-aware conversion (markdown + figure crops) and gated
-  //    VLM captions are appended to the text; otherwise the Phase 1 text/OCR path.
-  let rawText;
-  const ext = (fileType || '').toLowerCase();
-  const figureAware = isVlmCaptionEnabled() && (ext === 'pdf' || IMAGE_EXTS.has(ext));
-  if (figureAware) {
-    try {
-      const { markdown, figures } = await convertWithFigures(buffer, fileName);
-      rawText = markdown || '';
-      // Pass the trace so each captioned figure is logged as a multimodal
-      // generation (image input) in the retrieva Langfuse project.
-      const captions = await captionFigures(figures, { fileName, trace });
-      if (captions.length) {
-        rawText += `\n\n## Figures\n\n${captions.join('\n\n')}`;
-        logger.info('Appended VLM figure captions', {
-          service: 'file-ingestion',
-          fileName,
-          captions: captions.length,
-        });
-      }
-    } catch (err) {
-      logger.warn('Figure-aware ingestion failed; falling back to text parse', {
-        service: 'file-ingestion',
-        fileName,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      rawText = await parseFile(buffer, fileType, fileName);
-    }
-  } else {
-    rawText = await parseFile(buffer, fileType, fileName);
-  }
+  // 1. Parse (figure-aware when enabled; Phase 1 text/OCR otherwise).
+  const rawText = await extractRawTextForIngestion(buffer, fileType, fileName, trace);
   if (!rawText || rawText.trim().length < MIN_USABLE_TEXT) {
     throw new Error(
       `Could not extract text from ${fileName}. The file may be empty, or OCR found no readable content.`
@@ -356,79 +480,27 @@ export async function ingestFile({
   const collectionName = assessmentCollectionName(assessmentId);
   const client = getQdrantClient();
   await ensureAssessmentCollection(client, collectionName);
+  await upsertChunksToAssessmentCollection(client, collectionName, {
+    chunks,
+    vectors,
+    assessmentId,
+    fileName,
+    fileType,
+    vendorName,
+    onProgress,
+  });
 
-  const sanitize = (t: any) =>
-    typeof t === 'string'
-      ? t.replace(
-          /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
-          '\uFFFD'
-        )
-      : t;
-
-  const BATCH_SIZE = 100;
-  let upserted = 0;
-
-  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-    const batchChunks = chunks.slice(i, i + BATCH_SIZE);
-    const batchVectors = vectors.slice(i, i + BATCH_SIZE);
-
-    const points = batchChunks.map((chunk, j) => {
-      const h = contentHash(`${assessmentId}:${fileName}:${String(i + j)}`);
-      const pointId = `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
-      return {
-        id: pointId,
-        vector: batchVectors[j],
-        payload: {
-          pageContent: sanitize(chunk),
-          metadata: {
-            assessmentId,
-            vendorName,
-            fileName,
-            fileType,
-            chunkIndex: i + j,
-            totalChunks: chunks.length,
-          },
-        },
-      };
-    });
-
-    await client.upsert(collectionName, { wait: true, points });
-    upserted += batchChunks.length;
-
-    if (onProgress) onProgress({ indexed: upserted, total: chunks.length, phase: 'indexing' });
-  }
-
-  // 5. Dual-write (issue #394): also index the same chunks into the shared
-  // workspace collection so the chat (tenant-filtered on metadata.workspaceId)
-  // can retrieve this vendor's documents. Reuses the vectors — no re-embedding.
-  // Best-effort: a failure here must not fail the assessment (gap analysis uses
-  // the per-assessment collection regardless).
+  // 5. Dual-write into the shared workspace collection (best-effort).
   if (workspaceId) {
-    try {
-      // Lazy import: keep the heavy vectorStore (and its module-load side effects)
-      // out of the app's eager import graph; only needed when actually ingesting.
-      const { upsertChunksToWorkspaceCollection } = await import('../config/vectorStore.js');
-      await upsertChunksToWorkspaceCollection({
-        chunks,
-        vectors,
-        metadata: {
-          workspaceId,
-          assessmentId,
-          vendorName,
-          fileName,
-          fileType,
-          source: 'assessment',
-        },
-      });
-    } catch (err) {
-      logger.warn('Dual-write to workspace collection failed (chat may miss this doc)', {
-        service: 'file-ingestion',
-        assessmentId,
-        workspaceId,
-        fileName,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    await dualWriteToWorkspaceCollection({
+      chunks,
+      vectors,
+      workspaceId,
+      assessmentId,
+      vendorName,
+      fileName,
+      fileType,
+    });
   }
 
   logger.info('File ingestion complete', {

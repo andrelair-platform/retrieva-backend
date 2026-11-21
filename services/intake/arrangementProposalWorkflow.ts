@@ -136,45 +136,71 @@ export async function approveArrangementProposal(args: {
   }
   const justification = requireJustification(args.justification);
 
-  // An approved row without an arrangement means materialisation failed after the durable decision.
-  // Repeating the same approval safely resumes materialisation instead of creating another decision.
-  if (current.status === 'approved') {
-    if (args.decision !== 'approve' || current.approvedBy !== args.userId) {
-      throw new ProposalWorkflowError('This proposal already has a final approval decision');
-    }
-    if (current.rowVersion !== args.expectedVersion) {
-      throw new ProposalWorkflowError('Proposal changed since it was loaded; refresh and retry');
-    }
-  }
+  assertReapprovalIsSafe(current, args);
+
   if (current.status !== 'approved') {
-    const status = args.decision === 'approve' ? 'approved' : args.decision === 'reject' ? 'rejected' : 'changes_requested';
-    const transitioned = await arrangementProposalRepository.transition({
-      organizationId: args.organizationId,
-      id: args.proposalId,
-      expectedStatus: 'checked',
-      expectedVersion: args.expectedVersion,
-      values: {
-        status,
-        approvedBy: args.userId,
-        approvedAt: new Date(),
-        approvalJustification: justification,
-      },
-    });
-    if (!transitioned) throw new ProposalWorkflowError('Proposal changed since it was loaded; refresh and retry');
-    current = transitioned;
-    await recordAudit({
-      organizationId: args.organizationId,
-      actor: args.userId,
-      action: `arrangement.proposal.${args.decision === 'approve' ? 'approved' : args.decision}`,
-      targetType: 'arrangement_proposal',
-      targetId: current.id,
-      metadata: { rowVersion: current.rowVersion, justification },
-    });
+    current = await applyApprovalDecision(current, args, justification);
   }
 
   if (current.status !== 'approved' || args.decision !== 'approve') return { proposal: current, arrangement: null };
   if (current.arrangementId) return { proposal: current, arrangement: null };
 
+  return materializeApprovedProposal(current, args);
+}
+
+/**
+ * An approved row without an arrangement means materialisation failed after the durable decision;
+ * repeating the SAME approval safely resumes it. Reject any other call against an already-approved row.
+ */
+function assertReapprovalIsSafe(
+  current: any,
+  args: { userId: string; expectedVersion: number; decision: Decision }
+) {
+  if (current.status !== 'approved') return;
+  if (args.decision !== 'approve' || current.approvedBy !== args.userId) {
+    throw new ProposalWorkflowError('This proposal already has a final approval decision');
+  }
+  if (current.rowVersion !== args.expectedVersion) {
+    throw new ProposalWorkflowError('Proposal changed since it was loaded; refresh and retry');
+  }
+}
+
+/** Transition the checked proposal to approved/rejected/changes_requested + record the audit event. */
+async function applyApprovalDecision(
+  current: any,
+  args: { organizationId: string; proposalId: string; userId: string; expectedVersion: number; decision: Decision },
+  justification: string
+) {
+  const status = args.decision === 'approve' ? 'approved' : args.decision === 'reject' ? 'rejected' : 'changes_requested';
+  const transitioned = await arrangementProposalRepository.transition({
+    organizationId: args.organizationId,
+    id: args.proposalId,
+    expectedStatus: 'checked',
+    expectedVersion: args.expectedVersion,
+    values: {
+      status,
+      approvedBy: args.userId,
+      approvedAt: new Date(),
+      approvalJustification: justification,
+    },
+  });
+  if (!transitioned) throw new ProposalWorkflowError('Proposal changed since it was loaded; refresh and retry');
+  await recordAudit({
+    organizationId: args.organizationId,
+    actor: args.userId,
+    action: `arrangement.proposal.${args.decision === 'approve' ? 'approved' : args.decision}`,
+    targetType: 'arrangement_proposal',
+    targetId: transitioned.id,
+    metadata: { rowVersion: transitioned.rowVersion, justification },
+  });
+  return transitioned;
+}
+
+/** Materialise an approved proposal into its arrangement (idempotent via attachArrangement) + audit. */
+async function materializeApprovedProposal(
+  current: any,
+  args: { organizationId: string; userId: string }
+) {
   const arrangement = await confirmProposal({
     organizationId: args.organizationId,
     userId: current.preparedBy,

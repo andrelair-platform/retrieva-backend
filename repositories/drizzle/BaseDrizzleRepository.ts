@@ -12,7 +12,7 @@ import { getDb } from '../../config/db.js';
 // The Drizzle db handle + query-builder generics are `any` until config/db.js is typed (RTV-24);
 // getDb() is imported from JS today, so a precise type here would be fiction. The subclasses' OWN
 // logic is strict-checked; this boundary loosens in RTV-24.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- db is untyped until RTV-24 (config/db.js)
+ 
 export type Db = any;
 export type Row = Record<string, unknown>;
 export type Where = SQL | undefined;

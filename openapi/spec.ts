@@ -55,7 +55,7 @@ function pathParams(expressPath: string): string[] {
 /** A router's own (method, subpath) list, read from its Express stack. */
 export function routesOf(router: unknown): MethodPath[] {
   const out: MethodPath[] = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Express router internals are untyped.
+   
   const stack = (router as any)?.stack ?? [];
   for (const layer of stack) {
     if (!layer.route) continue;
@@ -92,6 +92,56 @@ function apiVersion(): string {
   }
 }
 
+/** The shared 200 success response (envelope schema) reused by every registered route. */
+const OK_RESPONSE = {
+  description: 'Success',
+  content: { 'application/json': { schema: ApiResponseEnvelope } },
+};
+
+/**
+ * Build the per-route `request` object: path params (always, when present) +
+ * enriched body/query (where known).
+ */
+function buildRequestObject(fullExpress: string, enrichment: any): Record<string, unknown> {
+  const request: Record<string, unknown> = {};
+  const params = pathParams(fullExpress);
+  if (params.length) {
+    request.params = z.object(
+      Object.fromEntries(params.map((p) => [p, z.string().openapi({ example: '…' })]))
+    );
+  }
+  if (enrichment?.query) request.query = enrichment.query;
+  if (enrichment?.body) {
+    request.body = { content: { 'application/json': { schema: enrichment.body } } };
+  }
+  return request;
+}
+
+/** Register a single mounted route on the OpenAPI registry. */
+function registerRoute(
+  registry: OpenAPIRegistry,
+  mount: (typeof API_MOUNTS)[number],
+  r: { method: string; path: string },
+  oapiPath: string
+) {
+  const fullExpress = joinPath(mount.prefix, r.path);
+  const enrichment = ENRICHMENTS[`${r.method} ${oapiPath}`];
+  const request = buildRequestObject(fullExpress, enrichment);
+
+  registry.registerPath({
+    method: r.method as 'get' | 'post' | 'put' | 'patch' | 'delete',
+    path: oapiPath,
+    tags: [mount.tag],
+    summary: enrichment?.summary ?? `${r.method.toUpperCase()} ${oapiPath}`,
+    security: mount.public ? [] : [{ cookieAuth: [] }],
+    ...(Object.keys(request).length ? { request } : {}),
+    responses: {
+      200: OK_RESPONSE,
+      ...(mount.public ? {} : { 401: { description: 'Unauthenticated' } }),
+    },
+  });
+}
+
 export function buildOpenApiDocument() {
   const registry = new OpenAPIRegistry();
   registry.registerComponent('securitySchemes', 'cookieAuth', {
@@ -103,47 +153,15 @@ export function buildOpenApiDocument() {
   });
   registry.register('ApiResponse', ApiResponseEnvelope);
 
-  const okResponse = {
-    description: 'Success',
-    content: { 'application/json': { schema: ApiResponseEnvelope } },
-  };
-
   const seen = new Set<string>();
   for (const mount of API_MOUNTS) {
     for (const r of routesOf(mount.router)) {
-      const fullExpress = joinPath(mount.prefix, r.path);
-      const oapiPath = toOpenApiPath(fullExpress);
+      const oapiPath = toOpenApiPath(joinPath(mount.prefix, r.path));
       const key = `${r.method} ${oapiPath}`;
       if (seen.has(key)) continue; // same method+path from two mounts → one entry
       seen.add(key);
 
-      const enrichment = ENRICHMENTS[key];
-      const params = pathParams(fullExpress);
-
-      // request = path params (always, when present) + enriched body/query (where known).
-      const request: Record<string, unknown> = {};
-      if (params.length) {
-        request.params = z.object(
-          Object.fromEntries(params.map((p) => [p, z.string().openapi({ example: '…' })]))
-        );
-      }
-      if (enrichment?.query) request.query = enrichment.query;
-      if (enrichment?.body) {
-        request.body = { content: { 'application/json': { schema: enrichment.body } } };
-      }
-
-      registry.registerPath({
-        method: r.method as 'get' | 'post' | 'put' | 'patch' | 'delete',
-        path: oapiPath,
-        tags: [mount.tag],
-        summary: enrichment?.summary ?? `${r.method.toUpperCase()} ${oapiPath}`,
-        security: mount.public ? [] : [{ cookieAuth: [] }],
-        ...(Object.keys(request).length ? { request } : {}),
-        responses: {
-          200: okResponse,
-          ...(mount.public ? {} : { 401: { description: 'Unauthenticated' } }),
-        },
-      });
+      registerRoute(registry, mount, r, oapiPath);
     }
   }
 

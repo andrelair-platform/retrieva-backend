@@ -75,13 +75,13 @@ describe('RTV-59 invite → role provisioning (real pg)', () => {
 
   it('acceptInvite provisions base + elevated role_assignments (no manual DB write)', async () => {
     // Create the invite directly to capture the raw token (inviteMember only returns the member).
-    const { member, rawToken } = await organizationMemberRepository.createInvite(
-      orgA.id,
-      'legal-eagle@x.io',
-      'analyst',
-      inviter.id,
-      'legal'
-    );
+    const { member, rawToken } = await organizationMemberRepository.createInvite({
+      organizationId: orgA.id,
+      email: 'legal-eagle@x.io',
+      role: 'analyst',
+      invitedBy: inviter.id,
+      invitedDomainRole: 'legal',
+    });
     expect(member.invitedDomainRole).toBe('legal');
 
     const invitee = await mkUser('legal-eagle@x.io');
@@ -104,13 +104,13 @@ describe('RTV-59 invite → role provisioning (real pg)', () => {
   });
 
   it('acceptInvite with no elevated role still grants the base mapped role', async () => {
-    const { rawToken } = await organizationMemberRepository.createInvite(
-      orgA.id,
-      'plain@x.io',
-      'viewer',
-      inviter.id,
-      null
-    );
+    const { rawToken } = await organizationMemberRepository.createInvite({
+      organizationId: orgA.id,
+      email: 'plain@x.io',
+      role: 'viewer',
+      invitedBy: inviter.id,
+      invitedDomainRole: null,
+    });
     const invitee = await mkUser('plain@x.io');
     await svc.acceptInvite(invitee.id, rawToken);
 

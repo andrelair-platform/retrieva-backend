@@ -10,8 +10,7 @@
  * are explicit cross-workspace/org (unscoped) reads.
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any -- monitoring runs over unscoped, untyped repo
-   rows (workspaces/orgs/certifications/assessments) across the whole platform. */
+ 
 import {
   workspaceRepository,
   assessmentRepository,
@@ -47,6 +46,43 @@ export async function runMonitoringAlerts() {
   logger.info('Monitoring alert checks complete', { service: 'alertMonitor' });
 }
 
+// Map a days-until-expiry value to its alert threshold (90 / 30 / 7), or null.
+function certExpiryThreshold(daysUntilExpiry: number): number | null {
+  if (daysUntilExpiry > 0 && daysUntilExpiry <= 7) return 7;
+  if (daysUntilExpiry > 7 && daysUntilExpiry <= 30) return 30;
+  if (daysUntilExpiry > 30 && daysUntilExpiry <= 90) return 90;
+  return null;
+}
+
+// Process a single certification for one workspace (dedup + alert + log).
+async function processCertExpiry(workspace: any, cert: any, now: Date) {
+  if (!cert.validUntil) return;
+
+  const daysUntilExpiry =
+    (new Date(cert.validUntil).getTime() - now.getTime()) / (24 * 60 * 60 * 1000);
+
+  const threshold = certExpiryThreshold(daysUntilExpiry);
+  if (!threshold) return;
+
+  const alertKey = `cert-expiry-${threshold}-${cert.type}`;
+  if (isWithinDedupWindow(workspace, alertKey)) return;
+
+  const details = {
+    certType: cert.type,
+    expiryDate: formatDate(cert.validUntil),
+  };
+
+  await sendAlertToOwners(workspace, `cert-expiry-${threshold}`, details);
+  await workspaceRepository.setAlertSentAt(workspace.id, alertKey);
+
+  logger.info('Cert expiry alert sent', {
+    service: 'alertMonitor',
+    workspaceId: workspace.id,
+    certType: cert.type,
+    threshold,
+  });
+}
+
 // Check 1 — Certification expiry (90 / 30 / 7 day windows)
 async function checkCertificationExpiry() {
   const workspaces = await workspaceRepository.findWithCertifications();
@@ -54,35 +90,7 @@ async function checkCertificationExpiry() {
 
   for (const workspace of workspaces) {
     for (const cert of workspace.certifications) {
-      if (!cert.validUntil) continue;
-
-      const daysUntilExpiry =
-        (new Date(cert.validUntil).getTime() - now.getTime()) / (24 * 60 * 60 * 1000);
-
-      let threshold = null;
-      if (daysUntilExpiry > 0 && daysUntilExpiry <= 7) threshold = 7;
-      else if (daysUntilExpiry > 7 && daysUntilExpiry <= 30) threshold = 30;
-      else if (daysUntilExpiry > 30 && daysUntilExpiry <= 90) threshold = 90;
-
-      if (!threshold) continue;
-
-      const alertKey = `cert-expiry-${threshold}-${cert.type}`;
-      if (isWithinDedupWindow(workspace, alertKey)) continue;
-
-      const details = {
-        certType: cert.type,
-        expiryDate: formatDate(cert.validUntil),
-      };
-
-      await sendAlertToOwners(workspace, `cert-expiry-${threshold}`, details);
-      await workspaceRepository.setAlertSentAt(workspace.id, alertKey);
-
-      logger.info('Cert expiry alert sent', {
-        service: 'alertMonitor',
-        workspaceId: workspace.id,
-        certType: cert.type,
-        threshold,
-      });
+      await processCertExpiry(workspace, cert, now);
     }
   }
 }
@@ -203,6 +211,45 @@ async function checkAssessmentOverdue() {
   await Promise.allSettled(perWorkspace);
 }
 
+// (a) providers over the concentration threshold → alert that provider's owners
+async function alertProviderConcentration(analysis: any) {
+  for (const p of analysis.providerConcentration || []) {
+    if (!p.isAssessedProvider || p.weightedScore < CONCENTRATION_FN_THRESHOLD) continue;
+    const workspaceId = p.key.replace(/^w:/, '');
+    const workspace = await workspaceRepository.findById(workspaceId);
+    if (!workspace) continue;
+    const alertKey = 'concentration-risk';
+    if (isWithinDedupWindow(workspace, alertKey)) continue;
+    await sendAlertToOwners(workspace, alertKey, { supportedFunctions: p.supportedFunctions });
+    await workspaceRepository.setAlertSentAt(workspace.id, alertKey);
+    logger.info('Concentration risk alert sent', {
+      service: 'alertMonitor',
+      workspaceId,
+      supportedFunctions: p.supportedFunctions,
+    });
+  }
+}
+
+// (b) single points of failure on a CRITICAL function → alert the sole provider's owners
+async function alertSinglePointsOfFailure(org: any, analysis: any) {
+  for (const spof of analysis.singlePointsOfFailure || []) {
+    if (spof.criticality !== 'critical') continue;
+    const workspace = await workspaceRepository.findByOrgAndName(org.id, spof.soleProvider);
+    if (!workspace) continue;
+    const alertKey = `spof:${spof.functionId}`;
+    if (isWithinDedupWindow(workspace, alertKey)) continue;
+    await sendAlertToOwners(workspace, 'single-point-of-failure', {
+      functionName: spof.functionName,
+    });
+    await workspaceRepository.setAlertSentAt(workspace.id, alertKey);
+    logger.info('SPOF alert sent', {
+      service: 'alertMonitor',
+      workspaceId: workspace.id,
+      functionName: spof.functionName,
+    });
+  }
+}
+
 // Check 5 — Concentration risk (RTV-15 P3, DORA Art 28(4)/29)
 async function checkConcentrationRisk() {
   const { analyzeOrganization } = await import('./concentrationService.js');
@@ -216,40 +263,8 @@ async function checkConcentrationRisk() {
       return; // best-effort per org
     }
 
-    // (a) providers over the concentration threshold → alert that provider's owners
-    for (const p of analysis.providerConcentration || []) {
-      if (!p.isAssessedProvider || p.weightedScore < CONCENTRATION_FN_THRESHOLD) continue;
-      const workspaceId = p.key.replace(/^w:/, '');
-      const workspace = await workspaceRepository.findById(workspaceId);
-      if (!workspace) continue;
-      const alertKey = 'concentration-risk';
-      if (isWithinDedupWindow(workspace, alertKey)) continue;
-      await sendAlertToOwners(workspace, alertKey, { supportedFunctions: p.supportedFunctions });
-      await workspaceRepository.setAlertSentAt(workspace.id, alertKey);
-      logger.info('Concentration risk alert sent', {
-        service: 'alertMonitor',
-        workspaceId,
-        supportedFunctions: p.supportedFunctions,
-      });
-    }
-
-    // (b) single points of failure on a CRITICAL function → alert the sole provider's owners
-    for (const spof of analysis.singlePointsOfFailure || []) {
-      if (spof.criticality !== 'critical') continue;
-      const workspace = await workspaceRepository.findByOrgAndName(org.id, spof.soleProvider);
-      if (!workspace) continue;
-      const alertKey = `spof:${spof.functionId}`;
-      if (isWithinDedupWindow(workspace, alertKey)) continue;
-      await sendAlertToOwners(workspace, 'single-point-of-failure', {
-        functionName: spof.functionName,
-      });
-      await workspaceRepository.setAlertSentAt(workspace.id, alertKey);
-      logger.info('SPOF alert sent', {
-        service: 'alertMonitor',
-        workspaceId: workspace.id,
-        functionName: spof.functionName,
-      });
-    }
+    await alertProviderConcentration(analysis);
+    await alertSinglePointsOfFailure(org, analysis);
   });
 
   await Promise.allSettled(perOrg);

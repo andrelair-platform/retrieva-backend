@@ -77,13 +77,13 @@ export interface SupplierNoticeArgs {
 }
 
 export interface SupplierNoticeDeps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable repo/audit/enqueue/logger for tests
+   
   repo?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   audit?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   enqueue?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   logger?: any;
 }
 
@@ -109,14 +109,50 @@ async function defaultEnqueue(a: { organizationId: string; id: string }) {
  * (the audit trail of what the supplier reported). A reviewable arrangement (active/under_review) is
  * then reopened + a fresh assessment enqueued; a non-reviewable one is left in place (still recorded).
  */
+/** Resolve injectable collaborators to their defaults. */
+function resolveNoticeDeps(deps: SupplierNoticeDeps) {
+  return {
+    repo: deps.repo || arrangementRepository,
+    audit: deps.audit || recordAudit,
+    enqueue: deps.enqueue || defaultEnqueue,
+    logger: deps.logger || defaultLogger,
+  };
+}
+
+/**
+ * If the arrangement is `active`, transition it to `under_review` and audit the
+ * lifecycle change. Returns true when the arrangement was reopened.
+ */
+async function reopenIfActive(
+  args: SupplierNoticeArgs,
+  a: { organizationId: string; id: string },
+  repo: ReturnType<typeof resolveNoticeDeps>['repo'],
+  audit: ReturnType<typeof resolveNoticeDeps>['audit']
+): Promise<boolean> {
+  if (args.arrangement.lifecycleStatus !== 'active') return false;
+
+  const to = nextState('active', 'start_review'); // 'under_review'
+  if (!to) return false;
+
+  const updated = await repo.setLifecycle(a.organizationId, a.id, to);
+  if (!updated) return false;
+
+  await audit({
+    organizationId: a.organizationId,
+    actor: args.actorId ?? null,
+    action: 'arrangement.lifecycle',
+    targetType: 'arrangement',
+    targetId: a.id,
+    metadata: { from: 'active', to, transition: 'start_review', reason: 'supplier-notice' },
+  });
+  return true;
+}
+
 export async function recordSupplierNotice(
   args: SupplierNoticeArgs,
   deps: SupplierNoticeDeps = {}
 ): Promise<SupplierNoticeResult> {
-  const repo = deps.repo || arrangementRepository;
-  const audit = deps.audit || recordAudit;
-  const enqueue = deps.enqueue || defaultEnqueue;
-  const logger = deps.logger || defaultLogger;
+  const { repo, audit, enqueue, logger } = resolveNoticeDeps(deps);
 
   const cif = args.arrangement.criticality === 'critical' || args.arrangement.criticality === 'important';
   const notice = classifySupplierNotice(args.type, cif);
@@ -145,24 +181,7 @@ export async function recordSupplierNotice(
     return { recorded: true, notice, reopened: false, reassessmentQueued: false, reason: 'not-reviewable' };
   }
 
-  let reopened = false;
-  if (status === 'active') {
-    const to = nextState('active', 'start_review'); // 'under_review'
-    if (to) {
-      const updated = await repo.setLifecycle(a.organizationId, a.id, to);
-      if (updated) {
-        reopened = true;
-        await audit({
-          organizationId: a.organizationId,
-          actor: args.actorId ?? null,
-          action: 'arrangement.lifecycle',
-          targetType: 'arrangement',
-          targetId: a.id,
-          metadata: { from: 'active', to, transition: 'start_review', reason: 'supplier-notice' },
-        });
-      }
-    }
-  }
+  const reopened = await reopenIfActive(args, a, repo, audit);
 
   await enqueue(a);
   logger.info('supplier-notice.reassessment-triggered', { service: 'supplierNotice', organizationId: a.organizationId, arrangementId: a.id, reopened, type: notice.type, severity: notice.severity });

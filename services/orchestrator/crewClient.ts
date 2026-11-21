@@ -65,20 +65,39 @@ export function toA2ARequest(request: AssessArrangementRequest): Record<string, 
  * part is `{kind:'data', data}` (a2a-sdk wire) — also accept `content.$case==='data'` / a bare value
  * for safety. Throws if no data part is present.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON-RPC payload is untyped on the wire
-export function extractResponseData(payload: any): unknown {
-  const result = payload?.result ?? payload; // unwrap the JSON-RPC envelope
-  const parts: any[] = Array.isArray(result?.parts)
-    ? result.parts
-    : (result?.status?.message?.parts ??
-        result?.status?.update?.parts ??
-        (result?.artifacts ?? []).flatMap((a: any) => a?.parts ?? []));
-  const dataPart = (parts ?? []).find(
-    (p: any) => p?.kind === 'data' || p?.data !== undefined || p?.content?.$case === 'data'
-  );
-  if (!dataPart) throw new Error('crew A2A response contained no DataPart');
+ 
+/** Parts carried on a Task's status (its message or its streaming update). */
+function statusParts(result: any): any[] | undefined {
+  const status = result?.status;
+  return status?.message?.parts ?? status?.update?.parts;
+}
+
+/** Collect the A2A parts array from a result that may be a Message, a Task, or an artifact bag. */
+function collectResponseParts(result: any): any[] {
+  if (Array.isArray(result?.parts)) return result.parts;
+  const fromStatus = statusParts(result);
+  if (fromStatus) return fromStatus;
+  const artifacts = result?.artifacts ?? [];
+  return artifacts.flatMap((a: any) => a?.parts ?? []);
+}
+
+/** Is this part a data part in any tolerated wire shape? */
+function isDataPart(p: any): boolean {
+  return p?.kind === 'data' || p?.data !== undefined || p?.content?.$case === 'data';
+}
+
+/** Unwrap the payload of an already-identified data part. */
+function readDataPart(dataPart: any): unknown {
   if (dataPart.kind === 'data' || dataPart.data !== undefined) return dataPart.data;
   return dataPart.content?.$case === 'data' ? dataPart.content.value : dataPart.value;
+}
+
+export function extractResponseData(payload: any): unknown {
+  const result = payload?.result ?? payload; // unwrap the JSON-RPC envelope
+  const parts = collectResponseParts(result);
+  const dataPart = (parts ?? []).find(isDataPart);
+  if (!dataPart) throw new Error('crew A2A response contained no DataPart');
+  return readDataPart(dataPart);
 }
 
 /** The gap-node result shape the supervisor graph consumes (`{ findings, confidence, … }`). */

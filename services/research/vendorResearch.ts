@@ -20,15 +20,14 @@ import {
   VENDOR_RESEARCH_MAX_BYTES,
 } from '../../config/vendorResearch.js';
 
-type FetchLike = (
-  url: string,
-  init?: Record<string, unknown>
-) => Promise<{
+interface FetchResponse {
   ok: boolean;
   status: number;
   headers: { get(name: string): string | null };
   text(): Promise<string>;
-}>;
+}
+
+type FetchLike = (url: string, init?: Record<string, unknown>) => Promise<FetchResponse>;
 
 export interface ResearchDeps {
   fetchImpl?: FetchLike;
@@ -68,17 +67,22 @@ async function guardedFetch(url: string, deps: ResearchDeps): Promise<string> {
       headers: { Accept: 'text/html,application/xhtml+xml', 'User-Agent': 'retrieva-vendor-research/1.0' },
       signal: controller.signal,
     });
-    if (res.status >= 300 && res.status < 400) {
-      throw new ResearchUrlRejectedError('redirected — re-submit the final URL directly');
-    }
-    if (!res.ok) throw new ResearchUrlRejectedError(`source responded ${res.status}`);
-    const len = Number(res.headers.get('content-length') || '0');
-    if (len && len > maxBytes) throw new ResearchUrlRejectedError('source document is too large');
+    assertFetchable(res, maxBytes);
     const body = await res.text();
     return body.length > maxBytes ? body.slice(0, maxBytes) : body;
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Reject a response that redirected, errored, or declares an over-cap content-length (throws, else ok).
+function assertFetchable(res: FetchResponse, maxBytes: number): void {
+  if (res.status >= 300 && res.status < 400) {
+    throw new ResearchUrlRejectedError('redirected — re-submit the final URL directly');
+  }
+  if (!res.ok) throw new ResearchUrlRejectedError(`source responded ${res.status}`);
+  const len = Number(res.headers.get('content-length') || '0');
+  if (len && len > maxBytes) throw new ResearchUrlRejectedError('source document is too large');
 }
 
 // Strip HTML tags to plain text for the extractor (the trust pages are HTML; the LLM wants prose).

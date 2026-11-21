@@ -11,15 +11,31 @@ import type { ArrangementContext, ReintegrationPayload } from './types.js';
 type Level = 'low' | 'medium' | 'high';
 const asLevel = (v: string): Level => (['low', 'medium', 'high'].includes((v || '').toLowerCase()) ? (v.toLowerCase() as Level) : 'medium');
 
+/** Timeline estimate from the difficulty level. */
+function timelineFor(difficulty: Level): string {
+  if (difficulty === 'high') return '4–6 months';
+  if (difficulty === 'low') return '4–8 weeks';
+  return '2–4 months';
+}
+
+/** Data-migration complexity + notes from the data sensitivity. */
+function dataMigrationFor(ctx: ArrangementContext, difficulty: Level) {
+  const dataHeavy = ctx.dataClasses.some((c) => /pii|claims|financial|phi|sensitive/i.test(c));
+  return {
+    complexity: dataHeavy ? 'high' : difficulty,
+    notes: dataHeavy
+      ? `Sensitive data (${ctx.dataClasses.join(', ')}) — residency + integrity controls raise migration complexity.`
+      : 'Standard data migration; validate integrity and residency on transfer.',
+  };
+}
+
 /** Deterministic estimate from the arrangement signals — the fail-safe (and a sane floor). */
 function fallbackReintegration(ctx: ArrangementContext): ReintegrationPayload {
   const difficulty = asLevel(ctx.exitDifficulty || (ctx.dependency === 'high' ? 'high' : 'medium'));
-  const timeline = difficulty === 'high' ? '4–6 months' : difficulty === 'low' ? '4–8 weeks' : '2–4 months';
-  const dataHeavy = ctx.dataClasses.some((c) => /pii|claims|financial|phi|sensitive/i.test(c));
   return {
     approach: ctx.incumbentSameTypeProviders.length ? 'switch-provider (an alternative of the same type is already in use)' : 'switch-provider or in-house (assess build-vs-buy)',
     difficulty,
-    timelineEstimate: timeline,
+    timelineEstimate: timelineFor(difficulty),
     costDrivers: [
       'Migration & integration engineering',
       'Parallel-run running two providers',
@@ -30,12 +46,7 @@ function fallbackReintegration(ctx: ArrangementContext): ReintegrationPayload {
       'Operational ownership of the function post-exit',
       ctx.providerType ? `In-house ${ctx.providerType} expertise` : 'In-house expertise for this service',
     ],
-    dataMigration: {
-      complexity: dataHeavy ? 'high' : difficulty,
-      notes: dataHeavy
-        ? `Sensitive data (${ctx.dataClasses.join(', ')}) — residency + integrity controls raise migration complexity.`
-        : 'Standard data migration; validate integrity and residency on transfer.',
-    },
+    dataMigration: dataMigrationFor(ctx, difficulty),
     recommendation:
       difficulty === 'high'
         ? 'High effort — begin exit groundwork now (portability + a standing alternative) rather than at termination.'
@@ -54,23 +65,18 @@ export interface ReintegrationDeps {
   sessionId?: string;
 }
 
-async function llmReintegration(ctx: ArrangementContext, sessionId?: string): Promise<ReintegrationPayload> {
-  const { createLLM } = await import('../../config/llmProvider.js');
-  const { getCallbacks } = await import('../../config/tracing.js');
-  const llm = await createLLM({ purpose: 'analysis', temperature: 0.2, maxTokens: 1500, jsonMode: true });
-  const user =
+/** The user prompt describing the arrangement for the reintegration model. */
+function reintegrationUserPrompt(ctx: ArrangementContext): string {
+  return (
     `Provider: ${ctx.providerName}\nProvider type: ${ctx.providerType}\nFunction: ${ctx.businessFunctionName}\n` +
     `Criticality: ${ctx.criticality}\nExit difficulty: ${ctx.exitDifficulty || '(unassessed)'}\nDependency: ${ctx.dependency}\n` +
     `Data classes: ${ctx.dataClasses.join(', ') || '(unspecified)'}\n` +
-    `Same-type providers already in use: ${ctx.incumbentSameTypeProviders.join(', ') || '(none)'}`;
-  const res = await llm.invoke(
-    [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: user },
-    ],
-    { callbacks: getCallbacks({ feature: 'exit-reintegration', sessionId }) }
+    `Same-type providers already in use: ${ctx.incumbentSameTypeProviders.join(', ') || '(none)'}`
   );
-  const raw = typeof res?.content === 'string' ? res.content : JSON.stringify(res?.content ?? '');
+}
+
+/** Normalise the model's raw content → a well-typed ReintegrationPayload. */
+function parseReintegrationPayload(raw: string): ReintegrationPayload {
   const match = raw.match(/\{[\s\S]*\}/);
   const parsed = JSON.parse(match ? match[0] : raw) as Partial<ReintegrationPayload>;
   const arr = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
@@ -86,6 +92,21 @@ async function llmReintegration(ctx: ArrangementContext, sessionId?: string): Pr
     },
     recommendation: String(parsed.recommendation ?? ''),
   };
+}
+
+async function llmReintegration(ctx: ArrangementContext, sessionId?: string): Promise<ReintegrationPayload> {
+  const { createLLM } = await import('../../config/llmProvider.js');
+  const { getCallbacks } = await import('../../config/tracing.js');
+  const llm = await createLLM({ purpose: 'analysis', temperature: 0.2, maxTokens: 1500, jsonMode: true });
+  const res = await llm.invoke(
+    [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: reintegrationUserPrompt(ctx) },
+    ],
+    { callbacks: getCallbacks({ feature: 'exit-reintegration', sessionId }) }
+  );
+  const raw = typeof res?.content === 'string' ? res.content : JSON.stringify(res?.content ?? '');
+  return parseReintegrationPayload(raw);
 }
 
 /** Model reintegration effort for the arrangement. Fail-safe → the deterministic estimate (never throws). */

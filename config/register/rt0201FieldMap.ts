@@ -20,7 +20,7 @@
 export const REGISTER_TEMPLATE_VERSION = 'eba-its-2024.2956-v1';
 
 // The assembled register read-model row — a heterogeneous projection over the arrangement graph.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous register read-model row
+ 
 type RegisterRow = Record<string, any>;
 
 const val = (v: unknown) => (v === undefined || v === null || v === '' ? null : v);

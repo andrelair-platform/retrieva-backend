@@ -31,6 +31,63 @@ const CONCURRENCY = parseInt(process.env.ASSESSMENT_WORKER_CONCURRENCY || "", 10
 // Job: fileIndex
 // ---------------------------------------------------------------------------
 
+/** `buffer` arrives as a plain object from JSON serialization — convert back to Buffer. */
+function toFileBuffer(buffer: any): Buffer {
+  return Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer.data || buffer);
+}
+
+/** Idempotency guard — true if this document is already indexed (safe on retries). */
+function isAlreadyIndexed(existing: any, documentIndex: number): boolean {
+  return existing?.documents[documentIndex]?.status === 'indexed';
+}
+
+/** Ingest the file and mark the document indexed. Returns the chunk count + collection name. */
+async function ingestAndMarkIndexed(
+  job: Job<FileIndexJobData>,
+  args: {
+    fileBuffer: Buffer;
+    fileType: any;
+    fileName: any;
+    assessmentId: any;
+    documentIndex: number;
+    vendorName: any;
+    workspaceId?: string;
+  }
+) {
+  const { fileBuffer, fileType, fileName, assessmentId, documentIndex, vendorName, workspaceId } = args;
+  await job.updateProgress(10);
+
+  const { chunkCount, collectionName } = await ingestFile({
+    buffer: fileBuffer,
+    fileType,
+    fileName,
+    assessmentId,
+    workspaceId,
+    vendorName,
+    onProgress: async ({ indexed, total }: any) => {
+      const pct = Math.round(10 + (indexed / total) * 70);
+      await job.updateProgress(pct);
+    },
+  });
+
+  // Mark document as indexed
+  await assessmentRepository.updateById(assessmentId, {
+    [`documents.${documentIndex}.status`]: 'indexed',
+    [`documents.${documentIndex}.qdrantCollectionId`]: collectionName,
+  });
+
+  await job.updateProgress(100);
+
+  logger.info('Assessment file indexed', {
+    service: 'assessment-worker',
+    assessmentId,
+    fileName,
+    chunkCount,
+  });
+
+  return { chunkCount, collectionName };
+}
+
 async function processFileIndex(job: Job<FileIndexJobData>) {
   const {
     assessmentId,
@@ -42,8 +99,7 @@ async function processFileIndex(job: Job<FileIndexJobData>) {
     userId: _userId,
   } = job.data;
 
-  // `buffer` arrives as a plain object from JSON serialization — convert back to Buffer
-  const fileBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer.data || buffer);
+  const fileBuffer = toFileBuffer(buffer);
 
   logger.info('Assessment file index job started', {
     service: 'assessment-worker',
@@ -54,7 +110,7 @@ async function processFileIndex(job: Job<FileIndexJobData>) {
 
   // Idempotency guard — skip if already indexed (safe on retries)
   const existing = await (assessmentRepository.findById as any)(assessmentId, { lean: true });
-  if (existing?.documents[documentIndex]?.status === 'indexed') {
+  if (isAlreadyIndexed(existing, documentIndex)) {
     logger.info('Document already indexed, skipping (idempotency guard)', {
       service: 'assessment-worker',
       assessmentId,
@@ -72,37 +128,15 @@ async function processFileIndex(job: Job<FileIndexJobData>) {
   });
 
   try {
-    await job.updateProgress(10);
-
-    const { chunkCount, collectionName } = await ingestFile({
-      buffer: fileBuffer,
+    return await ingestAndMarkIndexed(job, {
+      fileBuffer,
       fileType,
       fileName,
       assessmentId,
-      workspaceId: existing?.workspaceId?.toString(),
+      documentIndex,
       vendorName,
-      onProgress: async ({ indexed, total }: any) => {
-        const pct = Math.round(10 + (indexed / total) * 70);
-        await job.updateProgress(pct);
-      },
+      workspaceId: existing?.workspaceId?.toString(),
     });
-
-    // Mark document as indexed
-    await assessmentRepository.updateById(assessmentId, {
-      [`documents.${documentIndex}.status`]: 'indexed',
-      [`documents.${documentIndex}.qdrantCollectionId`]: collectionName,
-    });
-
-    await job.updateProgress(100);
-
-    logger.info('Assessment file indexed', {
-      service: 'assessment-worker',
-      assessmentId,
-      fileName,
-      chunkCount,
-    });
-
-    return { chunkCount, collectionName };
   } catch (err) {
     logger.error('Assessment file index failed', {
       service: 'assessment-worker',

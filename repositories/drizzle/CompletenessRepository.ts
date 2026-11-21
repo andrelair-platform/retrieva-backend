@@ -21,6 +21,50 @@ import type { CompletenessFinding, RegisterSnapshot } from '../../services/compl
 
 const CRITICAL = new Set(['critical', 'important']);
 
+/** Lookup maps + derived facts needed to flatten an arrangement into its snapshot shape. */
+interface SnapshotMaps {
+  bfById: Map<string, any>;
+  leById: Map<string, any>;
+  provById: Map<string, any>;
+  contractValidUntilByArr: Map<string, string>;
+}
+
+/** undefined → fallback (used to coerce optional columns to their snapshot default). */
+function coalesce<T>(value: T | undefined | null, fallback: T): T {
+  return value ?? fallback;
+}
+
+/** Human label for an arrangement: "legal-entity / provider", or the id prefix when both absent. */
+function arrangementLabel(a: any, le: any, prov: any): string {
+  return [le?.name, prov?.displayName].filter(Boolean).join(' / ') || a.id.slice(0, 8);
+}
+
+/** Flatten one arrangement row + its dimension facts into the snapshot shape (extracted from the
+ *  loadSnapshot map so that function stays under the complexity/length floor). */
+function toSnapshotArrangement(a: any, maps: SnapshotMaps) {
+  const bf = maps.bfById.get(a.businessFunctionId);
+  const le = maps.leById.get(a.legalEntityId);
+  const prov = maps.provById.get(a.providerId);
+  return {
+    id: a.id,
+    label: arrangementLabel(a, le, prov),
+    criticality: coalesce(a.criticality, null),
+    dependency: coalesce(a.dependency, null),
+    exitDifficulty: coalesce(a.exitDifficulty, null),
+    ictServiceId: coalesce(a.ictServiceId, null),
+    dataResidency: coalesce(a.dataResidency, ''),
+    dataClasses: Array.isArray(a.dataClasses) ? (a.dataClasses as unknown[]) : [],
+    businessFunctionId: a.businessFunctionId,
+    businessFunctionName: coalesce(bf?.name, a.businessFunctionId.slice(0, 8)),
+    businessFunctionCriticalFlag: coalesce(bf?.criticalOrImportant, false),
+    contractValidUntil: coalesce(maps.contractValidUntilByArr.get(a.id), null),
+    // P3 (ESA referential integrity): the cross-template reference ids (RT.02.01 → RT.01.01/RT.03).
+    legalEntityId: a.legalEntityId,
+    providerId: a.providerId,
+    providerName: prov?.displayName,
+  };
+}
+
 export class CompletenessRepository {
   private _db?: ReturnType<typeof getDb>;
   constructor({ db }: { db?: ReturnType<typeof getDb> } = {}) {
@@ -224,16 +268,18 @@ export class CompletenessRepository {
   /** Assemble the entity-scoped Register snapshot: arrangements flattened with their dimension facts,
    *  legal entities, external providers (with graph position) and sub-chain edges. Runs inside the
    *  caller's entity scope (set by the worker via runWithEntityScope). */
-  async loadSnapshot(organizationId: string): Promise<RegisterSnapshot> {
-    const [arrRows, leRows, bfRows, provRows, depRows, contractEvidence] = await Promise.all([
+  /** Run the six entity-scoped Register queries in parallel (extracted from loadSnapshot). */
+  private async _fetchSnapshotRows(organizationId: string) {
+    const scope = { action: 'arrangement:read' } as const;
+    return Promise.all([
       this.db
         .select()
         .from(arrangements)
         .where(
           and(
             eq(arrangements.organizationId, organizationId),
-            entityScopeCondition(arrangements.organizationId, { action: 'arrangement:read' }),
-            legalEntityScopeCondition(arrangements.legalEntityId, { action: 'arrangement:read' })
+            entityScopeCondition(arrangements.organizationId, scope),
+            legalEntityScopeCondition(arrangements.legalEntityId, scope)
           )
         ),
       this.db
@@ -242,7 +288,7 @@ export class CompletenessRepository {
         .where(
           and(
             eq(legalEntities.organizationId, organizationId),
-            entityScopeCondition(legalEntities.organizationId, { action: 'arrangement:read' })
+            entityScopeCondition(legalEntities.organizationId, scope)
           )
         ),
       this.db
@@ -251,7 +297,7 @@ export class CompletenessRepository {
         .where(
           and(
             eq(businessFunctions.organizationId, organizationId),
-            entityScopeCondition(businessFunctions.organizationId, { action: 'arrangement:read' })
+            entityScopeCondition(businessFunctions.organizationId, scope)
           )
         ),
       this.db
@@ -260,7 +306,7 @@ export class CompletenessRepository {
         .where(
           and(
             eq(providerNodes.organizationId, organizationId),
-            entityScopeCondition(providerNodes.organizationId, { action: 'arrangement:read' })
+            entityScopeCondition(providerNodes.organizationId, scope)
           )
         ),
       this.db
@@ -269,7 +315,7 @@ export class CompletenessRepository {
         .where(
           and(
             eq(providerDependencies.organizationId, organizationId),
-            entityScopeCondition(providerDependencies.organizationId, { action: 'arrangement:read' })
+            entityScopeCondition(providerDependencies.organizationId, scope)
           )
         ),
       // Arrangement-scoped contract evidence with a validity date → drives the contract-expiry rule.
@@ -282,10 +328,15 @@ export class CompletenessRepository {
             eq(evidence.scope, 'arrangement'),
             inArray(evidence.category, ['master_service_agreement', 'dora_addendum']),
             isNotNull(evidence.validityUntil),
-            entityScopeCondition(evidence.organizationId, { action: 'arrangement:read' })
+            entityScopeCondition(evidence.organizationId, scope)
           )
         ),
     ]);
+  }
+
+  async loadSnapshot(organizationId: string): Promise<RegisterSnapshot> {
+    const [arrRows, leRows, bfRows, provRows, depRows, contractEvidence] =
+      await this._fetchSnapshotRows(organizationId);
 
     const leById = new Map(leRows.map((r) => [r.id, r]));
     const bfById = new Map(bfRows.map((r) => [r.id, r]));
@@ -306,31 +357,9 @@ export class CompletenessRepository {
     );
     const providersWithSubchain = new Set(depRows.map((d) => d.parentNodeId));
 
+    const snapshotMaps: SnapshotMaps = { bfById, leById, provById, contractValidUntilByArr };
     const snapshot: RegisterSnapshot = {
-      arrangements: arrRows.map((a) => {
-        const bf = bfById.get(a.businessFunctionId);
-        const le = leById.get(a.legalEntityId);
-        const prov = provById.get(a.providerId);
-        const label = [le?.name, prov?.displayName].filter(Boolean).join(' / ') || a.id.slice(0, 8);
-        return {
-          id: a.id,
-          label,
-          criticality: a.criticality ?? null,
-          dependency: a.dependency ?? null,
-          exitDifficulty: a.exitDifficulty ?? null,
-          ictServiceId: a.ictServiceId ?? null,
-          dataResidency: a.dataResidency ?? '',
-          dataClasses: Array.isArray(a.dataClasses) ? (a.dataClasses as unknown[]) : [],
-          businessFunctionId: a.businessFunctionId,
-          businessFunctionName: bf?.name ?? a.businessFunctionId.slice(0, 8),
-          businessFunctionCriticalFlag: bf?.criticalOrImportant ?? false,
-          contractValidUntil: contractValidUntilByArr.get(a.id) ?? null,
-          // P3 (ESA referential integrity): the cross-template reference ids (RT.02.01 → RT.01.01/RT.03).
-          legalEntityId: a.legalEntityId,
-          providerId: a.providerId,
-          providerName: prov?.displayName,
-        };
-      }),
+      arrangements: arrRows.map((a) => toSnapshotArrangement(a, snapshotMaps)),
       legalEntities: leRows.map((le) => ({ id: le.id, name: le.name, lei: le.lei ?? null, country: le.country ?? '' })),
       // Third-party providers only — the `workspace` node is the org itself, not an external vendor.
       providers: provRows

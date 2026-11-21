@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- email templates over heterogeneous payloads; nodemailer transport is loosely typed. */
+ 
 /**
  * Email Service — Monolith Proxy
  *

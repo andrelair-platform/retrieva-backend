@@ -42,20 +42,20 @@ export interface NotifyArgs {
   route: RouteDecision;
   providerName?: string;
   businessFunctionName?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- persisted finding/risk rows are heterogeneous
+   
   finding: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   risk: any;
 }
 
 export interface NotifyDeps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable repos/email/logger for tests
+   
   roleAssignmentRepository?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   userRepository?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   email?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   logger?: any;
 }
 
@@ -102,26 +102,46 @@ function buildHtml(args: NotifyArgs): { subject: string; html: string } {
  * error returns `{ notified:false, skippedReason }` and is logged; never throws (the caller's decision
  * must commit regardless). Returns the recipient emails so the caller can stamp the audit trail.
  */
+function resolveNotifyDeps(deps: NotifyDeps) {
+  return {
+    roleRepo: deps.roleAssignmentRepository || defaultRoleRepo,
+    userRepo: deps.userRepository || defaultUserRepo,
+    email: deps.email || defaultEmail,
+    logger: deps.logger || defaultLogger,
+  };
+}
+
+/**
+ * Resolve the routed role-holders to valid email addresses. Returns the emails, or a skippedReason
+ * (distinguishing "no one holds the role" from "role-holders have no email").
+ */
+async function resolveRecipientEmails(
+  roleRepo: any,
+  userRepo: any,
+  organizationId: string,
+  roles: string[]
+): Promise<{ emails: string[] } | { skippedReason: string }> {
+  const assignments: Assignment[] = await roleRepo.findByScope('entity', organizationId);
+  const ids = selectRecipientIds(assignments, roles);
+  if (ids.length === 0) return { skippedReason: 'no users hold the routed role(s)' };
+  const users = await Promise.all(ids.map((id: string) => userRepo.findById(id).catch(() => null)));
+  const emails = users
+    .filter((u): u is { email: string } => !!u && typeof u.email === 'string' && u.email.includes('@'))
+    .map((u) => u.email);
+  if (emails.length === 0) return { skippedReason: 'routed users have no email' };
+  return { emails };
+}
+
 export async function notifyRoutedGap(args: NotifyArgs, deps: NotifyDeps = {}): Promise<NotifyResult> {
-  const roleRepo = deps.roleAssignmentRepository || defaultRoleRepo;
-  const userRepo = deps.userRepository || defaultUserRepo;
-  const email = deps.email || defaultEmail;
-  const logger = deps.logger || defaultLogger;
+  const { roleRepo, userRepo, email, logger } = resolveNotifyDeps(deps);
   const roles = args.route.notify;
 
   try {
-    const assignments: Assignment[] = await roleRepo.findByScope('entity', args.organizationId);
-    const ids = selectRecipientIds(assignments, roles);
-    if (ids.length === 0) {
-      return { notified: false, roles, recipientCount: 0, recipients: [], skippedReason: 'no users hold the routed role(s)' };
+    const resolved = await resolveRecipientEmails(roleRepo, userRepo, args.organizationId, roles);
+    if ('skippedReason' in resolved) {
+      return { notified: false, roles, recipientCount: 0, recipients: [], skippedReason: resolved.skippedReason };
     }
-    const users = await Promise.all(ids.map((id) => userRepo.findById(id).catch(() => null)));
-    const emails = users
-      .filter((u): u is { email: string } => !!u && typeof u.email === 'string' && u.email.includes('@'))
-      .map((u) => u.email);
-    if (emails.length === 0) {
-      return { notified: false, roles, recipientCount: 0, recipients: [], skippedReason: 'routed users have no email' };
-    }
+    const emails = resolved.emails;
     const { subject, html } = buildHtml(args);
     await email.sendEmail({ to: emails, subject, html });
     logger.info('finding.routed.notified', {

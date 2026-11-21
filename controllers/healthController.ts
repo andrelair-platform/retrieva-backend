@@ -37,6 +37,140 @@ export const basicHealth = async (req: Request, res: Response) => {
   });
 };
 
+const errMsg = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** PostgreSQL probe. Returns the service entry + whether it's healthy. */
+async function checkPostgres(): Promise<{ entry: any; healthy: boolean }> {
+  try {
+    await getDb().execute(sql`select 1`);
+    return { entry: { status: 'up' }, healthy: true };
+  } catch (error: unknown) {
+    return { entry: { status: 'down', error: errMsg(error) }, healthy: false };
+  }
+}
+
+/** Redis probe. Returns the service entry + whether it's healthy. */
+async function checkRedis(): Promise<{ entry: any; healthy: boolean }> {
+  try {
+    const redisPing = await redisConnection.ping();
+    return {
+      entry: { status: redisPing === 'PONG' ? 'up' : 'down', response: redisPing },
+      healthy: redisPing === 'PONG',
+    };
+  } catch (error: unknown) {
+    return { entry: { status: 'down', error: errMsg(error) }, healthy: false };
+  }
+}
+
+/** Qdrant probe (with timeout). Returns the service entry + whether it's healthy. */
+async function checkQdrant(): Promise<{ entry: any; healthy: boolean }> {
+  try {
+    const qdrantCheck = async () => {
+      const vectorStore = await getVectorStore([]);
+      const collectionInfo = await vectorStore.client.getCollection(
+        process.env.QDRANT_COLLECTION_NAME || 'documents'
+      );
+      return collectionInfo;
+    };
+
+    const collectionInfo = await promiseWithTimeout(
+      qdrantCheck(),
+      HEALTH_CHECK_TIMEOUT_MS,
+      'Qdrant health check timed out'
+    );
+
+    return {
+      entry: {
+        status: 'up',
+        collection: collectionInfo.name,
+        vectorsCount: collectionInfo.vectors_count || collectionInfo.points_count,
+      },
+      healthy: true,
+    };
+  } catch (error: unknown) {
+    return {
+      entry: {
+        status: 'down',
+        error: errMsg(error),
+        timeout: errMsg(error)?.includes('timed out'),
+      },
+      healthy: false,
+    };
+  }
+}
+
+/** LLM provider probe (with timeout). Returns the service entry + whether it's healthy. */
+async function checkLlm(): Promise<{ entry: any; healthy: boolean }> {
+  try {
+    const llmCheck = async () => {
+      const llm = await getDefaultLLM();
+      const testResponse = await llm.invoke('test');
+      return testResponse;
+    };
+
+    const testResponse = await promiseWithTimeout(
+      llmCheck(),
+      LLM_HEALTH_CHECK_TIMEOUT_MS,
+      'LLM health check timed out'
+    );
+
+    return {
+      entry: {
+        status: 'up',
+        provider: getCurrentProvider(),
+        model: process.env.LLM_MODEL || process.env.OPENROUTER_MODEL || 'default',
+        responsive: !!testResponse,
+      },
+      healthy: true,
+    };
+  } catch (error: unknown) {
+    return {
+      entry: {
+        status: 'down',
+        provider: getCurrentProvider(),
+        error: errMsg(error),
+        timeout: errMsg(error)?.includes('timed out'),
+      },
+      healthy: false,
+    };
+  }
+}
+
+/** BullMQ queues probe (non-critical — never marks the service unhealthy). */
+async function checkQueues(): Promise<any> {
+  try {
+    const assessmentQueueCounts = await assessmentQueue.getJobCounts();
+
+    return {
+      status: 'up',
+      assessment: {
+        waiting: assessmentQueueCounts.waiting || 0,
+        active: assessmentQueueCounts.active || 0,
+        completed: assessmentQueueCounts.completed || 0,
+        failed: assessmentQueueCounts.failed || 0,
+      },
+    };
+  } catch (error: unknown) {
+    // Queues are non-critical - don't mark as unhealthy
+    logger.warn('Queue health check failed', { error: errMsg(error) });
+    return { status: 'down', error: errMsg(error) };
+  }
+}
+
+/** Static system metrics block for the detailed health report. */
+function systemMetrics(): Record<string, any> {
+  return {
+    nodeVersion: process.version,
+    platform: process.platform,
+    memory: {
+      heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
+      heapTotal: `${Math.round(process.memoryUsage().heapTotal / 1024 / 1024)}MB`,
+      rss: `${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
+    },
+    cpu: process.cpuUsage(),
+  };
+}
+
 /**
  * Detailed health check with all dependencies
  * GET /api/v1/health/detailed
@@ -59,115 +193,25 @@ export const detailedHealth = async (req: Request, res: Response) => {
 
   let allHealthy = true;
 
-  // Check PostgreSQL
-  try {
-    await getDb().execute(sql`select 1`);
-    health.services.postgres = { status: 'up' };
-  } catch (error: unknown) {
-    health.services.postgres = {
-      status: 'down',
-      error: (error instanceof Error ? error.message : String(error)),
-    };
-    allHealthy = false;
-  }
+  // Critical probes (order preserved) — each can flip the aggregate to degraded.
+  const postgres = await checkPostgres();
+  health.services.postgres = postgres.entry;
+  if (!postgres.healthy) allHealthy = false;
 
-  // Check Redis
-  try {
-    const redisPing = await redisConnection.ping();
-    health.services.redis = {
-      status: redisPing === 'PONG' ? 'up' : 'down',
-      response: redisPing,
-    };
-    if (redisPing !== 'PONG') allHealthy = false;
-  } catch (error: unknown) {
-    health.services.redis = {
-      status: 'down',
-      error: (error instanceof Error ? error.message : String(error)),
-    };
-    allHealthy = false;
-  }
+  const redis = await checkRedis();
+  health.services.redis = redis.entry;
+  if (!redis.healthy) allHealthy = false;
 
-  // Check Qdrant (with timeout - ISSUE #14 FIX)
-  try {
-    const qdrantCheck = async () => {
-      const vectorStore = await getVectorStore([]);
-      const collectionInfo = await vectorStore.client.getCollection(
-        process.env.QDRANT_COLLECTION_NAME || 'documents'
-      );
-      return collectionInfo;
-    };
+  const qdrant = await checkQdrant();
+  health.services.qdrant = qdrant.entry;
+  if (!qdrant.healthy) allHealthy = false;
 
-    const collectionInfo = await promiseWithTimeout(
-      qdrantCheck(),
-      HEALTH_CHECK_TIMEOUT_MS,
-      'Qdrant health check timed out'
-    );
+  const llm = await checkLlm();
+  health.services.llm = llm.entry;
+  if (!llm.healthy) allHealthy = false;
 
-    health.services.qdrant = {
-      status: 'up',
-      collection: collectionInfo.name,
-      vectorsCount: collectionInfo.vectors_count || collectionInfo.points_count,
-    };
-  } catch (error: unknown) {
-    health.services.qdrant = {
-      status: 'down',
-      error: (error instanceof Error ? error.message : String(error)),
-      timeout: (error instanceof Error ? error.message : String(error))?.includes('timed out'),
-    };
-    allHealthy = false;
-  }
-
-  // Check LLM Provider (with timeout - ISSUE #14 FIX)
-  try {
-    const llmCheck = async () => {
-      const llm = await getDefaultLLM();
-      const testResponse = await llm.invoke('test');
-      return testResponse;
-    };
-
-    const testResponse = await promiseWithTimeout(
-      llmCheck(),
-      LLM_HEALTH_CHECK_TIMEOUT_MS,
-      'LLM health check timed out'
-    );
-
-    health.services.llm = {
-      status: 'up',
-      provider: getCurrentProvider(),
-      model: process.env.LLM_MODEL || process.env.OPENROUTER_MODEL || 'default',
-      responsive: !!testResponse,
-    };
-  } catch (error: unknown) {
-    health.services.llm = {
-      status: 'down',
-      provider: getCurrentProvider(),
-      error: (error instanceof Error ? error.message : String(error)),
-      timeout: (error instanceof Error ? error.message : String(error))?.includes('timed out'),
-    };
-    allHealthy = false;
-  }
-
-  // ISSUE #29 FIX: Check BullMQ Queues
-  try {
-    const assessmentQueueCounts = await assessmentQueue.getJobCounts();
-
-    health.services.queues = {
-      status: 'up',
-      assessment: {
-        waiting: assessmentQueueCounts.waiting || 0,
-        active: assessmentQueueCounts.active || 0,
-        completed: assessmentQueueCounts.completed || 0,
-        failed: assessmentQueueCounts.failed || 0,
-      },
-    };
-  } catch (error: unknown) {
-    health.services.queues = {
-      status: 'down',
-      error: (error instanceof Error ? error.message : String(error)),
-    };
-    // Queues are non-critical - don't mark as unhealthy
-    logger.warn('Queue health check failed', { error: (error instanceof Error ? error.message : String(error)) });
-  }
+  // Non-critical probes.
+  health.services.queues = await checkQueues();
 
   // Email provider (Resend HTTP API)
   const emailConfigured = !!process.env.RESEND_API_KEY;
@@ -177,16 +221,7 @@ export const detailedHealth = async (req: Request, res: Response) => {
   };
 
   // System metrics
-  health.system = {
-    nodeVersion: process.version,
-    platform: process.platform,
-    memory: {
-      heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
-      heapTotal: `${Math.round(process.memoryUsage().heapTotal / 1024 / 1024)}MB`,
-      rss: `${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
-    },
-    cpu: process.cpuUsage(),
-  };
+  health.system = systemMetrics();
 
   health.status = allHealthy ? 'healthy' : 'degraded';
 

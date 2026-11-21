@@ -142,9 +142,9 @@ export async function* streamWithTimeout(
   chain: Chain,
   input: unknown,
   options: unknown = {},
-  initialTimeoutMs = 30000,
-  chunkTimeoutMs = 10000
+  opts: { initialTimeoutMs?: number; chunkTimeoutMs?: number } = {}
 ) {
+  const { initialTimeoutMs = 30000, chunkTimeoutMs = 10000 } = opts;
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
   const resetTimeout = (ms: number) => {
@@ -158,7 +158,9 @@ export async function* streamWithTimeout(
 
   try {
     const stream = await chain.stream(input, options);
-    resetTimeout(initialTimeoutMs);
+    // fire-and-forget guard timer (schedules the timeout side-effect); its
+    // reject-only promise is intentionally not awaited here.
+    void resetTimeout(initialTimeoutMs);
 
     for await (const chunk of stream) {
       // Cancel the timeout for this chunk
@@ -167,7 +169,7 @@ export async function* streamWithTimeout(
       yield chunk;
 
       // Set timeout for next chunk (shorter after first chunk received)
-      resetTimeout(chunkTimeoutMs);
+      void resetTimeout(chunkTimeoutMs);
     }
 
     clearTimeout(timeoutId);

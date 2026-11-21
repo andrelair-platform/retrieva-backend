@@ -31,13 +31,13 @@ export const draft = catchAsync(async (req: Request, res: Response) => {
     },
   });
 
-  const persisted = await contractAmendmentRepository.saveDrafts(
+  const persisted = await contractAmendmentRepository.saveDrafts({
     organizationId,
     assessmentId,
-    result.vendorName,
-    result.drafts,
-    req.user?.userId
-  );
+    vendorName: result.vendorName,
+    drafts: result.drafts,
+    createdBy: req.user?.userId,
+  });
 
   sendSuccess(res, 200, 'Amendment drafts generated', {
     vendorName: result.vendorName,

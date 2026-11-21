@@ -23,100 +23,96 @@ const norm = (s: unknown) =>
     .trim()
     .toLowerCase();
 
-/**
- * @param {{organizationId:string, userId?:string, proposal:object, sourceFileName?:string,
- *          trigger?:string, repos?:object}} args  repos is injectable for tests (defaults to the singletons)
- * @returns {Promise<object>} the created arrangement row
- */
-interface ConfirmProposalArgs {
-  organizationId: string;
-  userId?: string | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the extracted proposal is a heterogeneous draft
-  proposal: any;
-  sourceFileName?: string;
-  trigger?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable repo overrides (stubbed in tests)
-  repos?: Record<string, any>;
+const CRITICALITY_VALUES = ['critical', 'important', 'standard'];
+const SERVICE_RELATIONSHIPS = ['licence_only', 'support_maintenance', 'managed_service', 'saas'];
+
+/** Resolve the (injectable) repositories, defaulting to the module singletons. */
+function resolveRepos(repos: Record<string, any>) {
+  const pick = (key: string, fallback: any) => repos[key] || fallback;
+  return {
+    legalEntities: pick('legalEntityRepository', legalEntityRepository),
+    businessFunctions: pick('businessFunctionRepository', businessFunctionRepository),
+    ictServices: pick('ictServiceRepository', ictServiceRepository),
+    providerGraph: pick('providerGraphRepository', providerGraphRepository),
+    arrangements: pick('arrangementRepository', arrangementRepository),
+    evidence: pick('evidenceRepository', evidenceRepository),
+    reportability: pick('reportabilityDeterminationRepository', reportabilityDeterminationRepository),
+    audit: pick('recordAudit', recordAudit),
+  };
 }
 
-export async function confirmProposal({
-  organizationId,
-  userId = null,
-  proposal: p,
-  sourceFileName = 'Ingested contract',
-  trigger,
-  repos = {},
-}: ConfirmProposalArgs) {
-  const legalEntities = repos.legalEntityRepository || legalEntityRepository;
-  const businessFunctions = repos.businessFunctionRepository || businessFunctionRepository;
-  const ictServices = repos.ictServiceRepository || ictServiceRepository;
-  const providerGraph = repos.providerGraphRepository || providerGraphRepository;
-  const arrangements = repos.arrangementRepository || arrangementRepository;
-  const evidence = repos.evidenceRepository || evidenceRepository;
-  const reportability = repos.reportabilityDeterminationRepository || reportabilityDeterminationRepository;
-  const audit = repos.recordAudit || recordAudit;
-
+/** Reuse an existing legal entity by (normalised) name, else create it. */
+async function findOrCreateLegalEntity(legalEntities: any, organizationId: string, p: any) {
   const entities = await legalEntities.listByOrg(organizationId);
-  const legalEntity =
+  return (
     entities.find((e: any) => norm(e.name) === norm(p.legalEntityName)) ||
-    (await legalEntities.create({ organizationId, name: p.legalEntityName }));
+    (await legalEntities.create({ organizationId, name: p.legalEntityName }))
+  );
+}
 
-  const fns = await businessFunctions.listByEntity(organizationId, legalEntity.id);
-  const businessFunction =
+/** Reuse an existing business function by (normalised) name, else create it. */
+async function findOrCreateBusinessFunction(
+  businessFunctions: any,
+  organizationId: string,
+  legalEntityId: string,
+  p: any
+) {
+  const fns = await businessFunctions.listByEntity(organizationId, legalEntityId);
+  return (
     fns.find((f: any) => norm(f.name) === norm(p.businessFunctionName)) ||
     (await businessFunctions.create({
       organizationId,
-      legalEntityId: legalEntity.id,
+      legalEntityId,
       name: p.businessFunctionName,
       criticalOrImportant: p.criticalOrImportant === true,
-    }));
+    }))
+  );
+}
 
-  const provider = await providerGraph.findOrCreateNode(organizationId, {
-    kind: 'external',
-    name: p.providerName,
-  });
+/** P2b: snapshot the PRIOR subprocessors + residency before the graph is mutated (best-effort). */
+async function snapshotReingestPrev(args: {
+  providerGraph: any;
+  arrangements: any;
+  organizationId: string;
+  provider: any;
+  businessFunction: any;
+  p: any;
+}): Promise<{ arrangement: any; subprocessors: string[]; residency: string; cif: boolean } | null> {
+  const { providerGraph, arrangements, organizationId, provider, businessFunction, p } = args;
+  try {
+    const priors = (await arrangements.listByProvider(organizationId, provider.id)) || [];
+    const prior = priors.find(
+      (x: any) =>
+        x.businessFunctionId === businessFunction.id &&
+        (x.lifecycleStatus === 'active' || x.lifecycleStatus === 'under_review')
+    );
+    if (!prior) return null;
 
-  // P2b (DORA Art. 28(1)/29, RTV-32): on a RE-INGESTION of an existing arrangement, snapshot the PRIOR
-  // subprocessors + residency NOW, BEFORE the graph is mutated below — so a material change can be diffed
-  // and the prior arrangement reopened for reassessment. Best-effort: a snapshot failure never blocks intake.
-  const isReingest = trigger === 'change' || trigger === 'existing';
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- prior arrangement row is heterogeneous
-  let reingestPrev: { arrangement: any; subprocessors: string[]; residency: string; cif: boolean } | null = null;
-  if (isReingest) {
-    try {
-      const priors = (await arrangements.listByProvider(organizationId, provider.id)) || [];
-      const prior = priors.find(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (x: any) =>
-          x.businessFunctionId === businessFunction.id &&
-          (x.lifecycleStatus === 'active' || x.lifecycleStatus === 'under_review')
-      );
-      if (prior) {
-        const edges = (await providerGraph.listDependencies(organizationId)) || [];
-        const subprocessors = edges
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .filter((e: any) => norm(e.parent?.name) === norm(p.providerName))
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .map((e: any) => String(e.child?.name || ''))
-          .filter(Boolean);
-        reingestPrev = {
-          arrangement: prior,
-          subprocessors,
-          residency: String(prior.dataResidency || ''),
-          cif: prior.criticality === 'critical' || prior.criticality === 'important',
-        };
-      }
-    } catch {
-      reingestPrev = null; // best-effort snapshot
-    }
+    const edges = (await providerGraph.listDependencies(organizationId)) || [];
+    const subprocessors = edges
+      .filter((e: any) => norm(e.parent?.name) === norm(p.providerName))
+      .map((e: any) => String(e.child?.name || ''))
+      .filter(Boolean);
+    return {
+      arrangement: prior,
+      subprocessors,
+      residency: String(prior.dataResidency || ''),
+      cif: prior.criticality === 'critical' || prior.criticality === 'important',
+    };
+  } catch {
+    return null; // best-effort snapshot
   }
+}
 
-  // nth-party subcontractor edges (unconfirmed — extracted; a human can confirm in the graph).
+/** Create unconfirmed nth-party subcontractor edges (a human can confirm in the graph). */
+async function createSubcontractorEdges(
+  providerGraph: any,
+  organizationId: string,
+  provider: any,
+  p: any
+) {
   for (const subName of Array.isArray(p.subcontractors) ? p.subcontractors : []) {
-    const sub = await providerGraph.findOrCreateNode(organizationId, {
-      kind: 'external',
-      name: subName,
-    });
+    const sub = await providerGraph.findOrCreateNode(organizationId, { kind: 'external', name: subName });
     if (
       sub.id !== provider.id &&
       !(await providerGraph.edgeExists(organizationId, provider.id, sub.id))
@@ -132,20 +128,37 @@ export async function confirmProposal({
       });
     }
   }
+}
 
-  let ictService = null;
-  if (p.ictServiceName) {
-    const svcs = await ictServices.listByProvider(organizationId, provider.id);
-    ictService =
-      svcs.find((s: any) => norm(s.name) === norm(p.ictServiceName)) ||
-      (await ictServices.create({
-        organizationId,
-        providerId: provider.id,
-        name: p.ictServiceName,
-      }));
-  }
+/** Reuse an existing ICT service by (normalised) name, else create it; null when none named. */
+async function findOrCreateIctService(
+  ictServices: any,
+  organizationId: string,
+  provider: any,
+  p: any
+) {
+  if (!p.ictServiceName) return null;
+  const svcs = await ictServices.listByProvider(organizationId, provider.id);
+  return (
+    svcs.find((s: any) => norm(s.name) === norm(p.ictServiceName)) ||
+    (await ictServices.create({ organizationId, providerId: provider.id, name: p.ictServiceName }))
+  );
+}
 
-  const arrangement = await arrangements.create({
+/** Build the arrangement row from the validated proposal (pure; coerces enums + arrays). */
+function buildArrangementRow(args: {
+  organizationId: string;
+  legalEntity: any;
+  businessFunction: any;
+  provider: any;
+  ictService: any;
+  trigger?: string;
+  userId?: string | null;
+  p: any;
+}) {
+  const { organizationId, legalEntity, businessFunction, provider, ictService, trigger, userId, p } =
+    args;
+  return {
     organizationId,
     legalEntityId: legalEntity.id,
     businessFunctionId: businessFunction.id,
@@ -154,20 +167,112 @@ export async function confirmProposal({
     arrangementType: p.arrangementType === 'intra_group' ? 'intra_group' : 'external',
     dataClasses: Array.isArray(p.dataClasses) ? p.dataClasses : [],
     dataResidency: p.dataResidency ?? '',
-    criticality: ['critical', 'important', 'standard'].includes(p.criticality)
-      ? p.criticality
-      : null,
+    criticality: CRITICALITY_VALUES.includes(p.criticality) ? p.criticality : null,
     lifecycleStatus: initialStatusForTrigger(trigger), // RTV-31 (🟢 new → prospect; else active)
     createdBy: userId,
+  };
+}
+
+/** P2b: on a material change vs the prior snapshot, reopen the prior arrangement (best-effort). */
+async function runReingestCheck(args: {
+  organizationId: string;
+  reingestPrev: { arrangement: any; subprocessors: string[]; residency: string; cif: boolean };
+  p: any;
+  arrangements: any;
+  audit: any;
+  enqueueAssessment: any;
+}) {
+  const { organizationId, reingestPrev, p, arrangements, audit, enqueueAssessment } = args;
+  try {
+    await reingestDependencyCheck(
+      {
+        organizationId,
+        arrangement: {
+          id: reingestPrev.arrangement.id,
+          lifecycleStatus: reingestPrev.arrangement.lifecycleStatus,
+        },
+        prevSubprocessors: reingestPrev.subprocessors,
+        nextSubprocessors: Array.isArray(p.subcontractors) ? p.subcontractors : [],
+        prevResidency: reingestPrev.residency,
+        nextResidency: p.dataResidency ?? '',
+        cif: reingestPrev.cif,
+      },
+      { repo: arrangements, audit, enqueue: enqueueAssessment }
+    );
+  } catch {
+    /* best-effort — never fail a committed intake on a reassessment-trigger error */
+  }
+}
+
+/**
+ * @param {{organizationId:string, userId?:string, proposal:object, sourceFileName?:string,
+ *          trigger?:string, repos?:object}} args  repos is injectable for tests (defaults to the singletons)
+ * @returns {Promise<object>} the created arrangement row
+ */
+interface ConfirmProposalArgs {
+  organizationId: string;
+  userId?: string | null;
+   
+  proposal: any;
+  sourceFileName?: string;
+  trigger?: string;
+   
+  repos?: Record<string, any>;
+}
+
+export async function confirmProposal({
+  organizationId,
+  userId = null,
+  proposal: p,
+  sourceFileName = 'Ingested contract',
+  trigger,
+  repos = {},
+}: ConfirmProposalArgs) {
+  const { legalEntities, businessFunctions, ictServices, providerGraph, arrangements, evidence, reportability, audit } =
+    resolveRepos(repos);
+
+  const legalEntity = await findOrCreateLegalEntity(legalEntities, organizationId, p);
+  const businessFunction = await findOrCreateBusinessFunction(
+    businessFunctions,
+    organizationId,
+    legalEntity.id,
+    p
+  );
+  const provider = await providerGraph.findOrCreateNode(organizationId, {
+    kind: 'external',
+    name: p.providerName,
   });
+
+  // P2b (DORA Art. 28(1)/29, RTV-32): on a RE-INGESTION of an existing arrangement, snapshot the PRIOR
+  // subprocessors + residency NOW, BEFORE the graph is mutated below — so a material change can be diffed
+  // and the prior arrangement reopened for reassessment. Best-effort: a snapshot failure never blocks intake.
+  const isReingest = trigger === 'change' || trigger === 'existing';
+  const reingestPrev = isReingest
+    ? await snapshotReingestPrev({ providerGraph, arrangements, organizationId, provider, businessFunction, p })
+    : null;
+
+  await createSubcontractorEdges(providerGraph, organizationId, provider, p);
+
+  const ictService = await findOrCreateIctService(ictServices, organizationId, provider, p);
+
+  const arrangement = await arrangements.create(
+    buildArrangementRow({
+      organizationId,
+      legalEntity,
+      businessFunction,
+      provider,
+      ictService,
+      trigger,
+      userId,
+      p,
+    })
+  );
 
   // ADR-0005 A2: a promoted arrangement is a third-party ICT service → seed ONE system-proposed
   // `pending_review` reportability determination (determinedBy NULL — NOT a human decision, and NOT
   // auto-`reportable`). A human confirms it later (A3, capability `reportability:determine`). The
   // service-relationship classification (if the proposal carried one) informs, never determines.
-  const serviceRelationship = ['licence_only', 'support_maintenance', 'managed_service', 'saas'].includes(
-    p.serviceRelationship
-  )
+  const serviceRelationship = SERVICE_RELATIONSHIPS.includes(p.serviceRelationship)
     ? p.serviceRelationship
     : null;
   await reportability.create({
@@ -202,25 +307,14 @@ export async function confirmProposal({
   // change, reopen the PRIOR arrangement for a fresh assessment (the RTV-32 change trigger). Best-effort
   // + fail-safe — a trigger failure must never fail the intake that already committed above.
   if (reingestPrev) {
-    try {
-      await reingestDependencyCheck(
-        {
-          organizationId,
-          arrangement: {
-            id: reingestPrev.arrangement.id,
-            lifecycleStatus: reingestPrev.arrangement.lifecycleStatus,
-          },
-          prevSubprocessors: reingestPrev.subprocessors,
-          nextSubprocessors: Array.isArray(p.subcontractors) ? p.subcontractors : [],
-          prevResidency: reingestPrev.residency,
-          nextResidency: p.dataResidency ?? '',
-          cif: reingestPrev.cif,
-        },
-        { repo: arrangements, audit, enqueue: repos.enqueueAssessment }
-      );
-    } catch {
-      /* best-effort — never fail a committed intake on a reassessment-trigger error */
-    }
+    await runReingestCheck({
+      organizationId,
+      reingestPrev,
+      p,
+      arrangements,
+      audit,
+      enqueueAssessment: repos.enqueueAssessment,
+    });
   }
 
   return arrangement;

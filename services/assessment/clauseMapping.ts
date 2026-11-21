@@ -73,7 +73,7 @@ export function mapClauseByPattern(
   return mappings;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable assist returns control ids
+ 
 type LlmAssist = (clause: Clause, candidates: ControlLike[]) => Promise<string[]>;
 
 /**

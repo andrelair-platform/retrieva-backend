@@ -84,6 +84,43 @@ export async function convertViaDocling(buffer: Buffer, fileName: string) {
  *
  * @returns {Promise<{ markdown: string, figures: Array<{dataUrl:string,width:number,height:number,bytes:number}> }>}
  */
+type DoclingFigure = { dataUrl: string; width: number; height: number; bytes: number };
+
+/** The data-URI of a docling picture, or '' if it's not an embedded image. */
+function pictureDataUri(p: any): string {
+  const uri = p?.image?.uri || p?.image?.url || '';
+  return typeof uri === 'string' ? uri : '';
+}
+
+/** Numeric bbox value or 0. */
+function bboxNum(v: unknown): number {
+  return (v as number) ?? 0;
+}
+
+/** Bounding-box width/height for a docling picture (0 when the bbox is absent). */
+function pictureDimensions(p: any): { width: number; height: number } {
+  const bbox = p?.prov?.[0]?.bbox || p?.bbox || {};
+  return {
+    width: Math.abs(bboxNum(bbox.r) - bboxNum(bbox.l)),
+    height: Math.abs(bboxNum(bbox.t) - bboxNum(bbox.b)),
+  };
+}
+
+/**
+ * Extract embedded figure data-URIs (+ bounding-box dimensions) from docling's
+ * JSON `pictures` array. Non-data-image entries are skipped.
+ */
+function extractDoclingFigures(pics: any[]): DoclingFigure[] {
+  const figures: DoclingFigure[] = [];
+  for (const p of pics) {
+    const uri = pictureDataUri(p);
+    if (!uri.startsWith('data:image')) continue;
+    const { width, height } = pictureDimensions(p);
+    figures.push({ dataUrl: uri, width, height, bytes: uri.length });
+  }
+  return figures;
+}
+
 export async function convertWithFigures(buffer: Buffer, fileName: string) {
   const form = new FormData();
   form.append('files', new Blob([buffer as unknown as BlobPart]), fileName || 'document');
@@ -106,16 +143,7 @@ export async function convertWithFigures(buffer: Buffer, fileName: string) {
     const json = await res.json();
     const doc = json?.document || {};
     const markdown = typeof doc.md_content === 'string' ? doc.md_content : '';
-    const pics = doc.json_content?.pictures || [];
-    const figures: Array<{ dataUrl: string; width: number; height: number; bytes: number }> = [];
-    for (const p of pics) {
-      const uri = p?.image?.uri || p?.image?.url || '';
-      if (typeof uri !== 'string' || !uri.startsWith('data:image')) continue;
-      const bbox = p?.prov?.[0]?.bbox || p?.bbox || {};
-      const width = Math.abs((bbox.r ?? 0) - (bbox.l ?? 0));
-      const height = Math.abs((bbox.t ?? 0) - (bbox.b ?? 0));
-      figures.push({ dataUrl: uri, width, height, bytes: uri.length });
-    }
+    const figures = extractDoclingFigures(doc.json_content?.pictures || []);
     return { markdown, figures };
   } finally {
     clearTimeout(timer);

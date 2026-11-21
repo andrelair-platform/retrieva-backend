@@ -41,6 +41,70 @@ function strictEntitlement(): boolean {
   return String(process.env.REQUIRE_ACTIVE_PLAN_STRICT || '').toLowerCase() === 'true';
 }
 
+type PlanDecision = { ok: true } | { ok: false; message: string; planStatus: string };
+
+const PLAN_MESSAGES = {
+  past_due: 'Your payment is past due. Please update your billing information.',
+  canceled: 'Your subscription has been canceled.',
+  paused: 'Your subscription is paused. Please add a payment method to continue.',
+};
+
+/**
+ * Decide a request's entitlement: the missing-org path (fail-open next, or 402 under strict) + the
+ * resolved-org evaluation, in one branch. Mirrors the former two inline `if` blocks exactly.
+ */
+function decideEntitlement(req: Request, org: any): PlanDecision {
+  // Org not found or billing not yet provisioned → security event + (fail-open | fail-closed per flag)
+  if (!org || !org.planStatus) {
+    if (handleMissingEntitlement(req, !!org)) {
+      return { ok: false, message: 'No active subscription for this organization.', planStatus: 'none' };
+    }
+    return { ok: true };
+  }
+  return evaluatePlan(org);
+}
+
+/** Evaluate a resolved org's entitlement → allow (ok) or the 402 payload. `active`/`internal` pass. */
+function evaluatePlan(org: any): PlanDecision {
+  const { planStatus, trialEndsAt } = org;
+
+  // 'internal' (ADR-0004) = a provisioned internal tenant (e.g. ktayl-solution IS); passes like
+  // 'active'. It is set ONLY by the provisioner on an internal org, never via public registration,
+  // and the org's plan_status is NOT NULL, so this tenant is effectively fail-closed (it always has
+  // an explicit entitlement — it never relies on the org-not-found fail-open above; see #156).
+  if (planStatus === 'active' || planStatus === 'internal') {
+    return { ok: true };
+  }
+
+  if (planStatus === 'trialing') {
+    if (trialEndsAt && trialEndsAt > new Date()) {
+      return { ok: true };
+    }
+    // Trial has expired but Stripe hasn't fired the webhook yet — treat as past_due
+    return { ok: false, message: 'Your free trial has expired. Please add a payment method.', planStatus: 'past_due' };
+  }
+
+  return {
+    ok: false,
+    message: PLAN_MESSAGES[planStatus as keyof typeof PLAN_MESSAGES] || 'Your subscription is not active.',
+    planStatus,
+  };
+}
+
+/** Log the missing-entitlement security event; returns true when the request must be DENIED (strict). */
+function handleMissingEntitlement(req: Request, orgFound: boolean): boolean {
+  const strict = strictEntitlement();
+  logger.warn('requireActivePlan: entitlement missing', {
+    service: 'billing',
+    securityEvent: 'entitlement_fail_open',
+    userId: req.user!.userId,
+    organizationId: req.user!.organizationId ?? null,
+    orgFound,
+    strict,
+  });
+  return strict;
+}
+
 export async function requireActivePlan(req: Request, res: Response, next: NextFunction) {
   // Paywall neutralized (self-hosted profile, the default) → entitlement is a no-op for every route.
   if (!billingEnabled()) {
@@ -52,58 +116,14 @@ export async function requireActivePlan(req: Request, res: Response, next: NextF
   }
 
   try {
-    const org = req.user.organizationId
-      ? await organizationRepository.findById(req.user.organizationId)
-      : null;
+    const orgId = req.user.organizationId;
+    const org = orgId ? await organizationRepository.findById(orgId) : null;
 
-    // Org not found or billing not yet provisioned → security event + (fail-open | fail-closed per flag)
-    if (!org || !org.planStatus) {
-      const strict = strictEntitlement();
-      logger.warn('requireActivePlan: entitlement missing', {
-        service: 'billing',
-        securityEvent: 'entitlement_fail_open',
-        userId: req.user.userId,
-        organizationId: req.user.organizationId ?? null,
-        orgFound: !!org,
-        strict,
-      });
-      if (strict) {
-        return sendError(res, 402, 'No active subscription for this organization.', {
-          planStatus: 'none',
-        });
-      }
+    const decision = decideEntitlement(req, org);
+    if (decision.ok) {
       return next();
     }
-
-    const { planStatus, trialEndsAt } = org;
-
-    // 'internal' (ADR-0004) = a provisioned internal tenant (e.g. ktayl-solution IS); passes like
-    // 'active'. It is set ONLY by the provisioner on an internal org, never via public registration,
-    // and the org's plan_status is NOT NULL, so this tenant is effectively fail-closed (it always has
-    // an explicit entitlement — it never relies on the org-not-found fail-open above; see #156).
-    if (planStatus === 'active' || planStatus === 'internal') {
-      return next();
-    }
-
-    if (planStatus === 'trialing') {
-      if (trialEndsAt && trialEndsAt > new Date()) {
-        return next();
-      }
-      // Trial has expired but Stripe hasn't fired the webhook yet — treat as past_due
-      return sendError(res, 402, 'Your free trial has expired. Please add a payment method.', {
-        planStatus: 'past_due',
-      });
-    }
-
-    const messages = {
-      past_due: 'Your payment is past due. Please update your billing information.',
-      canceled: 'Your subscription has been canceled.',
-      paused: 'Your subscription is paused. Please add a payment method to continue.',
-    };
-
-    return sendError(res, 402, messages[planStatus as keyof typeof messages] || 'Your subscription is not active.', {
-      planStatus,
-    });
+    return sendError(res, 402, decision.message, { planStatus: decision.planStatus });
   } catch (err) {
     // On DB error, fail-open to avoid blocking legitimate requests
     logger.error('requireActivePlan: failed to check org billing status', {

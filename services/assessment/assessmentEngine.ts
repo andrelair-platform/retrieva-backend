@@ -30,10 +30,54 @@ import { makeVerdictJudge } from './verdictLlm.js';
  * @param {{retriever?:{gatherEvidence:Function}, llmJudge?:Function}} [deps]
  */
 interface AssessDeps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable retriever + judge (real orchestration, stubbed in tests)
+   
   retriever?: { gatherEvidence: (control: any, arrangement: any) => Promise<any> };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable judge fn
+   
   llmJudge?: (...args: any[]) => Promise<any>;
+}
+
+interface AssessControlCtx {
+  organizationId: string;
+  arrangementId: string;
+  libraryVersion: string;
+  userId: string | null;
+  /** running verdict tally, mutated in place */
+  breakdown: Record<string, number>;
+}
+
+// Assess a single control: gather evidence, decide the verdict, tally the
+// breakdown, and upsert the (draft) finding. Extracted from the main loop.
+async function assessOneControl(
+  control: Record<string, any>,
+  arrangement: any,
+  deps: {
+    retriever: NonNullable<AssessDeps['retriever']>;
+    llmJudge: NonNullable<AssessDeps['llmJudge']>;
+  },
+  ctx: AssessControlCtx
+) {
+  const gathered = await deps.retriever.gatherEvidence(control, arrangement);
+  const decided = await assessControl(control, gathered, deps.llmJudge);
+  ctx.breakdown[decided.verdict] = (ctx.breakdown[decided.verdict] || 0) + 1;
+
+  return findingRepository.upsertForControl({
+    organizationId: ctx.organizationId,
+    arrangementId: ctx.arrangementId,
+    controlId: control.id,
+    libraryVersion: ctx.libraryVersion,
+    verdict: decided.verdict as
+      | 'compliant'
+      | 'partial'
+      | 'non_compliant'
+      | 'insufficient_evidence'
+      | 'not_applicable',
+    rationale: decided.rationale,
+    citations: decided.citations,
+    searched: decided.searched,
+    confidence: decided.confidence,
+    status: 'draft', // AI drafts; human decides (RTV-55)
+    createdBy: ctx.userId,
+  });
 }
 
 export async function assessArrangement(
@@ -68,30 +112,14 @@ export async function assessArrangement(
 
   const breakdown: Record<string, number> = {};
   const findings = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- controls are heterogeneous library entries
-  for (const control of controls as Array<Record<string, any>>) {
-    const gathered = await retriever.gatherEvidence(control, arrangement);
-    const decided = await assessControl(control, gathered, llmJudge);
-    breakdown[decided.verdict] = (breakdown[decided.verdict] || 0) + 1;
 
-    const finding = await findingRepository.upsertForControl({
-      organizationId,
-      arrangementId,
-      controlId: control.id,
-      libraryVersion,
-      verdict: decided.verdict as
-        | 'compliant'
-        | 'partial'
-        | 'non_compliant'
-        | 'insufficient_evidence'
-        | 'not_applicable',
-      rationale: decided.rationale,
-      citations: decided.citations,
-      searched: decided.searched,
-      confidence: decided.confidence,
-      status: 'draft', // AI drafts; human decides (RTV-55)
-      createdBy: userId,
-    });
+  for (const control of controls as Array<Record<string, any>>) {
+    const finding = await assessOneControl(
+      control,
+      arrangement,
+      { retriever, llmJudge },
+      { organizationId, arrangementId, libraryVersion, userId, breakdown }
+    );
     findings.push(finding);
   }
 

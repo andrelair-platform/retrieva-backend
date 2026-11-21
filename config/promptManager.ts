@@ -90,7 +90,7 @@ async function resolveManagedPrompt({
   vars = {},
   fallbackConfig = null,
 }: ResolveManagedPromptArgs) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external Langfuse prompt object
+   
   const lf: any = await getLangfusePrompt(name, { label: PROMPT_LABEL });
   if (lf) {
     try {

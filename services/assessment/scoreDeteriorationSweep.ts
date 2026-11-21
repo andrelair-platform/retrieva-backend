@@ -19,20 +19,56 @@ const HOUR_MS = 60 * 60 * 1000;
 const num = (v: unknown, d: number): number =>
   Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d;
 
-export async function runScoreDeteriorationSweep({
+// Reopen a deteriorated vendor's ACTIVE arrangements for reassessment (idempotent — skips
+// under_review). Returns how many were actually (re)triggered.
+async function reopenActiveArrangements(
+  repo: any,
+  reopen: any,
+  d: any,
+  verdict: { band: unknown; drop: unknown }
+): Promise<number> {
+  let reopened = 0;
+  const list = await repo.listWorkspaceArrangements(d.organizationId, d.workspaceId);
+  for (const a of list) {
+    if (a.lifecycleStatus !== 'active') continue;
+    const res = await reopen({
+      organizationId: d.organizationId,
+      arrangement: { id: a.id, lifecycleStatus: a.lifecycleStatus },
+      reason: 'score-deterioration',
+      event: {
+        action: 'arrangement.score_deterioration',
+        metadata: { band: verdict.band, drop: verdict.drop, current: d.current, previous: d.previous },
+      },
+    });
+    if (res.triggered) reopened += 1;
+  }
+  return reopened;
+}
+
+// Resolve the sweep's options to a fully-defaulted config (env-driven thresholds + injectable
+// collaborators). Each default is a parameter default — grouped here so the sweep body stays simple.
+function resolveSweepOptions({
   now = new Date(),
   // a touch wider than the 24h sweep cadence so a drop is never missed between runs
   lookbackHours = num(process.env.SCORE_DRIFT_LOOKBACK_HOURS, 26),
   amberDrop = num(process.env.SCORE_DRIFT_AMBER, 10),
   redDrop = num(process.env.SCORE_DRIFT_RED, 20),
   limit = num(process.env.SCORE_DRIFT_BATCH_LIMIT, 100),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable repo/reopen/audit for tests
+
   repo = doraScoreRepository as any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   reopen = reopenForReassessment as any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   audit = recordAudit as any,
-} = {}): Promise<{ scanned: number; deteriorated: number; reopened: number }> {
+}: any = {}) {
+  return { now, lookbackHours, amberDrop, redDrop, limit, repo, reopen, audit };
+}
+
+export async function runScoreDeteriorationSweep(
+  options: any = {}
+): Promise<{ scanned: number; deteriorated: number; reopened: number }> {
+  const { now, lookbackHours, amberDrop, redDrop, limit, repo, reopen, audit } =
+    resolveSweepOptions(options);
   const since = new Date(now.getTime() - lookbackHours * HOUR_MS);
   const drops = await repo.listRecentScoreDrops({ since, limit });
 
@@ -53,21 +89,7 @@ export async function runScoreDeteriorationSweep({
       metadata: { current: d.current, previous: d.previous, drop: verdict.drop, band: verdict.band },
     });
 
-    // Reopen the vendor's ACTIVE arrangements for reassessment (idempotent — skips under_review).
-    const list = await repo.listWorkspaceArrangements(d.organizationId, d.workspaceId);
-    for (const a of list) {
-      if (a.lifecycleStatus !== 'active') continue;
-      const res = await reopen({
-        organizationId: d.organizationId,
-        arrangement: { id: a.id, lifecycleStatus: a.lifecycleStatus },
-        reason: 'score-deterioration',
-        event: {
-          action: 'arrangement.score_deterioration',
-          metadata: { band: verdict.band, drop: verdict.drop, current: d.current, previous: d.previous },
-        },
-      });
-      if (res.triggered) reopened += 1;
-    }
+    reopened += await reopenActiveArrangements(repo, reopen, d, verdict);
   }
 
   logger.info('score-deterioration.sweep.complete', {

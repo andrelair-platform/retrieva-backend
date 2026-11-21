@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- injectable repos/queue/services stored as
-   fields; questionnaire rows + request payloads are heterogeneous. */
+ 
 import { randomUUID } from 'crypto';
 import { AppError } from '../utils/index.js';
 import { questionnaireTemplateRepository } from '../repositories/index.js';
@@ -70,29 +69,9 @@ class QuestionnaireService {
     // exact legacy behaviour (the full static template). The vendor's tier/serviceType come from its
     // workspace (vendor profile); the builder is fail-safe (a failed LLM call still yields the
     // deterministic add-on floor over the tier-proportional backbone).
-    let questions = baseQuestions;
-    let statusMessage = 'Created — awaiting send';
-    if (adaptive) {
-      const ws = await this.workspaceRepo.findById(String(workspaceId)).catch(() => null);
-      const built = await this.buildDynamic({
-        baseQuestions,
-        tier: ws?.vendorTier ?? null,
-        serviceType: ws?.serviceType ?? null,
-      });
-      questions = built.questions;
-      statusMessage = `Generated (${built.tier}/${built.serviceType}: ${built.baseIncluded}/${built.baseTotal} core + ${built.added} tailored) — awaiting send`;
-      this.logger.info('VendorQuestionnaire dynamic generation', {
-        service: 'questionnaire-service',
-        workspaceId,
-        tier: built.tier,
-        serviceType: built.serviceType,
-        baseIncluded: built.baseIncluded,
-        baseTotal: built.baseTotal,
-        trimmed: built.trimmed,
-        added: built.added,
-        usedFallback: built.usedFallback,
-      });
-    }
+    const { questions, statusMessage } = adaptive
+      ? await this.buildAdaptiveQuestions(baseQuestions, workspaceId)
+      : { questions: baseQuestions, statusMessage: 'Created — awaiting send' };
 
     // Unscoped create with an EXPLICIT workspaceId (the scoped create would overwrite it from
     // the request tenant + require a tenant context this service doesn't rely on).
@@ -116,6 +95,33 @@ class QuestionnaireService {
     });
 
     return questionnaire;
+  }
+
+  // RTV-104 — build the DYNAMIC (tier/serviceType-tailored) DDQ for an adaptive questionnaire.
+  // Resolves the vendor profile from its workspace (fail-safe to nulls) and returns the tailored
+  // question set + its human status message. Extracted so createQuestionnaire stays a thin flow.
+  async buildAdaptiveQuestions(baseQuestions: any, workspaceId: any) {
+    const ws = await this.workspaceRepo.findById(String(workspaceId)).catch(() => null);
+    const built = await this.buildDynamic({
+      baseQuestions,
+      tier: ws?.vendorTier ?? null,
+      serviceType: ws?.serviceType ?? null,
+    });
+    this.logger.info('VendorQuestionnaire dynamic generation', {
+      service: 'questionnaire-service',
+      workspaceId,
+      tier: built.tier,
+      serviceType: built.serviceType,
+      baseIncluded: built.baseIncluded,
+      baseTotal: built.baseTotal,
+      trimmed: built.trimmed,
+      added: built.added,
+      usedFallback: built.usedFallback,
+    });
+    return {
+      questions: built.questions,
+      statusMessage: `Generated (${built.tier}/${built.serviceType}: ${built.baseIncluded}/${built.baseTotal} core + ${built.added} tailored) — awaiting send`,
+    };
   }
 
   /**

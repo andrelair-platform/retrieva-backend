@@ -62,9 +62,9 @@ const roleFor = (ctx: QueueContext, controlId: string): RoutableRole | undefined
  * @param risks    open risks (approved gaps awaiting the human's remediation decision)
  */
 export function buildDecisionQueue(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- persisted rows are heterogeneous
+   
   findings: any[],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   risks: any[],
   ctx: QueueContext
 ): { items: DecisionItem[]; counts: { findings: number; risks: number; total: number } } {

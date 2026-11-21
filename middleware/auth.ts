@@ -24,6 +24,24 @@ import logger from '../config/logger.js';
  * @typedef {import('express').NextFunction} NextFunction
  */
 
+// Normalise an unknown thrown value to a message string / name — pulled out so the ternary
+// doesn't inflate the surrounding middleware's cyclomatic complexity.
+const errMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+const errName = (error: unknown): string => (error instanceof Error ? error.name : '');
+
+// Map a sanitized user row to the request-attached AuthenticatedUser shape (shared by both
+// authenticate + optionalAuth so the field-mapping branches live in one place).
+const toAuthenticatedUser = (user: Awaited<ReturnType<typeof userRepository.findById>>): AuthenticatedUser =>
+  ({
+    userId: user!.id,
+    email: user!.email,
+    role: user!.role,
+    name: user!.name,
+    organizationId: user!.organizationId || null,
+    platformAdmin: user!.platformAdmin === true, // RTV-52: SaaS-operator flag (can() allow-all)
+  }) as AuthenticatedUser;
+
 /**
  * @typedef {Object} AuthenticatedUser
  * @property {import('mongoose').Types.ObjectId} userId - User's MongoDB ID
@@ -67,12 +85,8 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     try {
       decoded = verifyAccessToken(token);
     } catch (error) {
-      logger.warn('Invalid token', {
-        error: (error instanceof Error ? error.message : String(error)),
-        path: req.path,
-        ip: req.ip,
-      });
-      return sendError(res, 401, (error instanceof Error ? error.message : String(error)) || 'Invalid token');
+      logger.warn('Invalid token', { error: errMessage(error), path: req.path, ip: req.ip });
+      return sendError(res, 401, errMessage(error) || 'Invalid token');
     }
 
     // Get user from database
@@ -89,14 +103,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     }
 
     // Attach user to request (repo returns a sanitized row: id, decrypted name)
-    req.user = {
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      name: user.name,
-      organizationId: user.organizationId || null,
-      platformAdmin: user.platformAdmin === true, // RTV-52: SaaS-operator flag (can() allow-all)
-    } as AuthenticatedUser;
+    req.user = toAuthenticatedUser(user);
 
     logger.debug('User authenticated', {
       userId: user.id,
@@ -107,7 +114,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     next();
   } catch (error) {
     logger.error('Authentication middleware error', {
-      error: (error instanceof Error ? error.message : String(error)),
+      error: errMessage(error),
       stack: (error as Error).stack,
     });
     return sendError(res, 500, 'Authentication failed');
@@ -172,6 +179,43 @@ export const authorize = (...roles: string[]) => {
  * @param {NextFunction} next - Next middleware function
  * @returns {Promise<void>}
  */
+// Resolve + attach the user for optionalAuth (best-effort): on a valid token for an active user it
+// attaches req.user; an inactive user or an invalid token is logged (A5 audit) but never fatal.
+const resolveOptionalUser = async (req: Request, token: string): Promise<void> => {
+  try {
+    const decoded = verifyAccessToken(token);
+    const user = await userRepository.findById(decoded.userId);
+
+    if (user && user.isActive) {
+      req.user = toAuthenticatedUser(user);
+    } else if (user && !user.isActive) {
+      // SECURITY FIX: Log inactive user token usage
+      logger.warn('Optional auth - inactive user token detected', {
+        userId: decoded.userId,
+        path: req.path,
+        ip: req.ip,
+      });
+    }
+  } catch (error) {
+    // SECURITY FIX: Log failed token attempts for security monitoring
+    // This helps detect token theft/replay attempts
+    logger.warn('Optional auth - invalid token detected', {
+      error: errMessage(error),
+      errorType: errName(error),
+      path: req.path,
+      ip: req.ip,
+      userAgent: req.headers['user-agent']?.substring(0, 100),
+    });
+
+    // A5: record the invalid/replayed token as an auth audit event.
+    authAuditService.logTokenTheftDetected?.({
+      path: req.path,
+      ip: req.ip,
+      errorType: errName(error),
+    });
+  }
+};
+
 export const optionalAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Get token from cookie or Authorization header
@@ -182,49 +226,10 @@ export const optionalAuth = async (req: Request, res: Response, next: NextFuncti
       return next();
     }
 
-    try {
-      const decoded = verifyAccessToken(token);
-      const user = await userRepository.findById(decoded.userId);
-
-      if (user && user.isActive) {
-        req.user = {
-          userId: user.id,
-          email: user.email,
-          role: user.role,
-          name: user.name,
-          organizationId: user.organizationId || null,
-          platformAdmin: user.platformAdmin === true, // RTV-52
-        } as AuthenticatedUser;
-      } else if (user && !user.isActive) {
-        // SECURITY FIX: Log inactive user token usage
-        logger.warn('Optional auth - inactive user token detected', {
-          userId: decoded.userId,
-          path: req.path,
-          ip: req.ip,
-        });
-      }
-    } catch (error) {
-      // SECURITY FIX: Log failed token attempts for security monitoring
-      // This helps detect token theft/replay attempts
-      logger.warn('Optional auth - invalid token detected', {
-        error: (error instanceof Error ? error.message : String(error)),
-        errorType: (error instanceof Error ? error.name : ""),
-        path: req.path,
-        ip: req.ip,
-        userAgent: req.headers['user-agent']?.substring(0, 100),
-      });
-
-      // A5: record the invalid/replayed token as an auth audit event.
-      authAuditService.logTokenTheftDetected?.({
-        path: req.path,
-        ip: req.ip,
-        errorType: (error instanceof Error ? error.name : ""),
-      });
-    }
-
+    await resolveOptionalUser(req, token);
     next();
   } catch (error) {
-    logger.error('Optional auth middleware error', { error: (error instanceof Error ? error.message : String(error)) });
+    logger.error('Optional auth middleware error', { error: errMessage(error) });
     next(); // Continue even if error
   }
 };

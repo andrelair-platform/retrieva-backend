@@ -17,7 +17,7 @@ function currentStatusByArrangement(determinations: Array<{ arrangementId: strin
   return m;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type Repos = Record<string, any>;
 
 export async function buildReportabilityReconciliation(organizationId: string, repos: Repos = {}) {

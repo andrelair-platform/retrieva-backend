@@ -78,13 +78,14 @@ export class OrganizationMemberRepository extends BaseDrizzleRepository {
 
   // ── invite tokens (ported from the model statics) ───────────────────────────
   /** Create/refresh an invite (upsert on org+email); returns { member, rawToken }. */
-  async createInvite(
-    organizationId: string,
-    email: string,
-    role: string,
-    invitedBy: string,
-    invitedDomainRole: string | null = null
-  ) {
+  async createInvite(opts: {
+    organizationId: string;
+    email: string;
+    role: string;
+    invitedBy: string;
+    invitedDomainRole?: string | null;
+  }) {
+    const { organizationId, email, role, invitedBy, invitedDomainRole = null } = opts;
     const rawToken = generateToken(32);
     const values = {
       organizationId,

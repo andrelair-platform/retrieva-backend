@@ -45,6 +45,21 @@ const requireOrg = (req: Request, res: Response) => {
 
 const norm = (s: unknown) => String(s || '').trim().toLowerCase();
 
+// Read + trim a string field from the request body (missing → '').
+const bodyStr = (req: Request, field: string) => String(req.body?.[field] || '').trim();
+
+// Every arrangement proposal must name its provider + legal entity + business function.
+const hasRequiredDimensions = (p: any) =>
+  !!(p?.providerName && p?.legalEntityName && p?.businessFunctionName);
+
+// Parse an optionally-uploaded file (field `contract`) → its text + original name (none → defaults).
+async function parseOptionalUpload(req: Request): Promise<{ docText: string; sourceFile: string | null }> {
+  if (!req.file) return { docText: '', sourceFile: null };
+  const ext = path.extname(req.file.originalname).replace('.', '').toLowerCase();
+  const docText = (await parseFile(req.file.buffer, ext, req.file.originalname)) || '';
+  return { docText, sourceFile: req.file.originalname };
+}
+
 // POST /api/v1/arrangements/intake — parse a contract + return a PROPOSAL (nothing persisted).
 export const proposeFromContract = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
@@ -60,18 +75,7 @@ export const proposeFromContract = catchAsync(async (req: Request, res: Response
   const proposal = await extractArrangementProposal(text, { sessionId: organizationId });
 
   // Match proposed names against existing org dimensions so the UI can show matched-vs-new.
-  const [entities, providers, functions, services] = await Promise.all([
-    legalEntityRepository.listByOrg(organizationId),
-    providerGraphRepository.listNodesByOrg(organizationId),
-    businessFunctionRepository.listByOrg(organizationId),
-    ictServiceRepository.listByOrg(organizationId),
-  ]);
-  const matches = {
-    legalEntityId: entities.find((e: any) => norm(e.name) === norm(proposal.legalEntityName))?.id ?? null,
-    providerId: providers.find((p: any) => norm(p.displayName) === norm(proposal.providerName))?.id ?? null,
-    businessFunctionId: functions.find((f: any) => norm(f.name) === norm(proposal.businessFunctionName))?.id ?? null,
-    ictServiceId: services.find((s: any) => norm(s.name) === norm(proposal.ictServiceName))?.id ?? null,
-  };
+  const matches = await matchDimensions(organizationId, proposal);
 
   // RTV-34/40 — which DORA controls this contract's clauses touch (deterministic pattern preview),
   // so the human sees the contract's DORA surface before confirming the arrangement.
@@ -110,19 +114,13 @@ export const proposeAdoption = catchAsync(async (req: Request, res: Response) =>
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
 
-  const vendorName = String(req.body?.vendorName || '').trim();
-  const need = String(req.body?.need || '').trim();
+  const vendorName = bodyStr(req, 'vendorName');
+  const need = bodyStr(req, 'need');
   if (!vendorName) return sendError(res, 400, 'vendorName is required');
   if (!need) return sendError(res, 400, 'need (the business need) is required');
 
   // Optional grounding: the vendor's own uploaded doc (SOC 2 / DPA / sub-processor list), field `contract`.
-  let docText = '';
-  let sourceFile: string | null = null;
-  if (req.file) {
-    const ext = path.extname(req.file.originalname).replace('.', '').toLowerCase();
-    docText = (await parseFile(req.file.buffer, ext, req.file.originalname)) || '';
-    sourceFile = req.file.originalname;
-  }
+  const { docText, sourceFile } = await parseOptionalUpload(req);
 
   const { proposal, gaps } = await proposeFromAdoptionRequest({
     vendorName,
@@ -148,8 +146,8 @@ export const proposeAdoption = catchAsync(async (req: Request, res: Response) =>
 export const researchVendor = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
-  const vendorName = String(req.body?.vendorName || '').trim();
-  const sourceUrl = String(req.body?.sourceUrl || '').trim();
+  const vendorName = bodyStr(req, 'vendorName');
+  const sourceUrl = bodyStr(req, 'sourceUrl');
   if (!vendorName) return sendError(res, 400, 'vendorName is required');
   if (!sourceUrl) return sendError(res, 400, 'sourceUrl is required');
 
@@ -167,26 +165,33 @@ export const researchVendor = catchAsync(async (req: Request, res: Response) => 
   }
 });
 
+// Assemble the submit-for-checking args from the request (body fields default as before).
+function buildSubmitArgs(req: Request, organizationId: string, proposal: any) {
+  return {
+    organizationId,
+    userId: req.user!.userId,
+    proposal,
+    sourceFileName: req.body?.sourceFileName || 'Ingested contract',
+    trigger: req.body?.trigger,
+    provenance: req.body?.provenance ?? {},
+  };
+}
+
 // POST /api/v1/arrangements/intake/confirm — the maker submits the AI-assisted draft for checking.
 export const confirmIntake = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
   const p = req.body?.proposal ?? req.body;
-  if (!p?.providerName || !p?.legalEntityName || !p?.businessFunctionName) {
+  if (!hasRequiredDimensions(p)) {
     return sendError(res, 400, 'providerName, legalEntityName and businessFunctionName are required');
   }
 
   if (!(await can(req.user, 'arrangement:create', { organizationId }))) {
     return sendError(res, 403, 'You do not have permission to submit arrangement proposals');
   }
-  const proposal = await submitArrangementProposal({
-    organizationId,
-    userId: req.user!.userId,
-    proposal: p,
-    sourceFileName: req.body?.sourceFileName || 'Ingested contract',
-    trigger: req.body?.trigger,
-    provenance: req.body?.provenance ?? {},
-  });
+  const proposal = await submitArrangementProposal(
+    buildSubmitArgs(req, organizationId, p)
+  );
 
   sendSuccess(res, 202, 'Arrangement proposal submitted for independent checking', { proposal });
 });
@@ -280,7 +285,7 @@ export const resubmitIntakeProposal = catchAsync(async (req: Request, res: Respo
   const expectedVersion = parseVersion(req.body?.expectedVersion);
   const proposalBody = req.body?.proposal;
   if (!expectedVersion || !proposalBody) return sendError(res, 400, 'expectedVersion and proposal are required');
-  if (!proposalBody.providerName || !proposalBody.legalEntityName || !proposalBody.businessFunctionName) {
+  if (!hasRequiredDimensions(proposalBody)) {
     return sendError(res, 400, 'providerName, legalEntityName and businessFunctionName are required');
   }
   try {
@@ -339,13 +344,13 @@ async function loadOrgVendors(organizationId: string): Promise<VendorRef[]> {
     providerGraphRepository.listNodesByOrg(organizationId),
     businessFunctionRepository.listByOrg(organizationId),
   ]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const providerName = new Map<string, string>(providers.map((p: any) => [p.id, String(p.displayName ?? p.name ?? '')]));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const fnName = new Map<string, string>(functions.map((f: any) => [f.id, String(f.name ?? '')]));
   return (
     arrangements
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       .map((a: any) => {
         const pn = providerName.get(a.providerId) ?? '';
         const bf = a.businessFunctionId ? fnName.get(a.businessFunctionId) : undefined;
@@ -365,9 +370,9 @@ export const triageDocumentsHandler = catchAsync(async (req: Request, res: Respo
   }
   if (raw.length > 1000) return sendError(res, 413, 'Too many files in one triage batch (max 1000)');
   const inputs: TriageInput[] = raw
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     .filter((f: any) => f && typeof f.filename === 'string' && f.filename.trim())
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     .map((f: any) => ({
       filename: String(f.filename),
       relativePath: f.relativePath ? String(f.relativePath) : undefined,

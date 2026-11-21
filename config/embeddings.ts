@@ -168,16 +168,16 @@ logger.info('Embeddings configured', { service: 'embeddings', ...embeddingsMeta 
  */
 interface EmbedDocumentsOptions {
   onProgress?: (batchNum: number, totalBatches: number, chunksProcessed: number) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- workspace shape resolved by embeddingProvider
+   
   workspace?: any;
 }
 
 class BatchedEmbeddings {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain embeddings client
+   
   baseEmbeddings: any;
   config: typeof BATCH_CONFIG;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain embeddings client
+   
   constructor(baseEmbeddings: any, config: typeof BATCH_CONFIG) {
     this.baseEmbeddings = baseEmbeddings;
     this.config = config;
@@ -350,73 +350,13 @@ class BatchedEmbeddings {
     let chunksProcessed = 0;
 
     for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
-      const batchStartTime = Date.now();
-
-      try {
-        // Embed the batch
-        const batchEmbeddings = await this.baseEmbeddings.embedDocuments(batch);
-        allEmbeddings.push(...batchEmbeddings);
-
-        chunksProcessed += batch.length;
-        const batchTime = Date.now() - batchStartTime;
-
-        // Update metrics
-        metrics.totalChunksEmbedded += batch.length;
-        metrics.totalBatches++;
-        metrics.totalTimeMs += batchTime;
-
-        // Log batch progress
-        logger.debug('Batch embedded', {
-          service: 'embeddings',
-          batch: i + 1,
-          totalBatches: batches.length,
-          batchSize: batch.length,
-          batchTimeMs: batchTime,
-          chunksPerSec: ((batch.length / batchTime) * 1000).toFixed(1),
-        });
-
-        // Progress callback
-        if (onProgress) {
-          onProgress(i + 1, batches.length, chunksProcessed);
-        }
-      } catch (error) {
-        const message = (error as Error).message;
-        const isContextLengthError =
-          message?.includes('context length') || message?.includes('input length');
-
-        if (isContextLengthError && batch.length > 0) {
-          // Context length exceeded - retry each text individually with progressive truncation
-          logger.warn('Batch exceeded context length, retrying texts individually', {
-            service: 'embeddings',
-            batch: i + 1,
-            batchSize: batch.length,
-          });
-
-          for (const text of batch) {
-            const embedding = await this.embedWithRetry(text);
-            allEmbeddings.push(embedding);
-            chunksProcessed++;
-          }
-
-          metrics.totalChunksEmbedded += batch.length;
-          metrics.totalBatches++;
-          metrics.totalTimeMs += Date.now() - batchStartTime;
-
-          if (onProgress) {
-            onProgress(i + 1, batches.length, chunksProcessed);
-          }
-        } else {
-          metrics.errors++;
-          logger.error('Batch embedding failed', {
-            service: 'embeddings',
-            batch: i + 1,
-            batchSize: batch.length,
-            error: message,
-          });
-          throw error;
-        }
-      }
+      chunksProcessed = await this.embedDocumentsBatch(batches[i], {
+        batchIndex: i,
+        totalBatches: batches.length,
+        allEmbeddings,
+        chunksProcessed,
+        onProgress,
+      });
     }
 
     const totalTime = Date.now() - startTime;
@@ -429,6 +369,114 @@ class BatchedEmbeddings {
     });
 
     return allEmbeddings;
+  }
+
+  /**
+   * Embed a single batch (appending to `allEmbeddings`), with a context-length
+   * fallback that retries each text individually. Returns the updated
+   * chunksProcessed count.
+   */
+  private async embedDocumentsBatch(
+    batch: string[],
+    ctx: {
+      batchIndex: number;
+      totalBatches: number;
+      allEmbeddings: number[][];
+      chunksProcessed: number;
+      onProgress?: (batchNum: number, totalBatches: number, chunksProcessed: number) => void;
+    }
+  ): Promise<number> {
+    const { batchIndex, totalBatches, allEmbeddings, onProgress } = ctx;
+    let chunksProcessed = ctx.chunksProcessed;
+    const batchStartTime = Date.now();
+
+    try {
+      // Embed the batch
+      const batchEmbeddings = await this.baseEmbeddings.embedDocuments(batch);
+      allEmbeddings.push(...batchEmbeddings);
+
+      chunksProcessed += batch.length;
+      const batchTime = Date.now() - batchStartTime;
+
+      // Update metrics
+      metrics.totalChunksEmbedded += batch.length;
+      metrics.totalBatches++;
+      metrics.totalTimeMs += batchTime;
+
+      // Log batch progress
+      logger.debug('Batch embedded', {
+        service: 'embeddings',
+        batch: batchIndex + 1,
+        totalBatches,
+        batchSize: batch.length,
+        batchTimeMs: batchTime,
+        chunksPerSec: ((batch.length / batchTime) * 1000).toFixed(1),
+      });
+
+      // Progress callback
+      if (onProgress) {
+        onProgress(batchIndex + 1, totalBatches, chunksProcessed);
+      }
+      return chunksProcessed;
+    } catch (error) {
+      return this.handleBatchEmbedError(error, batch, { ...ctx, chunksProcessed, batchStartTime });
+    }
+  }
+
+  /**
+   * Error path for a failed batch: on a context-length error retry each text
+   * individually; otherwise re-throw. Returns the updated chunksProcessed count.
+   */
+  private async handleBatchEmbedError(
+    error: unknown,
+    batch: string[],
+    ctx: {
+      batchIndex: number;
+      totalBatches: number;
+      allEmbeddings: number[][];
+      chunksProcessed: number;
+      batchStartTime: number;
+      onProgress?: (batchNum: number, totalBatches: number, chunksProcessed: number) => void;
+    }
+  ): Promise<number> {
+    const { batchIndex, totalBatches, allEmbeddings, batchStartTime, onProgress } = ctx;
+    let chunksProcessed = ctx.chunksProcessed;
+    const message = (error as Error).message;
+    const isContextLengthError =
+      message?.includes('context length') || message?.includes('input length');
+
+    if (!(isContextLengthError && batch.length > 0)) {
+      metrics.errors++;
+      logger.error('Batch embedding failed', {
+        service: 'embeddings',
+        batch: batchIndex + 1,
+        batchSize: batch.length,
+        error: message,
+      });
+      throw error;
+    }
+
+    // Context length exceeded - retry each text individually with progressive truncation
+    logger.warn('Batch exceeded context length, retrying texts individually', {
+      service: 'embeddings',
+      batch: batchIndex + 1,
+      batchSize: batch.length,
+    });
+
+    for (const text of batch) {
+      const embedding = await this.embedWithRetry(text);
+      allEmbeddings.push(embedding);
+      chunksProcessed++;
+    }
+
+    metrics.totalChunksEmbedded += batch.length;
+    metrics.totalBatches++;
+    metrics.totalTimeMs += Date.now() - batchStartTime;
+
+    if (onProgress) {
+      onProgress(batchIndex + 1, totalBatches, chunksProcessed);
+    }
+    return chunksProcessed;
   }
 
   /**

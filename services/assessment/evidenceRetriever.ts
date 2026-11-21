@@ -19,7 +19,7 @@ import {
   type RerankSelector,
 } from './rerank.js';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous assessment domain objects
+ 
 type AnyObj = Record<string, any>;
 
 const normalize = (s: unknown) => String(s || '').toLowerCase();
@@ -54,10 +54,56 @@ function coveredTypes(control: AnyObj, matched: AnyObj[]) {
  * still assesses (→ insufficient-evidence) when not. `deps.searchSpans` is injectable for tests.
  * @returns {Promise<{spans:Array<{source:string,snippet:string}>, searched:any[], evidenceRecords:object[], coveredEvidenceTypes:string[]}>}
  */
+/** Build the metadata-span snippet for a matched evidence RECORD. */
+function toMetaSpan(e: AnyObj) {
+  const version = e.version ? ` (v${e.version})` : '';
+  const scopeTag = e.scope === 'provider' ? ' [provider-global]' : ' [arrangement-local]';
+  return {
+    source: e.document,
+    snippet: `${e.document}${version} — source: ${e.source || 'n/a'}${scopeTag}`,
+    evidenceId: e.id,
+  };
+}
+
+/**
+ * Retrieve real document spans matching the control's patterns (empty unless a
+ * doc was ingested). When reranking is enabled, retrieve MORE candidates then
+ * let the reranker isolate the on-topic clause(s) for the judge (#618). Off by
+ * default → identical behaviour to before (topK default).
+ */
+async function retrieveRagSpans(
+  control: AnyObj,
+  arrangement: AnyObj,
+  searchSpans: (...args: any[]) => Promise<any[]>,
+  rerankSelector?: RerankSelector
+) {
+  const query = [control.title, ...(control.clauseMatchPatterns || [])].filter(Boolean).join(' ');
+  let ragSpans = RERANK_ENABLED
+    ? await searchSpans(arrangement.id, query, RERANK_CANDIDATES)
+    : await searchSpans(arrangement.id, query);
+  if (RERANK_ENABLED && ragSpans.length > 1) {
+    const selector = rerankSelector || makeRerankSelector({ sessionId: arrangement.id });
+    ragSpans = await rerankSpans(control, ragSpans, selector);
+  }
+  return ragSpans;
+}
+
+/**
+ * RAG hits count as covered evidence too (the control's expected types were
+ * found in the docs), so union the metadata-covered types with all expected
+ * types when there was at least one RAG hit.
+ */
+function resolveCoveredTypes(control: AnyObj, matched: AnyObj[], ragHitCount: number) {
+  if (ragHitCount > 0) {
+    return [...new Set([...coveredTypes(control, matched), ...(control.expectedEvidenceTypes || [])])];
+  }
+  return coveredTypes(control, matched);
+}
+
 export async function gatherEvidence(
   control: AnyObj,
   arrangement: AnyObj,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable span search + rerank selector (stubbed in tests)
+
   deps: { searchSpans?: (...args: any[]) => Promise<any[]>; rerankSelector?: RerankSelector } = {}
 ) {
   const searchSpans = deps.searchSpans || searchArrangementSpans;
@@ -66,40 +112,15 @@ export async function gatherEvidence(
     arrangement.id
   );
   const matched = all.filter((e: AnyObj) => matchesControl(control, e));
-  const metaSpans = matched.map((e: AnyObj) => ({
-    source: e.document,
-    snippet: `${e.document}${e.version ? ` (v${e.version})` : ''} — source: ${e.source || 'n/a'}${
-      e.scope === 'provider' ? ' [provider-global]' : ' [arrangement-local]'
-    }`,
-    evidenceId: e.id,
-  }));
+  const metaSpans = matched.map((e: AnyObj) => toMetaSpan(e));
 
-  // Real document spans matching the control's patterns (empty unless a doc was ingested).
-  const query = [control.title, ...(control.clauseMatchPatterns || [])].filter(Boolean).join(' ');
-  // When reranking is enabled, retrieve MORE candidates then let the reranker isolate the on-topic
-  // clause(s) for the judge (#618). Off by default → identical behaviour to before (topK default).
-  let ragSpans = RERANK_ENABLED
-    ? await searchSpans(arrangement.id, query, RERANK_CANDIDATES)
-    : await searchSpans(arrangement.id, query);
-  if (RERANK_ENABLED && ragSpans.length > 1) {
-    const selector = deps.rerankSelector || makeRerankSelector({ sessionId: arrangement.id });
-    ragSpans = await rerankSpans(control, ragSpans, selector);
-  }
+  const ragSpans = await retrieveRagSpans(control, arrangement, searchSpans, deps.rerankSelector);
   const spans = [...ragSpans, ...metaSpans];
 
   return {
     spans,
     evidenceRecords: matched,
-    // RAG hits count as covered evidence too (the control's expected types were found in the docs).
-    coveredEvidenceTypes:
-      ragSpans.length > 0
-        ? [
-            ...new Set([
-              ...coveredTypes(control, matched),
-              ...(control.expectedEvidenceTypes || []),
-            ]),
-          ]
-        : coveredTypes(control, matched),
+    coveredEvidenceTypes: resolveCoveredTypes(control, matched, ragSpans.length),
     searched: [
       {
         scope: 'evidence',

@@ -22,9 +22,9 @@ export const COMPLIANCE_KB_COLLECTION = 'compliance_kb';
 const QDRANT_URL = process.env.QDRANT_URL || 'http://localhost:6333';
 const QDRANT_API_KEY = process.env.QDRANT_API_KEY;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain vector store
+ 
 let cachedStore: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- lazy-init promise for the vector store
+ 
 let cachedStorePromise: any = null;
 
 /**
@@ -87,7 +87,7 @@ export function eurLexUrl(regulation: string, lang?: string) {
  * Map a raw compliance_kb document to the shape the RAG context formatter
  * expects, so citations render as the article number rather than "Untitled".
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous KB document
+ 
 function adaptRegulationDoc(doc: any, lang?: string) {
   const meta = doc.metadata || {};
   const regulation = meta.regulation || 'Regulation';
@@ -115,7 +115,7 @@ function adaptRegulationDoc(doc: any, lang?: string) {
 }
 
 // Qdrant similarity search restricted to one language of the KB.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- external LangChain vector store
+ 
 function searchByLang(store: any, query: string, k: number, lang: string) {
   return store.similaritySearch(query, k, {
     must: [{ key: 'metadata.lang', match: { value: lang } }],
@@ -131,6 +131,19 @@ function searchByLang(store: any, query: string, k: number, lang: string) {
  * @param {number} [k=5]
  * @returns {Promise<Array<{pageContent: string, metadata: object}>>}
  */
+// Prefer the user's language; fall back to English if it has no content
+// (French not yet seeded); last-resort unfiltered for pre-language-tag data.
+async function searchWithLangFallback(store: any, query: string, k: number, primaryLang: string) {
+  let docs = await searchByLang(store, query, k, primaryLang);
+  if (docs.length === 0 && primaryLang !== 'en') {
+    docs = await searchByLang(store, query, k, 'en');
+  }
+  if (docs.length === 0) {
+    docs = await store.similaritySearch(query, k);
+  }
+  return docs;
+}
+
 export async function retrieveRegulationDocs(query: string, k = 5, lang = 'en') {
   if (!query || typeof query !== 'string') return [];
 
@@ -144,15 +157,7 @@ export async function retrieveRegulationDocs(query: string, k = 5, lang = 'en') 
     : 'en';
 
   try {
-    // Prefer the user's language; fall back to English if it has no content
-    // (French not yet seeded); last-resort unfiltered for pre-language-tag data.
-    let docs = await searchByLang(store, query, k, primaryLang);
-    if (docs.length === 0 && primaryLang !== 'en') {
-      docs = await searchByLang(store, query, k, 'en');
-    }
-    if (docs.length === 0) {
-      docs = await store.similaritySearch(query, k);
-    }
+    const docs = await searchWithLangFallback(store, query, k, primaryLang);
     return docs.map((doc: unknown) => adaptRegulationDoc(doc, primaryLang));
   } catch (error) {
     logger.warn('compliance_kb similarity search failed', {

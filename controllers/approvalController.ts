@@ -18,6 +18,11 @@ import { emitToOrg } from '../config/realtime.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DECISIONS: GateDecisionVerb[] = ['approve', 'reject', 'edit', 'request_changes'];
 
+/** Pass a value through only when it's a string, else undefined (keeps handlers flat). */
+const asOptionalString = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+/** Pass a value through only when it's a number, else undefined. */
+const asOptionalNumber = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
+
 /** GET /api/v1/approvals?mine=true — the reviewer inbox (pending gate approvals for the org). */
 export async function listApprovalsHandler(req: Request, res: Response) {
   const organizationId = req.user?.organizationId as string | undefined;
@@ -58,8 +63,8 @@ export async function decideApprovalHandler(req: Request, res: Response) {
         organizationId,
         user: req.user,
         decision,
-        justification: typeof justification === 'string' ? justification : undefined,
-        expectedRunVersion: typeof expectedRunVersion === 'number' ? expectedRunVersion : undefined,
+        justification: asOptionalString(justification),
+        expectedRunVersion: asOptionalNumber(expectedRunVersion),
       },
       {
         resume: resumeAssessmentRun,

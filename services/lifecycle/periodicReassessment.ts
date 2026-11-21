@@ -34,6 +34,44 @@ async function defaultEnqueue(a: { organizationId: string; id: string }) {
   });
 }
 
+interface ReviewDeps {
+  to: Parameters<typeof arrangementRepository.setLifecycle>[2];
+  repo: Pick<typeof arrangementRepository, 'setLifecycle'>;
+  audit: typeof recordAudit;
+  enqueue: typeof defaultEnqueue;
+}
+
+/** Move one overdue arrangement to review + enqueue a re-assessment. Returns false on a lost race. */
+async function reviewOneArrangement(
+  a: { organizationId: string; id: string },
+  { to, repo, audit, enqueue }: ReviewDeps
+): Promise<boolean> {
+  const updated = await repo.setLifecycle(a.organizationId, a.id, to);
+  if (!updated) return false; // lost a race (already moved) — skip silently
+  await audit({
+    organizationId: a.organizationId,
+    actor: null, // system actor — a scheduled, non-human decision
+    action: 'arrangement.lifecycle',
+    targetType: 'arrangement',
+    targetId: a.id,
+    metadata: { from: 'active', to, transition: 'start_review', reason: 'periodic-reassessment' },
+  });
+  await enqueue(a);
+  return true;
+}
+
+/** Review every overdue arrangement; returns how many actually transitioned. */
+async function reviewOverdueArrangements(
+  due: Array<{ organizationId: string; id: string }>,
+  deps: ReviewDeps
+): Promise<number> {
+  let reviewed = 0;
+  for (const a of due) {
+    if (await reviewOneArrangement(a, deps)) reviewed += 1;
+  }
+  return reviewed;
+}
+
 /**
  * Scan for overdue `active` arrangements and re-open each for review + re-assessment.
  * @param {{
@@ -58,21 +96,7 @@ export async function runPeriodicReassessment({
   const to = nextState('active', 'start_review'); // 'under_review' (always valid)
   if (!to) return { scanned: due.length, reviewed: 0 };
 
-  let reviewed = 0;
-  for (const a of due) {
-    const updated = await repo.setLifecycle(a.organizationId, a.id, to);
-    if (!updated) continue; // lost a race (already moved) — skip silently
-    await audit({
-      organizationId: a.organizationId,
-      actor: null, // system actor — a scheduled, non-human decision
-      action: 'arrangement.lifecycle',
-      targetType: 'arrangement',
-      targetId: a.id,
-      metadata: { from: 'active', to, transition: 'start_review', reason: 'periodic-reassessment' },
-    });
-    await enqueue(a);
-    reviewed += 1;
-  }
+  const reviewed = await reviewOverdueArrangements(due, { to, repo, audit, enqueue });
 
   logger.info('Periodic re-assessment scan complete', {
     service: 'periodicReassessment',

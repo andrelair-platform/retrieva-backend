@@ -74,6 +74,36 @@ export interface AdoptionRequestInput {
   sessionId?: string;
 }
 
+/** Run the model; a failure is logged and degrades to empty content (never throws). */
+async function runAdoptionModel(
+  run: (systemPrompt: string, userPrompt: string) => Promise<string>,
+  userPrompt: string
+): Promise<string> {
+  try {
+    return await run(ADOPTION_REQUEST_SYSTEM_PROMPT, userPrompt);
+  } catch (err) {
+    logger.error('adoption request: model call failed', {
+      service: 'intake',
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return '';
+  }
+}
+
+/** Overlay the request's authoritative vendor/need onto the drafted proposal (mutates in place). */
+function applyAuthoritativeInputs(proposal: any, vendorName: unknown, need: unknown) {
+  // The request names the vendor and the need — these are authoritative inputs, not model guesses.
+  proposal.providerName = String(vendorName || '').trim() || proposal.providerName;
+  const needLine = String(need || '').trim();
+  if (needLine) {
+    proposal.notes = proposal.notes
+      ? `Business need: ${needLine}. ${proposal.notes}`
+      : `Business need: ${needLine}`;
+  }
+  // A third-party SaaS adoption is an external arrangement unless the draft said otherwise.
+  if (!proposal.arrangementType) proposal.arrangementType = 'external';
+}
+
 /**
  * Draft an arrangement proposal from a need-first adoption request. Returns a normalised, confirm-
  * compatible proposal plus the list of evidence gaps (vendor facts not yet grounded). The provider
@@ -90,28 +120,10 @@ export async function proposeFromAdoptionRequest({
   const userPrompt = buildAdoptionRequestUserPrompt(vendorName, need, docText);
   const run = llm || ((s: string, u: string) => defaultLlm(s, u, sessionId));
 
-  let content: string;
-  try {
-    content = await run(ADOPTION_REQUEST_SYSTEM_PROMPT, userPrompt);
-  } catch (err) {
-    logger.error('adoption request: model call failed', {
-      service: 'intake',
-      error: err instanceof Error ? err.message : String(err),
-    });
-    content = '';
-  }
+  const content = await runAdoptionModel(run, userPrompt);
 
   const proposal = parseProposal(content);
-  // The request names the vendor and the need — these are authoritative inputs, not model guesses.
-  proposal.providerName = String(vendorName || '').trim() || proposal.providerName;
-  const needLine = String(need || '').trim();
-  if (needLine) {
-    proposal.notes = proposal.notes
-      ? `Business need: ${needLine}. ${proposal.notes}`
-      : `Business need: ${needLine}`;
-  }
-  // A third-party SaaS adoption is an external arrangement unless the draft said otherwise.
-  if (!proposal.arrangementType) proposal.arrangementType = 'external';
+  applyAuthoritativeInputs(proposal, vendorName, need);
 
   const gaps = evidenceGaps(proposal);
   logger.info('adoption request drafted', {

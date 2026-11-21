@@ -87,6 +87,30 @@ const COVERED_RATIO = 0.5;
  * runs the clause→control pattern mapper over the draft and classifies each required clause
  * covered / weak / missing. Pure (text in, report out) — unit-testable without a DB or a model.
  */
+/** Coverage verdict for a clause given its touchpoint hit + signal coverage ratio. */
+function clauseCoverage(hit: any, coverageRatio: number): ClauseCoverage {
+  if (!hit || hit.clauseCount === 0) return 'missing';
+  if (coverageRatio >= COVERED_RATIO) return 'covered';
+  return 'weak';
+}
+
+/** Classify a single required clause against the draft's control touchpoints. */
+function classifyClauseGap(clause: any, byControl: Map<any, any>): ClauseGapItem {
+  const hit = byControl.get(clause.controlId);
+  const matchedSignals = hit?.matchedPatterns ?? [];
+  const total = clause.signals.length || 1;
+  const coverageRatio = Math.min(1, matchedSignals.length / total);
+  const coverage = clauseCoverage(hit, coverageRatio);
+  return {
+    ...clause,
+    coverage,
+    clauseCount: hit?.clauseCount ?? 0,
+    matchedSignals,
+    coverageRatio,
+    sample: hit?.sample ?? null,
+  };
+}
+
 export function gapCheckClausePack(
   arr: { criticality?: string | null; criticalOrImportant?: boolean | null },
   draftText: string,
@@ -96,24 +120,7 @@ export function gapCheckClausePack(
   const touchpoints = summarizeControlTouchpoints(draftText, { version });
   const byControl = new Map(touchpoints.map((t) => [t.controlId, t]));
 
-  const items: ClauseGapItem[] = pack.clauses.map((clause) => {
-    const hit = byControl.get(clause.controlId);
-    const matchedSignals = hit?.matchedPatterns ?? [];
-    const total = clause.signals.length || 1;
-    const coverageRatio = Math.min(1, matchedSignals.length / total);
-    let coverage: ClauseCoverage;
-    if (!hit || hit.clauseCount === 0) coverage = 'missing';
-    else if (coverageRatio >= COVERED_RATIO) coverage = 'covered';
-    else coverage = 'weak';
-    return {
-      ...clause,
-      coverage,
-      clauseCount: hit?.clauseCount ?? 0,
-      matchedSignals,
-      coverageRatio,
-      sample: hit?.sample ?? null,
-    };
-  });
+  const items: ClauseGapItem[] = pack.clauses.map((clause) => classifyClauseGap(clause, byControl));
 
   const count = (c: ClauseCoverage) => items.filter((i) => i.coverage === c).length;
   return {

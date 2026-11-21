@@ -185,6 +185,46 @@ function findPositions(text: string, pattern: RegExp) {
  * @param {Object} options - Masking options
  * @returns {Object} Masked text and detection info
  */
+/** Replace every match of one PII pattern with its (optionally partial) mask. */
+function applyMask(
+  text: string,
+  config: { pattern: RegExp; mask: string },
+  partialMask: boolean
+): string {
+  if (!partialMask) {
+    // Full masking
+    return text.replace(config.pattern, config.mask);
+  }
+  // Partial masking - show last few characters
+  return text.replace(config.pattern, (match) => {
+    const visible = Math.min(4, Math.floor(match.length / 4));
+    return config.mask.slice(0, -1) + match.slice(-visible) + ']';
+  });
+}
+
+/** Apply every (optionally type-filtered) PII pattern to text, collecting per-type detections. */
+function maskWithPatterns(
+  text: string,
+  types: string[] | null,
+  partialMask: boolean
+): { text: string; detections: Array<{ type: string; count: number }> } {
+  let maskedText = text;
+  const detections: Array<{ type: string; count: number }> = [];
+  for (const [_name, config] of Object.entries(PII_PATTERNS)) {
+    // Skip if not in requested types
+    if (types && !types.includes(config.type)) continue;
+
+    // Reset pattern state
+    config.pattern.lastIndex = 0;
+    const matches = maskedText.match(config.pattern) || [];
+    if (matches.length === 0) continue;
+
+    detections.push({ type: config.type, count: matches.length });
+    maskedText = applyMask(maskedText, config, partialMask);
+  }
+  return { text: maskedText, detections };
+}
+
 export function maskPII(text: unknown, options: { types?: string[] | null; partialMask?: boolean } = {}) {
   if (!piiConfig.enabled) {
     return { text, masked: false, detections: [] };
@@ -199,39 +239,7 @@ export function maskPII(text: unknown, options: { types?: string[] | null; parti
     partialMask = false, // If true, show partial info (e.g., ***-**-1234)
   } = options;
 
-  let maskedText = text;
-  const detections = [];
-
-  for (const [_name, config] of Object.entries(PII_PATTERNS)) {
-    // Skip if not in requested types
-    if (types && !types.includes(config.type)) {
-      continue;
-    }
-
-    // Reset pattern state
-    config.pattern.lastIndex = 0;
-
-    const matches = maskedText.match(config.pattern) || [];
-
-    if (matches.length > 0) {
-      detections.push({
-        type: config.type,
-        count: matches.length,
-      });
-
-      if (partialMask) {
-        // Partial masking - show last few characters
-        maskedText = maskedText.replace(config.pattern, (match) => {
-          const visible = Math.min(4, Math.floor(match.length / 4));
-          const masked = config.mask.slice(0, -1) + match.slice(-visible) + ']';
-          return masked;
-        });
-      } else {
-        // Full masking
-        maskedText = maskedText.replace(config.pattern, config.mask);
-      }
-    }
-  }
+  const { text: maskedText, detections } = maskWithPatterns(text, types, partialMask);
 
   return {
     text: maskedText,
@@ -248,6 +256,26 @@ export function maskPII(text: unknown, options: { types?: string[] | null; parti
  * @param {Array} fieldsToCheck - Specific fields to check (null = all string fields)
  * @returns {Object} Masked object
  */
+/** Mask one object value: recurse for objects, mask strings (recording finds), pass through others. */
+function maskObjectValue(
+  key: string,
+  value: unknown,
+  fieldsToCheck: string[] | null,
+  piiFound: Array<{ field: string; types: string[] }>
+): unknown {
+  if (typeof value === 'string') {
+    const result = maskPII(value);
+    if (result.masked) {
+      piiFound.push({ field: key, types: result.detections.map((d) => d.type) });
+    }
+    return result.text;
+  }
+  if (typeof value === 'object' && value !== null) {
+    return maskPIIInObject(value, fieldsToCheck);
+  }
+  return value;
+}
+
 // Internal (de-exported, AUD-P1): recursion + used by maskPIIInResponse in this module.
 function maskPIIInObject(obj: unknown, fieldsToCheck: string[] | null = null): unknown {
   if (!piiConfig.enabled) {
@@ -267,18 +295,7 @@ function maskPIIInObject(obj: unknown, fieldsToCheck: string[] | null = null): u
       masked[key] = value;
       continue;
     }
-
-    if (typeof value === 'string') {
-      const result = maskPII(value);
-      masked[key] = result.text;
-      if (result.masked) {
-        piiFound.push({ field: key, types: result.detections.map((d) => d.type) });
-      }
-    } else if (typeof value === 'object' && value !== null) {
-      masked[key] = maskPIIInObject(value, fieldsToCheck);
-    } else {
-      masked[key] = value;
-    }
+    masked[key] = maskObjectValue(key, value, fieldsToCheck, piiFound);
   }
 
   if (piiFound.length > 0) {
@@ -501,6 +518,130 @@ const PROMPT_LEAK_PATTERNS = [
  * @param {Object} options - Scanning options
  * @returns {Object} Scan results with detected issues and sanitized text
  */
+type OutputDetection = { category: string; count?: number; [k: string]: unknown };
+
+/** Step 1: standard PII — records a detection + masks (when enabled). Returns the (maybe-masked) text. */
+function scanPii(
+  output: string,
+  processedText: string,
+  maskSensitive: boolean,
+  detections: OutputDetection[]
+): string {
+  const piiResult = detectPII(output);
+  if (!piiResult.hasPII) return processedText;
+  detections.push({
+    category: 'pii',
+    types: Object.keys(piiResult.summary),
+    count: piiResult.totalDetections,
+  });
+  return maskSensitive ? String(maskPII(processedText).text) : processedText;
+}
+
+/** Step 2: output-specific sensitive patterns — records detections, masks, flags critical leaks. */
+function scanSensitivePatterns(
+  processedText: string,
+  maskSensitive: boolean,
+  detections: OutputDetection[]
+): { text: string; hasCriticalLeak: boolean } {
+  let text = processedText;
+  let hasCriticalLeak = false;
+  for (const [name, config] of Object.entries(OUTPUT_SENSITIVE_PATTERNS)) {
+    config.pattern.lastIndex = 0;
+    const matches = text.match(config.pattern) || [];
+    if (matches.length === 0) continue;
+
+    detections.push({
+      category: 'sensitive',
+      patternName: name,
+      type: config.type,
+      severity: config.severity,
+      count: matches.length,
+    });
+    if (config.severity === 'critical') hasCriticalLeak = true;
+    if (maskSensitive) {
+      config.pattern.lastIndex = 0;
+      text = text.replace(config.pattern, config.mask);
+    }
+  }
+  return { text, hasCriticalLeak };
+}
+
+/** Step 3: prompt-leakage indicators — records detections. Returns true if any leak matched. */
+function scanPromptLeaks(output: string, detections: OutputDetection[]): boolean {
+  let promptLeakDetected = false;
+  for (const { pattern, type } of PROMPT_LEAK_PATTERNS) {
+    pattern.lastIndex = 0;
+    if (pattern.test(output)) {
+      promptLeakDetected = true;
+      detections.push({ category: 'prompt_leak', type, severity: 'high' });
+    }
+  }
+  return promptLeakDetected;
+}
+
+/** Warn-log the scan detections (no-op when there were none). */
+function logScanDetections(
+  output: string,
+  detections: OutputDetection[],
+  hasCriticalLeak: boolean,
+  promptLeakDetected: boolean
+): void {
+  if (detections.length === 0) return;
+  logger.warn('Sensitive information detected in LLM output', {
+    service: 'pii-masker',
+    detectionCount: detections.length,
+    categories: [...new Set(detections.map((d) => d.category))],
+    hasCriticalLeak,
+    promptLeakDetected,
+    outputPreview: output.substring(0, 100),
+  });
+}
+
+/** Roll the raw detections up into the per-category count summary. */
+function buildScanSummary(detections: OutputDetection[], piiCount: number) {
+  return {
+    piiCount,
+    sensitiveCount: detections
+      .filter((d) => d.category === 'sensitive')
+      .reduce((sum, d) => sum + (d.count || 1), 0),
+    promptLeakCount: detections.filter((d) => d.category === 'prompt_leak').length,
+  };
+}
+
+/** The full 3-step scan over a validated (non-empty) string output. */
+function scanSensitiveString(
+  output: string,
+  opts: { maskSensitive: boolean; logDetections: boolean; strictMode: boolean }
+) {
+  const detections: OutputDetection[] = [];
+  const piiResult = detectPII(output);
+
+  // Step 1: standard PII
+  let processedText = scanPii(output, output, opts.maskSensitive, detections);
+  // Step 2: output-specific sensitive patterns
+  const sensitive = scanSensitivePatterns(processedText, opts.maskSensitive, detections);
+  processedText = sensitive.text;
+  const hasCriticalLeak = sensitive.hasCriticalLeak;
+  // Step 3: prompt leakage indicators
+  const promptLeakDetected = scanPromptLeaks(output, detections);
+
+  if (opts.logDetections) {
+    logScanDetections(output, detections, hasCriticalLeak, promptLeakDetected);
+  }
+
+  const shouldBlock = opts.strictMode && (hasCriticalLeak || promptLeakDetected);
+  return {
+    clean: detections.length === 0,
+    text: shouldBlock ? '[Response blocked due to sensitive content]' : processedText,
+    originalText: output,
+    detections,
+    promptLeakDetected,
+    hasCriticalLeak,
+    blocked: shouldBlock,
+    summary: buildScanSummary(detections, piiResult.totalDetections || 0),
+  };
+}
+
 export function scanOutputForSensitiveInfo(
   output: unknown,
   options: { maskSensitive?: boolean; logDetections?: boolean; strictMode?: boolean } = {}
@@ -509,8 +650,12 @@ export function scanOutputForSensitiveInfo(
     return {
       clean: true,
       text: output || '',
-      detections: [],
+      originalText: output || '',
+      detections: [] as OutputDetection[],
       promptLeakDetected: false,
+      hasCriticalLeak: false,
+      blocked: false,
+      summary: { piiCount: 0, sensitiveCount: 0, promptLeakCount: 0 },
     };
   }
 
@@ -520,94 +665,7 @@ export function scanOutputForSensitiveInfo(
     strictMode = false, // If true, any detection blocks the response
   } = options;
 
-  let processedText = output;
-  const detections: Array<{ category: string; count?: number; [k: string]: unknown }> = [];
-  let promptLeakDetected = false;
-  let hasCriticalLeak = false;
-
-  // Step 1: Check for standard PII
-  const piiResult = detectPII(output);
-  if (piiResult.hasPII) {
-    detections.push({
-      category: 'pii',
-      types: Object.keys(piiResult.summary),
-      count: piiResult.totalDetections,
-    });
-
-    if (maskSensitive) {
-      processedText = String(maskPII(processedText).text);
-    }
-  }
-
-  // Step 2: Check for output-specific sensitive patterns
-  for (const [name, config] of Object.entries(OUTPUT_SENSITIVE_PATTERNS)) {
-    config.pattern.lastIndex = 0;
-    const matches = processedText.match(config.pattern) || [];
-
-    if (matches.length > 0) {
-      detections.push({
-        category: 'sensitive',
-        patternName: name,
-        type: config.type,
-        severity: config.severity,
-        count: matches.length,
-      });
-
-      if (config.severity === 'critical') {
-        hasCriticalLeak = true;
-      }
-
-      if (maskSensitive) {
-        config.pattern.lastIndex = 0;
-        processedText = processedText.replace(config.pattern, config.mask);
-      }
-    }
-  }
-
-  // Step 3: Check for prompt leakage indicators
-  for (const { pattern, type } of PROMPT_LEAK_PATTERNS) {
-    pattern.lastIndex = 0;
-    if (pattern.test(output)) {
-      promptLeakDetected = true;
-      detections.push({
-        category: 'prompt_leak',
-        type,
-        severity: 'high',
-      });
-    }
-  }
-
-  // Log detections if enabled
-  if (logDetections && detections.length > 0) {
-    logger.warn('Sensitive information detected in LLM output', {
-      service: 'pii-masker',
-      detectionCount: detections.length,
-      categories: [...new Set(detections.map((d) => d.category))],
-      hasCriticalLeak,
-      promptLeakDetected,
-      outputPreview: output.substring(0, 100),
-    });
-  }
-
-  const isClean = detections.length === 0;
-  const shouldBlock = strictMode && (hasCriticalLeak || promptLeakDetected);
-
-  return {
-    clean: isClean,
-    text: shouldBlock ? '[Response blocked due to sensitive content]' : processedText,
-    originalText: output,
-    detections,
-    promptLeakDetected,
-    hasCriticalLeak,
-    blocked: shouldBlock,
-    summary: {
-      piiCount: piiResult.totalDetections || 0,
-      sensitiveCount: detections
-        .filter((d) => d.category === 'sensitive')
-        .reduce((sum, d) => sum + (d.count || 1), 0),
-      promptLeakCount: detections.filter((d) => d.category === 'prompt_leak').length,
-    },
-  };
+  return scanSensitiveString(output, { maskSensitive, logDetections, strictMode });
 }
 
 /**

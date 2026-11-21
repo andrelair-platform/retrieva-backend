@@ -10,6 +10,23 @@ import { exitArtefacts, arrangements, providerNodes, businessFunctions } from '.
 import { entityScopeCondition } from '../../services/security/entityScope.js';
 import type { ArrangementContext, ExitArtefactType } from '../../services/exitStrategy/types.js';
 
+/** Map a joined arrangement row + peer list into the ArrangementContext shape (string defaults). */
+function toArrangementContext(row: any, incumbentSameTypeProviders: string[]): ArrangementContext {
+  return {
+    arrangementId: row.arrangementId,
+    providerName: row.providerName ?? '',
+    providerType: row.providerType ?? '',
+    businessFunctionName: row.businessFunctionName ?? '',
+    criticality: row.criticality ?? '',
+    dependency: row.dependency ?? '',
+    exitDifficulty: row.exitDifficulty ?? '',
+    dataClasses: Array.isArray(row.dataClasses) ? (row.dataClasses as string[]) : [],
+    dataResidency: row.dataResidency ?? '',
+    lifecycleStatus: row.lifecycleStatus ?? '',
+    incumbentSameTypeProviders,
+  };
+}
+
 export class ExitArtefactRepository {
   private _db?: ReturnType<typeof getDb>;
   constructor({ db }: { db?: ReturnType<typeof getDb> } = {}) {
@@ -52,34 +69,25 @@ export class ExitArtefactRepository {
     if (!row) return null;
 
     // Concentration awareness: other providers in the org of the SAME type (excluding the incumbent).
-    let incumbentSameTypeProviders: string[] = [];
-    if (row.providerType) {
-      const peers = await this.db
-        .select({ name: providerNodes.displayName })
-        .from(providerNodes)
-        .where(
-          and(
-            eq(providerNodes.organizationId, organizationId),
-            eq(providerNodes.providerType, row.providerType),
-            row.providerId ? ne(providerNodes.id, row.providerId) : undefined
-          )
-        );
-      incumbentSameTypeProviders = peers.map((p) => p.name).filter(Boolean);
-    }
+    const incumbentSameTypeProviders = await this._listSameTypePeers(organizationId, row);
 
-    return {
-      arrangementId: row.arrangementId,
-      providerName: row.providerName ?? '',
-      providerType: row.providerType ?? '',
-      businessFunctionName: row.businessFunctionName ?? '',
-      criticality: row.criticality ?? '',
-      dependency: row.dependency ?? '',
-      exitDifficulty: row.exitDifficulty ?? '',
-      dataClasses: Array.isArray(row.dataClasses) ? (row.dataClasses as string[]) : [],
-      dataResidency: row.dataResidency ?? '',
-      lifecycleStatus: row.lifecycleStatus ?? '',
-      incumbentSameTypeProviders,
-    };
+    return toArrangementContext(row, incumbentSameTypeProviders);
+  }
+
+  /** Other providers in the org of the same type as `row`'s provider (excluding the incumbent). */
+  private async _listSameTypePeers(organizationId: string, row: any): Promise<string[]> {
+    if (!row.providerType) return [];
+    const peers = await this.db
+      .select({ name: providerNodes.displayName })
+      .from(providerNodes)
+      .where(
+        and(
+          eq(providerNodes.organizationId, organizationId),
+          eq(providerNodes.providerType, row.providerType),
+          row.providerId ? ne(providerNodes.id, row.providerId) : undefined
+        )
+      );
+    return peers.map((p) => p.name).filter(Boolean);
   }
 
   /** The existing artefact for (org, arrangement, type), if any. */

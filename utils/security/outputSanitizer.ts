@@ -199,6 +199,48 @@ export function detectSuspiciousOutput(text: string) {
  * @param {Object} options - Sanitization options
  * @returns {Object} Sanitization result with sanitized text and metadata
  */
+interface SanitizeFlags {
+  encodeHtml: boolean;
+  removeDangerous: boolean;
+  detectSuspicious: boolean;
+  preserveMarkdown: boolean;
+}
+
+// The 3-step sanitization pipeline over a known string, with options resolved.
+function runSanitizationPipeline(text: string, flags: SanitizeFlags) {
+  let result = text;
+  let wasModified = false;
+
+  // Step 1: Detect suspicious patterns (before any modification)
+  const suspiciousResult = flags.detectSuspicious
+    ? detectSuspiciousOutput(text)
+    : { suspicious: false, categories: [] as unknown[] };
+
+  // Step 2: Remove dangerous patterns
+  if (flags.removeDangerous) {
+    const before = result;
+    result = removeDangerousPatterns(result);
+    if (result !== before) {
+      wasModified = true;
+    }
+  }
+
+  // Step 3: Encode HTML entities
+  if (flags.encodeHtml) {
+    const step = encodeHtmlStep(result, flags.preserveMarkdown);
+    result = step.text;
+    wasModified = wasModified || step.modified;
+  }
+
+  return {
+    text: result,
+    original: text,
+    modified: wasModified,
+    suspicious: suspiciousResult.suspicious,
+    categories: suspiciousResult.categories,
+  };
+}
+
 export function sanitizeLLMOutput(
   text: unknown,
   options: {
@@ -214,6 +256,7 @@ export function sanitizeLLMOutput(
     detectSuspicious = true, // Log suspicious patterns
     preserveMarkdown = true, // Try to preserve markdown formatting
   } = options;
+  const flags: SanitizeFlags = { encodeHtml, removeDangerous, detectSuspicious, preserveMarkdown };
 
   if (!text || typeof text !== 'string') {
     return {
@@ -225,48 +268,19 @@ export function sanitizeLLMOutput(
     };
   }
 
-  let result = text;
-  let wasModified = false;
-  let suspiciousResult: { suspicious: boolean; categories: unknown[] } = {
-    suspicious: false,
-    categories: [],
-  };
+  return runSanitizationPipeline(text, flags);
+}
 
-  // Step 1: Detect suspicious patterns (before any modification)
-  if (detectSuspicious) {
-    suspiciousResult = detectSuspiciousOutput(text);
+// Step 3 helper: HTML-encode the text (selective when preserving markdown).
+// Selective encoding doesn't flip `modified` (matching the original behaviour),
+// full entity encoding reports whether it changed the text.
+function encodeHtmlStep(result: string, preserveMarkdown: boolean): { text: string; modified: boolean } {
+  if (preserveMarkdown) {
+    // Selective encoding that preserves common markdown
+    return { text: encodeHTMLSelective(result), modified: false };
   }
-
-  // Step 2: Remove dangerous patterns
-  if (removeDangerous) {
-    const before = result;
-    result = removeDangerousPatterns(result);
-    if (result !== before) {
-      wasModified = true;
-    }
-  }
-
-  // Step 3: Encode HTML entities
-  if (encodeHtml) {
-    if (preserveMarkdown) {
-      // Selective encoding that preserves common markdown
-      result = encodeHTMLSelective(result);
-    } else {
-      const before = result;
-      result = encodeHTMLEntities(result);
-      if (result !== before) {
-        wasModified = true;
-      }
-    }
-  }
-
-  return {
-    text: result,
-    original: text,
-    modified: wasModified,
-    suspicious: suspiciousResult.suspicious,
-    categories: suspiciousResult.categories,
-  };
+  const encoded = encodeHTMLEntities(result);
+  return { text: encoded, modified: encoded !== result };
 }
 
 /**

@@ -55,73 +55,112 @@ async function defaultListProviders(organizationId: string): Promise<TrackedProv
   return out;
 }
 
+interface ResolvedSurveillanceDeps {
+  listProviders: (organizationId: string) => Promise<TrackedProvider[]>;
+  listSignals: (provider: TrackedProvider) => Promise<SurveillanceSignal[]>;
+  listCveSignals: (provider: TrackedProvider) => Promise<SurveillanceSignal[]>;
+  classify: (signal: SurveillanceSignal) => Promise<{ severity: SurveillanceSeverity; relevant: boolean; rationale: string }>;
+  known: Set<string>;
+}
+
+/** Resolve the injectable collaborators, defaulting each to its production implementation. */
+function resolveSurveillanceDeps(args: RunSurveillanceArgs): ResolvedSurveillanceDeps {
+  const d = args.deps ?? {};
+  const lookbackDays = parseInt(process.env.SURVEILLANCE_LOOKBACK_DAYS || '', 10) || 30;
+  const since = d.since ?? new Date(Date.now() - lookbackDays * 86400_000).toISOString();
+  return {
+    listProviders: d.listProviders ?? defaultListProviders,
+    listSignals:
+      d.listSignals ?? ((p: TrackedProvider) => (p.statusUrl ? listStatuspageIncidents(p.statusUrl, { since }) : Promise.resolve([]))),
+    listCveSignals:
+      d.listCveSignals ?? ((p: TrackedProvider) => (p.cvePackages?.length ? listCveAdvisories(p.cvePackages, { since }) : Promise.resolve([]))),
+    classify: d.classify ?? ((s: SurveillanceSignal) => classifySignal(s)),
+    known: d.knownExternalIds ?? new Set<string>(),
+  };
+}
+
+/** Gather signals from BOTH feeds for one provider; each feed is isolated so one failure is non-fatal. */
+async function gatherProviderSignals(
+  provider: TrackedProvider,
+  deps: Pick<ResolvedSurveillanceDeps, 'listSignals' | 'listCveSignals'>
+): Promise<SurveillanceSignal[]> {
+  const signals: SurveillanceSignal[] = [];
+  for (const [feed, fetchFeed] of [
+    ['statuspage', deps.listSignals],
+    ['cve', deps.listCveSignals],
+  ] as const) {
+    try {
+      signals.push(...(await fetchFeed(provider)));
+    } catch (err) {
+      logger.warn('surveillance.poll.failed', {
+        service: 'surveillance',
+        provider: provider.name,
+        feed,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return signals;
+}
+
+interface SurveillanceAccumulators {
+  events: SurveillanceEventDraft[];
+  skipped: SkippedSignal[];
+  bySeverity: Record<SurveillanceSeverity, number>;
+}
+
+/** Dedup + classify one provider's signals, pushing matched events / skips into the accumulators. */
+async function classifyProviderSignals(
+  provider: TrackedProvider,
+  signals: SurveillanceSignal[],
+  deps: Pick<ResolvedSurveillanceDeps, 'classify' | 'known'>,
+  acc: SurveillanceAccumulators
+) {
+  for (const signal of signals) {
+    if (deps.known.has(signal.externalId)) {
+      acc.skipped.push({ externalId: signal.externalId, reason: 'already-in-inbox' });
+      continue;
+    }
+    const c = await deps.classify(signal);
+    if (!c.relevant) {
+      acc.skipped.push({ externalId: signal.externalId, reason: 'not-relevant' });
+      continue;
+    }
+    acc.bySeverity[c.severity] += 1;
+    acc.events.push({
+      providerNodeId: provider.nodeId,
+      providerName: provider.name,
+      source: signal.source,
+      externalId: signal.externalId,
+      type: signal.type,
+      severity: c.severity,
+      title: signal.title,
+      summary: signal.summary,
+      url: signal.url,
+      observedAt: signal.observedAt,
+    });
+  }
+}
+
 /**
  * Collect + classify surveillance signals for the org. Returns the new, relevant, matched events
  * (pre-persist) + counts. No side effects.
  */
 export async function runSurveillance(args: RunSurveillanceArgs): Promise<SurveillanceResult> {
-  const d = args.deps ?? {};
-  const listProviders = d.listProviders ?? defaultListProviders;
-  const lookbackDays = parseInt(process.env.SURVEILLANCE_LOOKBACK_DAYS || '', 10) || 30;
-  const since = d.since ?? new Date(Date.now() - lookbackDays * 86400_000).toISOString();
-  const listSignals =
-    d.listSignals ?? ((p: TrackedProvider) => (p.statusUrl ? listStatuspageIncidents(p.statusUrl, { since }) : Promise.resolve([])));
-  const listCveSignals =
-    d.listCveSignals ?? ((p: TrackedProvider) => (p.cvePackages?.length ? listCveAdvisories(p.cvePackages, { since }) : Promise.resolve([])));
-  const classify = d.classify ?? ((s: SurveillanceSignal) => classifySignal(s));
-  const known = d.knownExternalIds ?? new Set<string>();
-
-  const providers = await listProviders(args.organizationId);
-  const events: SurveillanceEventDraft[] = [];
-  const skipped: SkippedSignal[] = [];
-  const bySeverity = { ...EMPTY_SEVERITY };
+  const deps = resolveSurveillanceDeps(args);
+  const providers = await deps.listProviders(args.organizationId);
+  const acc: SurveillanceAccumulators = {
+    events: [],
+    skipped: [],
+    bySeverity: { ...EMPTY_SEVERITY },
+  };
   let fetched = 0;
 
   for (const provider of providers) {
-    // Gather from BOTH feeds; each is isolated so one failing (a down status page / OSV blip) doesn't
-    // sink the provider or the sweep.
-    const signals: SurveillanceSignal[] = [];
-    for (const [feed, fetchFeed] of [
-      ['statuspage', listSignals],
-      ['cve', listCveSignals],
-    ] as const) {
-      try {
-        signals.push(...(await fetchFeed(provider)));
-      } catch (err) {
-        logger.warn('surveillance.poll.failed', {
-          service: 'surveillance',
-          provider: provider.name,
-          feed,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
+    const signals = await gatherProviderSignals(provider, deps);
     fetched += signals.length;
-    for (const signal of signals) {
-      if (known.has(signal.externalId)) {
-        skipped.push({ externalId: signal.externalId, reason: 'already-in-inbox' });
-        continue;
-      }
-      const c = await classify(signal);
-      if (!c.relevant) {
-        skipped.push({ externalId: signal.externalId, reason: 'not-relevant' });
-        continue;
-      }
-      bySeverity[c.severity] += 1;
-      events.push({
-        providerNodeId: provider.nodeId,
-        providerName: provider.name,
-        source: signal.source,
-        externalId: signal.externalId,
-        type: signal.type,
-        severity: c.severity,
-        title: signal.title,
-        summary: signal.summary,
-        url: signal.url,
-        observedAt: signal.observedAt,
-      });
-    }
+    await classifyProviderSignals(provider, signals, deps, acc);
   }
 
-  return { polled: providers.length, fetched, events, skipped, bySeverity };
+  return { polled: providers.length, fetched, events: acc.events, skipped: acc.skipped, bySeverity: acc.bySeverity };
 }

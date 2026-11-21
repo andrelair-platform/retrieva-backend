@@ -84,72 +84,61 @@ function validateVar({ name, minLength, description }: EnvVarConfig): {
  * @param {boolean} options.strict - If true, also require recommended vars
  * @returns {{ valid: boolean, errors: string[], warnings: string[] }}
  */
+// The three sinks a failed var maps to. `error` → always an error; `prodError` → error when
+// errorWhenMissing holds (prod/strict) else a "(required in production)" warning; `warn` → an error
+// only in strict mode, else a plain warning. Keeps the per-group branching out of validateEnv.
+type GroupPolicy = 'error' | 'prodError' | 'warn';
+
+interface ValidationSink {
+  errors: string[];
+  warnings: string[];
+}
+
+function validateGroup(
+  vars: EnvVarConfig[],
+  policy: GroupPolicy,
+  errorWhenMissing: boolean,
+  sink: ValidationSink
+) {
+  for (const varConfig of vars) {
+    const result = validateVar(varConfig);
+    if (result.valid) continue;
+    if (policy === 'error') {
+      sink.errors.push(result.error!);
+    } else if (policy === 'prodError') {
+      if (errorWhenMissing) {
+        sink.errors.push(result.error!);
+      } else {
+        sink.warnings.push(
+          `${varConfig.name} not configured - ${varConfig.description} (required in production)`
+        );
+      }
+    } else if (errorWhenMissing) {
+      sink.errors.push(result.error!);
+    } else {
+      sink.warnings.push(`${varConfig.name} not configured - ${varConfig.description}`);
+    }
+  }
+}
+
 export function validateEnv(options: { strict?: boolean } = {}) {
   const { strict = false } = options;
   const isProduction = process.env.NODE_ENV === 'production';
-  const errors: string[] = [];
-  const warnings: string[] = [];
+  const sink: ValidationSink = { errors: [], warnings: [] };
 
-  // Validate critical variables (always required)
-  for (const varConfig of REQUIRED_ENV_VARS.critical) {
-    const result = validateVar(varConfig);
-    if (!result.valid) {
-      errors.push(result.error!);
-    }
-  }
-
-  // Validate database variables (always required)
-  for (const varConfig of REQUIRED_ENV_VARS.database) {
-    const result = validateVar(varConfig);
-    if (!result.valid) {
-      errors.push(result.error!);
-    }
-  }
-
-  // ISSUE #21 FIX: Validate infrastructure variables (required in production, warned in dev)
-  for (const varConfig of REQUIRED_ENV_VARS.infrastructure) {
-    const result = validateVar(varConfig);
-    if (!result.valid) {
-      if (isProduction || strict) {
-        errors.push(result.error!);
-      } else {
-        warnings.push(
-          `${varConfig.name} not configured - ${varConfig.description} (required in production)`
-        );
-      }
-    }
-  }
-
-  // Validate LLM variables (required in production)
-  for (const varConfig of REQUIRED_ENV_VARS.llm) {
-    const result = validateVar(varConfig);
-    if (!result.valid) {
-      if (isProduction || strict) {
-        errors.push(result.error!);
-      } else {
-        warnings.push(
-          `${varConfig.name} not configured - ${varConfig.description} (required in production)`
-        );
-      }
-    }
-  }
-
-  // Validate recommended variables (warn if missing, error in strict mode)
-  for (const varConfig of REQUIRED_ENV_VARS.recommended) {
-    const result = validateVar(varConfig);
-    if (!result.valid) {
-      if (strict) {
-        errors.push(result.error!);
-      } else {
-        warnings.push(`${varConfig.name} not configured - ${varConfig.description}`);
-      }
-    }
-  }
+  // critical + database are always required.
+  validateGroup(REQUIRED_ENV_VARS.critical, 'error', true, sink);
+  validateGroup(REQUIRED_ENV_VARS.database, 'error', true, sink);
+  // ISSUE #21 FIX: infrastructure + llm are required in production (or strict), warned in dev.
+  validateGroup(REQUIRED_ENV_VARS.infrastructure, 'prodError', isProduction || strict, sink);
+  validateGroup(REQUIRED_ENV_VARS.llm, 'prodError', isProduction || strict, sink);
+  // recommended: warn if missing, error in strict mode.
+  validateGroup(REQUIRED_ENV_VARS.recommended, 'warn', strict, sink);
 
   return {
-    valid: errors.length === 0,
-    errors,
-    warnings,
+    valid: sink.errors.length === 0,
+    errors: sink.errors,
+    warnings: sink.warnings,
   };
 }
 

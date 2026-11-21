@@ -18,23 +18,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const num = (v: unknown, d: number): number =>
   Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d;
 
-export async function runEvidenceStalenessSweep({
-  now = new Date(),
-  graceDays = num(process.env.EVIDENCE_EXPIRY_GRACE_DAYS, 30),
-  limit = num(process.env.EVIDENCE_STALENESS_BATCH_LIMIT, 200),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable repo/reopen for tests
-  repo = evidenceRepository as any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  reopen = reopenForReassessment as any,
-} = {}): Promise<{ scanned: number; arrangements: number; reopened: number }> {
-  const before = new Date(now.getTime() + graceDays * DAY_MS);
-  const rows = await repo.listExpiringArrangementEvidence({ before, limit });
+type ArrangementGroup = {
+  organizationId: string;
+  lifecycleStatus: string;
+  items: Array<Record<string, unknown>>;
+};
 
-  // Group the stale evidence by arrangement → reopen each affected ACTIVE arrangement exactly once.
-  const byArrangement = new Map<
-    string,
-    { organizationId: string; lifecycleStatus: string; items: Array<Record<string, unknown>> }
-  >();
+/** Group stale evidence rows by arrangement (one group per arrangement, items accumulated). */
+function groupStaleEvidenceByArrangement(rows: any[]): Map<string, ArrangementGroup> {
+  const byArrangement = new Map<string, ArrangementGroup>();
   for (const r of rows) {
     const key = String(r.arrangementId);
     if (!byArrangement.has(key)) {
@@ -47,7 +39,14 @@ export async function runEvidenceStalenessSweep({
       validityUntil: r.validityUntil,
     });
   }
+  return byArrangement;
+}
 
+/** Reopen each ACTIVE affected arrangement once; returns how many triggered a reassessment. */
+async function reopenStaleArrangements(
+  byArrangement: Map<string, ArrangementGroup>,
+  reopen: any
+): Promise<number> {
   let reopened = 0;
   for (const [arrangementId, g] of byArrangement) {
     // Only ACT on an approved (active) arrangement; an under_review one is already flagged → skip to
@@ -64,6 +63,24 @@ export async function runEvidenceStalenessSweep({
     });
     if (res.triggered) reopened += 1;
   }
+  return reopened;
+}
+
+export async function runEvidenceStalenessSweep({
+  now = new Date(),
+  graceDays = num(process.env.EVIDENCE_EXPIRY_GRACE_DAYS, 30),
+  limit = num(process.env.EVIDENCE_STALENESS_BATCH_LIMIT, 200),
+   
+  repo = evidenceRepository as any,
+   
+  reopen = reopenForReassessment as any,
+} = {}): Promise<{ scanned: number; arrangements: number; reopened: number }> {
+  const before = new Date(now.getTime() + graceDays * DAY_MS);
+  const rows = await repo.listExpiringArrangementEvidence({ before, limit });
+
+  // Group the stale evidence by arrangement → reopen each affected ACTIVE arrangement exactly once.
+  const byArrangement = groupStaleEvidenceByArrangement(rows);
+  const reopened = await reopenStaleArrangements(byArrangement, reopen);
 
   logger.info('evidence-staleness.sweep.complete', {
     service: 'evidenceStalenessReminder',

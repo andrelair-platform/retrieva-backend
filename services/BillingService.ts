@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- Stripe webhook payloads (subscriptions,
-   invoices, events) are untyped here + repos/services are injectable for tests. */
+ 
 import { getStripe, PRICE_TO_PLAN, STRIPE_STATUS_MAP } from '../config/stripe.js';
 import { AppError } from '../utils/index.js';
 import { organizationRepository } from '../repositories/index.js';

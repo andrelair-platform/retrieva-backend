@@ -12,7 +12,7 @@ import logger from '../../config/logger.js';
 
 interface DocLike {
   pageContent?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous RAG doc metadata
+   
   metadata?: Record<string, any>;
   rrfScore?: number;
 }
@@ -206,12 +206,71 @@ function buildHeadingCountMap(docs: DocLike[]) {
  * @param {string} [options.query] - The user query (for code filtering)
  * @returns {Array} Filtered documents (minimum 1 returned)
  */
+type DroppedChunk = { doc: DocLike; reason: string | null; tokens: number; heading: string | null };
+interface ChunkFilterConfig {
+  headingCounts: Map<string, number>;
+  enableCodeFilter: boolean;
+  isProgramming: boolean;
+}
+
+/** Decide whether one doc is kept; `reason` is the drop reason when it isn't. */
+function classifyChunk(doc: DocLike, cfg: ChunkFilterConfig): { keep: boolean; reason: string | null; tokens: number; heading: string | null } {
+  const tokens = estimateTokens(doc);
+  const heading = getTopLevelHeading(doc);
+  const isSoleRepresentative = heading && cfg.headingCounts.get(heading) === 1;
+
+  // Junk content is always dropped (navigation, breadcrumbs, separators have no value)
+  if (isJunkContent(doc.pageContent)) {
+    return { keep: false, reason: 'junk_pattern', tokens, heading };
+  }
+  // Tiny chunks are dropped UNLESS they're the sole representative of their section
+  if (tokens < MIN_TOKEN_THRESHOLD && !isSoleRepresentative) {
+    return { keep: false, reason: 'below_token_threshold', tokens, heading };
+  }
+  // Phase 5: Filter code chunks when query is not programming-related
+  if (cfg.enableCodeFilter && doc.metadata?.is_code === true && !cfg.isProgramming) {
+    return { keep: false, reason: 'code_not_relevant', tokens, heading };
+  }
+  return { keep: true, reason: null, tokens, heading };
+}
+
+/** Split docs into kept + dropped using the per-chunk classification. */
+function partitionChunks(docs: DocLike[], cfg: ChunkFilterConfig) {
+  const filtered: DocLike[] = [];
+  const dropped: DroppedChunk[] = [];
+  for (const doc of docs) {
+    const { keep, reason, tokens, heading } = classifyChunk(doc, cfg);
+    if (keep) filtered.push(doc);
+    else dropped.push({ doc, reason, tokens, heading });
+  }
+  return { filtered, dropped };
+}
+
+/** The best-scoring doc from the input (minimum-output fallback when everything was filtered). */
+function pickBestDoc(docs: DocLike[]): DocLike {
+  return docs.reduce((best: DocLike, current: DocLike) => {
+    const bestScore = best.metadata?.score || best.rrfScore || 0;
+    const currentScore = current.metadata?.score || current.rrfScore || 0;
+    return currentScore > bestScore ? current : best;
+  }, docs[0]);
+}
+
+/** Build the per-run filter config (heading diversity map + code-filter flags). */
+function buildFilterConfig(docs: DocLike[], options: { query?: string }): ChunkFilterConfig {
+  const query = options.query ?? '';
+  return {
+    headingCounts: buildHeadingCountMap(docs), // diversity preservation
+    enableCodeFilter: process.env.ENABLE_CODE_FILTER !== 'false',
+    isProgramming: query ? isProgrammingQuery(query) : true, // Default to including code if no query
+  };
+}
+
 export function filterLowQualityChunks(docs: DocLike[], options: { query?: string } = {}) {
   // Kill-switch: return docs unchanged if filtering is disabled
   if (process.env.ENABLE_CHUNK_FILTER === 'false') {
     logger.debug('Chunk filter disabled via ENABLE_CHUNK_FILTER=false', {
       service: 'chunk-filter',
-      inputCount: docs?.length || 0,
+      inputCount: docs?.length ?? 0,
     });
     return docs;
   }
@@ -220,81 +279,42 @@ export function filterLowQualityChunks(docs: DocLike[], options: { query?: strin
     return [];
   }
 
-  // Phase 5: Code filtering setup
-  const { query = '' } = options;
-  const enableCodeFilter = process.env.ENABLE_CODE_FILTER !== 'false';
-  const isProgramming = query ? isProgrammingQuery(query) : true; // Default to including code if no query
-
-  // Build heading count map for diversity preservation
-  const headingCounts = buildHeadingCountMap(docs);
-
-  // Track filtered docs and reasons
-  const filtered: DocLike[] = [];
-  const dropped: Array<{ doc: DocLike; reason: string | null; tokens: number; heading: string | null }> = [];
-
-  for (const doc of docs) {
-    const tokens = estimateTokens(doc);
-    const heading = getTopLevelHeading(doc);
-    const isSoleRepresentative = heading && headingCounts.get(heading) === 1;
-    const isJunk = isJunkContent(doc.pageContent);
-    const isTiny = tokens < MIN_TOKEN_THRESHOLD;
-    const isCode = doc.metadata?.is_code === true;
-
-    // Determine if this doc should be kept
-    let keep = true;
-    let reason: string | null = null;
-
-    // Junk content is always dropped (navigation, breadcrumbs, separators have no value)
-    if (isJunk) {
-      keep = false;
-      reason = 'junk_pattern';
-    } else if (isTiny && !isSoleRepresentative) {
-      // Tiny chunks are dropped UNLESS they're the sole representative of their section
-      keep = false;
-      reason = 'below_token_threshold';
-    } else if (enableCodeFilter && isCode && !isProgramming) {
-      // Phase 5: Filter code chunks when query is not programming-related
-      keep = false;
-      reason = 'code_not_relevant';
-    }
-
-    if (keep) {
-      filtered.push(doc);
-    } else {
-      dropped.push({ doc, reason, tokens, heading });
-    }
-  }
+  const cfg = buildFilterConfig(docs, options);
+  const { filtered, dropped } = partitionChunks(docs, cfg);
 
   // Minimum output guarantee: always return at least 1 doc
   if (filtered.length === 0 && docs.length > 0) {
-    // Return the best-scoring doc from original input
-    const bestDoc = docs.reduce((best: DocLike, current: DocLike) => {
-      const bestScore = best.metadata?.score || best.rrfScore || 0;
-      const currentScore = current.metadata?.score || current.rrfScore || 0;
-      return currentScore > bestScore ? current : best;
-    }, docs[0]);
-
-    logger.warn('All chunks filtered, returning best-scoring fallback', {
-      service: 'chunk-filter',
-      originalCount: docs.length,
-      fallbackScore: bestDoc.metadata?.score || bestDoc.rrfScore,
-    });
-
-    return [bestDoc];
+    return [bestScoringFallback(docs)];
   }
 
   if (dropped.length > 0) {
-    logger.debug('Chunk filter results', {
-      service: 'chunk-filter',
-      inputCount: docs.length,
-      outputCount: filtered.length,
-      droppedCount: dropped.length,
-      droppedReasons: dropped.reduce((acc: Record<string, number>, d) => {
-        if (d.reason) acc[d.reason] = (acc[d.reason] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>),
-    });
+    logDroppedChunks(docs.length, filtered.length, dropped);
   }
 
   return filtered;
+}
+
+/** All chunks were filtered — return (and log) the single best-scoring doc from the input. */
+function bestScoringFallback(docs: DocLike[]): DocLike {
+  const bestDoc = pickBestDoc(docs);
+  logger.warn('All chunks filtered, returning best-scoring fallback', {
+    service: 'chunk-filter',
+    originalCount: docs.length,
+    fallbackScore: bestDoc.metadata?.score || bestDoc.rrfScore,
+  });
+  return bestDoc;
+}
+
+/** Debug-log the dropped-chunk breakdown by reason. */
+function logDroppedChunks(inputCount: number, outputCount: number, dropped: DroppedChunk[]): void {
+  logger.debug('Chunk filter results', {
+    service: 'chunk-filter',
+    inputCount,
+    outputCount,
+    droppedCount: dropped.length,
+    droppedReasons: dropped.reduce((acc: Record<string, number>, d) => {
+      if (d.reason) acc[d.reason] = (acc[d.reason] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>),
+  });
 }

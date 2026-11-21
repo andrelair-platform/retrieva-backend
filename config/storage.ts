@@ -58,13 +58,14 @@ export function buildDataSourceKey(
  * Build the Spaces object key for an assessment document.
  * organizations/{orgId}/workspaces/{wsId}/assessments/{assessmentId}/{index}_{fileName}
  */
-export function buildAssessmentFileKey(
-  orgId: string,
-  workspaceId: string,
-  assessmentId: string,
-  docIndex: number,
-  fileName: string
-) {
+export function buildAssessmentFileKey(opts: {
+  orgId: string;
+  workspaceId: string;
+  assessmentId: string;
+  docIndex: number;
+  fileName: string;
+}) {
+  const { orgId, workspaceId, assessmentId, docIndex, fileName } = opts;
   return `organizations/${orgId}/workspaces/${workspaceId}/assessments/${assessmentId}/${docIndex}_${fileName}`;
 }
 

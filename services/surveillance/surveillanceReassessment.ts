@@ -24,11 +24,11 @@ export interface SurveillanceEventLike {
 }
 
 export interface SurveillanceReassessDeps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injectable repo/reopen/logger for tests
+   
   repo?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   reopen?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   logger?: any;
 }
 
@@ -36,6 +36,32 @@ export interface SurveillanceReassessDeps {
  * Reopen every direct arrangement of the event's provider for reassessment. No provider / no direct
  * arrangements → no-op (the alert still stands for the inbox). Returns the fan-out counts.
  */
+/** Reopen a single arrangement for reassessment on a surveillance event. Returns true when triggered. */
+async function reopenOneArrangement(
+  reopen: any,
+  organizationId: string,
+  event: SurveillanceEventLike,
+  a: { id: string; lifecycleStatus: string }
+): Promise<boolean> {
+  const res = await reopen({
+    organizationId,
+    arrangement: { id: a.id, lifecycleStatus: a.lifecycleStatus },
+    reason: 'surveillance-incident',
+    event: {
+      action: 'arrangement.surveillance_incident',
+      metadata: {
+        eventId: event.id,
+        kind: event.kind ?? null,
+        severity: event.severity,
+        provider: event.providerName ?? null,
+        title: event.title ?? null,
+        url: event.url ?? null,
+      },
+    },
+  });
+  return !!res.triggered;
+}
+
 export async function reopenArrangementsForSurveillanceEvent(
   args: { organizationId: string; event: SurveillanceEventLike },
   deps: SurveillanceReassessDeps = {}
@@ -50,23 +76,7 @@ export async function reopenArrangementsForSurveillanceEvent(
   const arrangements = await repo.listByProvider(organizationId, event.providerNodeId);
   let reopened = 0;
   for (const a of arrangements) {
-    const res = await reopen({
-      organizationId,
-      arrangement: { id: a.id, lifecycleStatus: a.lifecycleStatus },
-      reason: 'surveillance-incident',
-      event: {
-        action: 'arrangement.surveillance_incident',
-        metadata: {
-          eventId: event.id,
-          kind: event.kind ?? null,
-          severity: event.severity,
-          provider: event.providerName ?? null,
-          title: event.title ?? null,
-          url: event.url ?? null,
-        },
-      },
-    });
-    if (res.triggered) reopened += 1;
+    if (await reopenOneArrangement(reopen, organizationId, event, a)) reopened += 1;
   }
 
   logger.info('surveillance.reassessment.fanned-out', {

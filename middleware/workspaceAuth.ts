@@ -18,6 +18,38 @@ import logger from '../config/logger.js';
  * Require workspace membership for RAG queries
  * User must be a member of at least one workspace to query
  */
+/** Map active (non-errored) memberships → the authorized-workspace shape attached to the request. */
+function toActiveWorkspaces(memberships: any[]) {
+  return memberships
+    .filter((m: any) => m.workspace && m.workspace.syncStatus !== 'error')
+    .map((m: any) => ({
+      _id: m.workspace.id,
+      workspaceId: m.workspace.id.toString(),
+      workspaceName: m.workspace.name,
+      role: m.role,
+      permissions: m.permissions,
+    }));
+}
+
+/**
+ * SECURITY (tenant isolation): if the client names a workspace (X-Workspace-Id / body / query), it
+ * MUST be one this user belongs to. Returns true when the request is allowed to proceed.
+ */
+function requestedWorkspaceAllowed(req: Request, activeWorkspaces: any[], userId: string): boolean {
+  const requestedWorkspaceId =
+    req.headers?.['x-workspace-id'] || req.body?.workspaceId || req.query?.workspaceId;
+  if (!requestedWorkspaceId) return true;
+  const isMember = activeWorkspaces.some((w: any) => w.workspaceId === String(requestedWorkspaceId));
+  if (!isMember) {
+    logger.warn('Active workspace not authorized for user', {
+      service: 'workspace-auth',
+      userId,
+      requestedWorkspaceId: String(requestedWorkspaceId),
+    });
+  }
+  return isMember;
+}
+
 export const requireWorkspaceAccess = async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Must be authenticated (no anonymous)
@@ -49,15 +81,7 @@ export const requireWorkspaceAccess = async (req: Request, res: Response, next: 
     }
 
     // Filter to active workspaces only
-    const activeWorkspaces = memberships
-      .filter((m: any) => m.workspace && m.workspace.syncStatus !== 'error')
-      .map((m: any) => ({
-        _id: m.workspace.id,
-        workspaceId: m.workspace.id.toString(),
-        workspaceName: m.workspace.name,
-        role: m.role,
-        permissions: m.permissions,
-      }));
+    const activeWorkspaces = toActiveWorkspaces(memberships);
 
     if (activeWorkspaces.length === 0) {
       return sendError(
@@ -70,22 +94,8 @@ export const requireWorkspaceAccess = async (req: Request, res: Response, next: 
     // Attach authorized workspaces to request
     req.authorizedWorkspaces = activeWorkspaces;
 
-    // SECURITY (tenant isolation): if the client names an active workspace
-    // (X-Workspace-Id / body / query), it MUST be one this user belongs to.
-    // Otherwise a member of workspace A could set X-Workspace-Id: B and have
-    // downstream code (setTenantContext, retrieval) operate on workspace B.
-    const requestedWorkspaceId =
-      req.headers?.['x-workspace-id'] || req.body?.workspaceId || req.query?.workspaceId;
-    if (requestedWorkspaceId) {
-      const isMember = activeWorkspaces.some((w: any) => w.workspaceId === String(requestedWorkspaceId));
-      if (!isMember) {
-        logger.warn('Active workspace not authorized for user', {
-          service: 'workspace-auth',
-          userId,
-          requestedWorkspaceId: String(requestedWorkspaceId),
-        });
-        return sendError(res, 403, 'You do not have access to this workspace');
-      }
+    if (!requestedWorkspaceAllowed(req, activeWorkspaces, userId)) {
+      return sendError(res, 403, 'You do not have access to this workspace');
     }
 
     logger.debug('Workspace access granted', {
@@ -150,6 +160,11 @@ export const requireWorkspaceOwner = async (req: Request, res: Response, next: N
  * Middleware to check if user can invite others
  * Owner or members with canInvite permission
  */
+/** A member may invite iff they are the owner or carry the explicit canInvite permission. */
+function memberCanInvite(membership: { role?: string; permissions?: { canInvite?: boolean } }): boolean {
+  return membership.role === 'owner' || !!membership.permissions?.canInvite;
+}
+
 export const canInviteMembers = async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!req.user?.userId) {
@@ -167,7 +182,7 @@ export const canInviteMembers = async (req: Request, res: Response, next: NextFu
       return sendError(res, 403, 'You are not a member of this workspace');
     }
 
-    if (membership.role !== 'owner' && !membership.permissions?.canInvite) {
+    if (!memberCanInvite(membership)) {
       return sendError(res, 403, 'You do not have permission to invite members');
     }
 

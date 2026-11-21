@@ -75,15 +75,15 @@
  */
 interface BuildRAGResultParams {
   answer?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous RAG payloads
+   
   formattedAnswer?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous RAG payloads
+   
   sources?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- validation result shape
+   
   validation: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous RAG payloads
+   
   citedSources?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous RAG payloads
+   
   retrievalMetrics?: any;
   conversationId?: string | null;
   retriedWithMoreContext?: boolean;

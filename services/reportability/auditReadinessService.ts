@@ -17,7 +17,7 @@ import { auditRegister } from '../completeness/rules.js';
 import { buildAuditDashboard, type DashboardArrangement, type DashboardConfig, type DashboardResult } from './auditDashboard.js';
 import { assembleAuditPack, type AuditPack, type AuditPackArtefacts, type AuditPackMeta } from './auditPack.js';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- persisted rows are heterogeneous
+ 
 type Row = any;
 
 // ── default loaders (real repos) ──────────────────────────────────────────────

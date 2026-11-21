@@ -103,6 +103,109 @@ async function llmGenerate(input: FollowUpGenInput): Promise<GeneratedFollowUp[]
     .map((f) => ({ parentId: String(f.parentId ?? ''), text: String(f.text).trim(), hint: f.hint ? String(f.hint).trim().slice(0, 120) : undefined }));
 }
 
+type WeakReason = 'contradicted' | 'low-score' | 'gap';
+type WeakAnswer = { q: ScoredQuestion; reason: WeakReason };
+
+/** Classify why an answered, un-probed question is weak, or null if it's fine. */
+function weaknessReason(
+  q: ScoredQuestion,
+  contradicted: Set<string>,
+  threshold: number
+): WeakReason | null {
+  if (contradicted.has(q.id)) return 'contradicted';
+  if (typeof q.score === 'number' && q.score < threshold) return 'low-score';
+  if (q.gapLevel === 'partial' || q.gapLevel === 'missing') return 'gap';
+  return null;
+}
+
+/**
+ * Pick the weak/contradicted ANSWERED, non-follow-up, not-already-probed questions
+ * to probe (capped at `max`), in order.
+ */
+function selectWeakAnswers(
+  questions: ScoredQuestion[],
+  contradicted: Set<string>,
+  threshold: number,
+  max: number
+): WeakAnswer[] {
+  // A question already probed by a follow-up this/last round → don't probe it again (dedup by parentId).
+  const alreadyProbed = new Set(
+    questions.filter((q) => q.source === 'followup' && q.parentId).map((q) => q.parentId!)
+  );
+
+  const weak: WeakAnswer[] = [];
+  for (const q of questions) {
+    if (q.source === 'followup') continue; // never follow-up a follow-up (bounded depth)
+    if (!q.answer || !q.answer.trim()) continue; // only probe ANSWERED questions
+    if (alreadyProbed.has(q.id)) continue;
+    const reason = weaknessReason(q, contradicted, threshold);
+    if (!reason) continue;
+    weak.push({ q, reason });
+    if (weak.length >= max) break;
+  }
+  return weak;
+}
+
+/** Deterministic fallback probe used when the model drafted nothing for a question. */
+function fallbackProbe(q: ScoredQuestion, reason: WeakReason): string {
+  return reason === 'contradicted'
+    ? `Your earlier answer appears inconsistent with your uploaded evidence for ${q.doraArticle}. Please reconcile and provide the specific supporting document, section, and date.`
+    : `Your earlier answer on ${q.doraArticle} was incomplete. Please provide specific evidence — figures, named controls, dates, or document references — that fully addresses: "${q.text}".`;
+}
+
+/** Assemble the follow-up questions from the LLM drafts (with deterministic fallback). */
+function buildFollowUpQuestions(
+  weak: WeakAnswer[],
+  drafted: GeneratedFollowUp[],
+  round: number
+): FollowUpQuestion[] {
+  const draftByParent = new Map(drafted.map((d) => [d.parentId, d] as const));
+  return weak.map(({ q, reason }) => {
+    const d = draftByParent.get(q.id);
+    const text = d?.text?.trim() ? d.text.trim() : fallbackProbe(q, reason);
+    return {
+      id: `followup-${randomUUID()}`,
+      text,
+      doraArticle: q.doraArticle,
+      category: q.category,
+      hint: d?.hint,
+      source: 'followup' as const,
+      parentId: q.id,
+      round,
+    };
+  });
+}
+
+/**
+ * Draft follow-ups for the weak answers via the (injectable) generator. Best-effort —
+ * on any error logs and returns [] so the deterministic fallback probes take over.
+ */
+async function draftFollowUps(
+  weak: WeakAnswer[],
+  deps: GenerateFollowUpsArgs['deps']
+): Promise<GeneratedFollowUp[]> {
+  const generate = deps?.generate ?? ((i: FollowUpGenInput) => llmGenerate(i));
+  try {
+    return await generate({
+      items: weak.map(({ q, reason }) => ({
+        parentId: q.id,
+        question: q.text,
+        answer: q.answer || '',
+        doraArticle: q.doraArticle,
+        weakness: reason,
+      })),
+      sessionId: deps?.sessionId,
+    });
+  } catch (err) {
+    logger.warn('ddq.followup.fallback', {
+      service: 'ddq-followup',
+      items: weak.length,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
+}
+
 /**
  * Generate follow-up questions for the weak/contradicted answers in a scored questionnaire. Returns the
  * new follow-up questions (one per selected answer) + which answers were selected and why. No side
@@ -115,68 +218,14 @@ export async function generateFollowUps(args: GenerateFollowUpsArgs): Promise<Ge
   const contradicted = args.contradictedQuestionIds ?? new Set<string>();
   const questions = args.questions || [];
 
-  // A question already probed by a follow-up this/last round → don't probe it again (dedup by parentId).
-  const alreadyProbed = new Set(questions.filter((q) => q.source === 'followup' && q.parentId).map((q) => q.parentId!));
-
-  const selected: GenerateFollowUpsResult['selected'] = [];
-  const weak: Array<{ q: ScoredQuestion; reason: 'contradicted' | 'low-score' | 'gap' }> = [];
-  for (const q of questions) {
-    if (q.source === 'followup') continue; // never follow-up a follow-up (bounded depth)
-    if (!q.answer || !q.answer.trim()) continue; // only probe ANSWERED questions
-    if (alreadyProbed.has(q.id)) continue;
-    let reason: 'contradicted' | 'low-score' | 'gap' | null = null;
-    if (contradicted.has(q.id)) reason = 'contradicted';
-    else if (typeof q.score === 'number' && q.score < threshold) reason = 'low-score';
-    else if (q.gapLevel === 'partial' || q.gapLevel === 'missing') reason = 'gap';
-    if (!reason) continue;
-    weak.push({ q, reason });
-    if (weak.length >= max) break;
-  }
-  for (const w of weak) selected.push({ parentId: w.q.id, reason: w.reason });
+  const weak = selectWeakAnswers(questions, contradicted, threshold, max);
+  const selected: GenerateFollowUpsResult['selected'] = weak.map((w) => ({
+    parentId: w.q.id,
+    reason: w.reason,
+  }));
   if (!weak.length) return { followUps: [], selected };
 
-  const generate = args.deps?.generate ?? ((i: FollowUpGenInput) => llmGenerate(i));
-  let drafted: GeneratedFollowUp[] = [];
-  try {
-    drafted = await generate({
-      items: weak.map(({ q, reason }) => ({
-        parentId: q.id,
-        question: q.text,
-        answer: q.answer || '',
-        doraArticle: q.doraArticle,
-        weakness: reason,
-      })),
-      sessionId: args.deps?.sessionId,
-    });
-  } catch (err) {
-    logger.warn('ddq.followup.fallback', {
-      service: 'ddq-followup',
-      items: weak.length,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    drafted = [];
-  }
-
-  const draftByParent = new Map(drafted.map((d) => [d.parentId, d] as const));
-  const followUps: FollowUpQuestion[] = weak.map(({ q, reason }) => {
-    const d = draftByParent.get(q.id);
-    const text = d?.text?.trim()
-      ? d.text.trim()
-      : // deterministic fallback probe (never fails because the model did).
-        reason === 'contradicted'
-          ? `Your earlier answer appears inconsistent with your uploaded evidence for ${q.doraArticle}. Please reconcile and provide the specific supporting document, section, and date.`
-          : `Your earlier answer on ${q.doraArticle} was incomplete. Please provide specific evidence — figures, named controls, dates, or document references — that fully addresses: "${q.text}".`;
-    return {
-      id: `followup-${randomUUID()}`,
-      text,
-      doraArticle: q.doraArticle,
-      category: q.category,
-      hint: d?.hint,
-      source: 'followup' as const,
-      parentId: q.id,
-      round,
-    };
-  });
-
+  const drafted = await draftFollowUps(weak, args.deps);
+  const followUps = buildFollowUpQuestions(weak, drafted, round);
   return { followUps, selected };
 }

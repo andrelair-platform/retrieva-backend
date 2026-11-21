@@ -74,14 +74,21 @@ async function loadDimensionMaps(organizationId: string) {
   };
 }
 
+// Read a field off a Map-resolved record, defaulting a miss to null (keeps enrichArrangement flat).
+function fieldOf(map: Map<string, any>, id: any, field: string): any {
+  if (id == null) return null;
+  const rec = map.get(String(id));
+  return rec ? (rec[field] ?? null) : null;
+}
+
 function enrichArrangement(a: any, maps: any) {
   return {
     ...a,
-    legalEntityName: maps.entities.get(String(a.legalEntityId))?.name ?? null,
-    businessFunctionName: maps.functions.get(String(a.businessFunctionId))?.name ?? null,
-    criticalOrImportant: maps.functions.get(String(a.businessFunctionId))?.criticalOrImportant ?? null,
-    providerName: maps.providers.get(String(a.providerId))?.displayName ?? null,
-    ictServiceName: a.ictServiceId ? (maps.services.get(String(a.ictServiceId))?.name ?? null) : null,
+    legalEntityName: fieldOf(maps.entities, a.legalEntityId, 'name'),
+    businessFunctionName: fieldOf(maps.functions, a.businessFunctionId, 'name'),
+    criticalOrImportant: fieldOf(maps.functions, a.businessFunctionId, 'criticalOrImportant'),
+    providerName: fieldOf(maps.providers, a.providerId, 'displayName'),
+    ictServiceName: fieldOf(maps.services, a.ictServiceId, 'name'),
   };
 }
 
@@ -98,6 +105,40 @@ export const listArrangements = catchAsync(async (req: Request, res: Response) =
   });
 });
 
+// Workflow B pre-contract intake — coerce the nullable business-owner fields ('' → null so the
+// numeric/date columns don't choke on empty form fields).
+function buildIntakeFields(body: any, userId: string) {
+  return {
+    businessPurpose: body.businessPurpose?.trim() || null,
+    expectedCost: body.expectedCost === '' || body.expectedCost == null ? null : String(body.expectedCost),
+    expectedCostCurrency: body.expectedCostCurrency?.trim() || null,
+    requestedStartDate: body.requestedStartDate || null,
+    // default the business owner to the submitter unless explicitly named
+    requestedBy: body.requestedBy ?? userId,
+  };
+}
+
+// Coerce the arrangement-create form body into the persisted row (handles the nullable intake fields).
+function buildArrangementRow(body: any, organizationId: string, userId: string) {
+  return {
+    organizationId,
+    legalEntityId: body.legalEntityId,
+    businessFunctionId: body.businessFunctionId,
+    providerId: body.providerId,
+    ictServiceId: body.ictServiceId ?? null,
+    arrangementType: body.arrangementType ?? 'external',
+    dataClasses: Array.isArray(body.dataClasses) ? body.dataClasses : [],
+    dataResidency: body.dataResidency ?? '',
+    criticality: body.criticality ?? null,
+    dependency: body.dependency ?? null,
+    exitDifficulty: body.exitDifficulty ?? null,
+    // RTV-31 trigger → initial lifecycle state (🟢 new → prospect; 🟡 existing/default → active).
+    lifecycleStatus: initialStatusForTrigger(body.trigger),
+    ...buildIntakeFields(body, userId),
+    createdBy: userId,
+  };
+}
+
 export const createArrangement = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
@@ -105,30 +146,9 @@ export const createArrangement = catchAsync(async (req: Request, res: Response) 
   if (!legalEntityId || !businessFunctionId || !providerId) {
     return sendError(res, 400, 'legalEntityId, businessFunctionId and providerId are required');
   }
-  const row = await arrangementRepository.create({
-    organizationId,
-    legalEntityId,
-    businessFunctionId,
-    providerId,
-    ictServiceId: req.body.ictServiceId ?? null,
-    arrangementType: req.body.arrangementType ?? 'external',
-    dataClasses: Array.isArray(req.body.dataClasses) ? req.body.dataClasses : [],
-    dataResidency: req.body.dataResidency ?? '',
-    criticality: req.body.criticality ?? null,
-    dependency: req.body.dependency ?? null,
-    exitDifficulty: req.body.exitDifficulty ?? null,
-    // RTV-31 trigger → initial lifecycle state (🟢 new → prospect; 🟡 existing/default → active).
-    lifecycleStatus: initialStatusForTrigger(req.body.trigger),
-    // Workflow B pre-contract intake — the business owner's need (nullable; only a new-provider prospect).
-    // Coerce '' → null so the numeric/date columns don't choke on empty form fields.
-    businessPurpose: req.body.businessPurpose?.trim() || null,
-    expectedCost: req.body.expectedCost === '' || req.body.expectedCost == null ? null : String(req.body.expectedCost),
-    expectedCostCurrency: req.body.expectedCostCurrency?.trim() || null,
-    requestedStartDate: req.body.requestedStartDate || null,
-    // default the business owner to the submitter unless explicitly named
-    requestedBy: req.body.requestedBy ?? req.user!.userId,
-    createdBy: req.user!.userId,
-  });
+  const row = await arrangementRepository.create(
+    buildArrangementRow(req.body, organizationId, req.user!.userId)
+  );
   const maps = await loadDimensionMaps(organizationId);
   sendSuccess(res, 201, 'Arrangement created', { arrangement: enrichArrangement(row, maps) });
 });
@@ -240,6 +260,37 @@ export const gapCheckContractClauses = catchAsync(async (req: Request, res: Resp
 // are rejected; terminal/onboarding decisions (approval) require the CHECKER capability (risk:accept)
 // — the analyst who runs assessments can't self-approve onboarding/resolution/exit (SoD). The
 // decision is recorded in the immutable audit trail.
+// Authorize a lifecycle transition → null when permitted, else the 403 message. Approval transitions
+// (terminal/onboarding) need the CHECKER capability (risk:accept); others need arrangement:edit (SoD).
+async function transitionDenial(user: any, transition: string, organizationId: string): Promise<string | null> {
+  const isApproval = isApprovalTransition(transition);
+  const action = isApproval ? 'risk:accept' : 'arrangement:edit';
+  if (await can(user, action, { organizationId })) return null;
+  return isApproval
+    ? 'This is a management-body decision — a checker role is required'
+    : 'You do not have permission to change the arrangement lifecycle';
+}
+
+// P1a activation gate — the pre-contract blockers for `approve_onboarding` (empty = clear to activate).
+async function activationGateBlockers(organizationId: string, arrangement: any): Promise<string[]> {
+  const [findings, concentration] = await Promise.all([
+    findingRepository.listByArrangement(organizationId, String(arrangement.id)),
+    analyzeOrganization(organizationId, {}, arrangement.legalEntityId ?? undefined),
+  ]);
+  const decision = buildOnboardingDecision({
+    arrangement: {
+      lifecycleStatus: arrangement.lifecycleStatus,
+      exitDifficulty: arrangement.exitDifficulty,
+      businessFunctionId: arrangement.businessFunctionId,
+    },
+    findings,
+    concentration,
+    transitions: allowedTransitions(arrangement.lifecycleStatus),
+    subcontractors: [],
+  });
+  return activationBlockers(decision);
+}
+
 export const transitionLifecycle = catchAsync(async (req: Request, res: Response) => {
   const organizationId = requireOrg(req, res);
   if (!organizationId) return;
@@ -258,16 +309,8 @@ export const transitionLifecycle = catchAsync(async (req: Request, res: Response
     );
   }
 
-  const action = isApprovalTransition(transition) ? 'risk:accept' : 'arrangement:edit';
-  if (!(await can(req.user, action, { organizationId }))) {
-    return sendError(
-      res,
-      403,
-      isApprovalTransition(transition)
-        ? 'This is a management-body decision — a checker role is required'
-        : 'You do not have permission to change the arrangement lifecycle'
-    );
-  }
+  const denial = await transitionDenial(req.user, transition, organizationId);
+  if (denial) return sendError(res, 403, denial);
 
   // P1a — HARD pre-contract activation gate (DORA Art. 28(4) / blueprint B-8). A checker may APPROVE
   // onboarding, but the platform must NOT let a risky supplier be activated just because the
@@ -276,22 +319,7 @@ export const transitionLifecycle = catchAsync(async (req: Request, res: Response
   // the checker resolves the findings / formally accepts the risk first (which clears 'blocked'), then
   // re-approves — never a silent activation.
   if (transition === 'approve_onboarding') {
-    const [findings, concentration] = await Promise.all([
-      findingRepository.listByArrangement(organizationId as string, String(arrangement.id)),
-      analyzeOrganization(organizationId as string, {}, arrangement.legalEntityId ?? undefined),
-    ]);
-    const decision = buildOnboardingDecision({
-      arrangement: {
-        lifecycleStatus: arrangement.lifecycleStatus,
-        exitDifficulty: arrangement.exitDifficulty,
-        businessFunctionId: arrangement.businessFunctionId,
-      },
-      findings,
-      concentration,
-      transitions: allowedTransitions(arrangement.lifecycleStatus),
-      subcontractors: [],
-    });
-    const blockers = activationBlockers(decision);
+    const blockers = await activationGateBlockers(organizationId as string, arrangement);
     if (blockers.length > 0) {
       return sendError(
         res,

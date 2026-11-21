@@ -168,6 +168,37 @@ export function validateOutput(
     modified: false,
   };
 
+  // Normalise type/emptiness; a non-null result here means we short-circuit (invalid or empty).
+  const early = normalizeContent(content, result, allowEmpty);
+  if (early) return early;
+
+  const trimmedContent = result.content;
+  result.metadata.hasContent = true;
+  result.metadata.characterCount = trimmedContent.length;
+  result.metadata.wordCount = trimmedContent.split(/\s+/).length;
+
+  // Count citations
+  const citations = trimmedContent.match(/\[Source\s+\d+\]/gi) || [];
+  result.metadata.citationCount = citations.length;
+
+  checkLengthConstraints(result, trimmedContent, minLength, maxLength);
+  checkBlockedPatterns(result, trimmedContent);
+  runQualityChecks(result, trimmedContent, strict);
+  logValidationIssues(result, trimmedContent);
+
+  return result;
+}
+
+/**
+ * Handle null/undefined, non-string, and empty content. Returns the result to short-circuit on
+ * (null/undefined, non-string, empty), or null to continue; on continue, result.content is the
+ * trimmed string and result.modified reflects any trimming.
+ */
+function normalizeContent(
+  content: unknown,
+  result: OutputValidationResult,
+  allowEmpty: boolean
+): OutputValidationResult | null {
   // Handle null/undefined
   if (content === null || content === undefined) {
     if (!allowEmpty) {
@@ -202,15 +233,17 @@ export function validateOutput(
     return result;
   }
 
-  result.metadata.hasContent = true;
-  result.metadata.characterCount = trimmedContent.length;
-  result.metadata.wordCount = trimmedContent.split(/\s+/).length;
+  result.content = trimmedContent;
+  return null;
+}
 
-  // Count citations
-  const citations = trimmedContent.match(/\[Source\s+\d+\]/gi) || [];
-  result.metadata.citationCount = citations.length;
-
-  // Check length constraints
+/** Enforce min/max length; too-long content is truncated with an ellipsis. */
+function checkLengthConstraints(
+  result: OutputValidationResult,
+  trimmedContent: string,
+  minLength: number,
+  maxLength: number
+) {
   if (trimmedContent.length < minLength) {
     result.valid = false;
     result.errors.push(
@@ -227,28 +260,33 @@ export function validateOutput(
     result.content = trimmedContent.substring(0, maxLength) + '...';
     result.modified = true;
   }
+}
 
-  // Check blocked patterns
+/** Reject content matching any hard-blocked pattern (code-only, error values, raw HTML, …). */
+function checkBlockedPatterns(result: OutputValidationResult, trimmedContent: string) {
   for (const { pattern, reason } of BLOCKED_PATTERNS) {
     if (pattern.test(trimmedContent)) {
       result.valid = false;
       result.errors.push(reason);
     }
   }
+}
 
-  // Run quality checks
+/** Run non-blocking quality checks → warnings (or errors when strict). */
+function runQualityChecks(result: OutputValidationResult, trimmedContent: string, strict: boolean) {
   for (const { check, warning } of QUALITY_CHECKS) {
-    if (check(trimmedContent)) {
-      if (strict) {
-        result.valid = false;
-        result.errors.push(warning);
-      } else {
-        result.warnings.push(warning);
-      }
+    if (!check(trimmedContent)) continue;
+    if (strict) {
+      result.valid = false;
+      result.errors.push(warning);
+    } else {
+      result.warnings.push(warning);
     }
   }
+}
 
-  // Log validation results if issues found
+/** Log a summary when validation surfaced any error/warning. */
+function logValidationIssues(result: OutputValidationResult, trimmedContent: string) {
   if (result.errors.length > 0 || result.warnings.length > 0) {
     logger.info('Output validation completed with issues', {
       service: 'output-validator',
@@ -259,8 +297,6 @@ export function validateOutput(
       citationCount: result.metadata.citationCount,
     });
   }
-
-  return result;
 }
 
 /**

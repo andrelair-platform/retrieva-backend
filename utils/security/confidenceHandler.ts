@@ -87,71 +87,96 @@ type ResultLike = {
   [k: string]: unknown;
 };
 
+// Log blocked/very-low responses for monitoring (no-op otherwise).
+function logLowConfidence(
+  result: ResultLike,
+  confidence: number,
+  level: string,
+  enableBlocking: boolean
+) {
+  if (level !== ConfidenceLevel.BLOCKED && level !== ConfidenceLevel.VERY_LOW) return;
+  logger.warn('Low confidence response detected', {
+    service: 'confidence-handler',
+    confidence: confidence.toFixed(3),
+    level,
+    questionPreview: result.question?.substring(0, 50),
+    blocked: enableBlocking && level === ConfidenceLevel.BLOCKED,
+  });
+}
+
+// The blocked-response shape: answer replaced with the canned message, original kept for debugging.
+function buildBlockedResult(result: ResultLike, level: string) {
+  return {
+    ...result,
+    answer: confidenceConfig.messages.blocked,
+    formattedAnswer: confidenceConfig.messages.blocked,
+    _confidenceBlocked: true,
+    _confidenceLevel: level,
+    _originalAnswer: result.answer, // Keep original for logging/debugging
+    validation: {
+      ...result.validation,
+      blocked: true,
+      blockReason: 'confidence_too_low',
+    },
+  };
+}
+
+// Prefix/suffix the answer with the confidence message. Returns null when no message applies at
+// this level (the caller then falls through to the plain, level-tagged result).
+function buildWarningResult(result: ResultLike, level: string) {
+  const message = getConfidenceMessage(level);
+  if (!message) return null;
+  const warningPrefix = level === ConfidenceLevel.VERY_LOW ? `${message}\n\n---\n\n` : '';
+  const warningSuffix =
+    level === ConfidenceLevel.LOW || level === ConfidenceLevel.MEDIUM
+      ? `\n\n---\n\n*${message}*`
+      : '';
+
+  return {
+    ...result,
+    answer: `${warningPrefix}${result.answer}${warningSuffix}`,
+    formattedAnswer: result.formattedAnswer
+      ? `${warningPrefix}${result.formattedAnswer}${warningSuffix}`
+      : undefined,
+    _confidenceLevel: level,
+    _confidenceWarningAdded: true,
+  };
+}
+
+// Apply the processing-option defaults (grouped here so the defaults aren't branches in the main
+// function). enableBlocking defaults to the config; warnings + logging default on.
+function resolveProcessOptions({
+  enableBlocking = confidenceConfig.enableBlocking,
+  addWarnings = true,
+  logLowConfidence = true,
+}: { enableBlocking?: boolean; addWarnings?: boolean; logLowConfidence?: boolean } = {}) {
+  return { enableBlocking, addWarnings, shouldLog: logLowConfidence };
+}
+
 export function processConfidence(
   result: ResultLike,
   options: { enableBlocking?: boolean; addWarnings?: boolean; logLowConfidence?: boolean } = {}
 ) {
-  const {
-    enableBlocking = confidenceConfig.enableBlocking,
-    addWarnings = true,
-    logLowConfidence = true,
-  } = options;
+  const { enableBlocking, addWarnings, shouldLog } = resolveProcessOptions(options);
 
   // Extract confidence from validation
   const confidence = result.validation?.confidence ?? 0.5;
   const level = getConfidenceLevel(confidence);
 
   // Log low confidence responses for monitoring
-  if (
-    logLowConfidence &&
-    (level === ConfidenceLevel.BLOCKED || level === ConfidenceLevel.VERY_LOW)
-  ) {
-    logger.warn('Low confidence response detected', {
-      service: 'confidence-handler',
-      confidence: confidence.toFixed(3),
-      level,
-      questionPreview: result.question?.substring(0, 50),
-      blocked: enableBlocking && level === ConfidenceLevel.BLOCKED,
-    });
+  if (shouldLog) {
+    logLowConfidence(result, confidence, level, enableBlocking);
   }
 
   // Handle blocked responses
   if (enableBlocking && level === ConfidenceLevel.BLOCKED) {
-    return {
-      ...result,
-      answer: confidenceConfig.messages.blocked,
-      formattedAnswer: confidenceConfig.messages.blocked,
-      _confidenceBlocked: true,
-      _confidenceLevel: level,
-      _originalAnswer: result.answer, // Keep original for logging/debugging
-      validation: {
-        ...result.validation,
-        blocked: true,
-        blockReason: 'confidence_too_low',
-      },
-    };
+    return buildBlockedResult(result, level);
   }
 
   // Add warnings/disclaimers to responses
   if (addWarnings) {
-    const message = getConfidenceMessage(level);
-    if (message) {
-      const warningPrefix = level === ConfidenceLevel.VERY_LOW ? `${message}\n\n---\n\n` : '';
-      const warningSuffix =
-        level === ConfidenceLevel.LOW || level === ConfidenceLevel.MEDIUM
-          ? `\n\n---\n\n*${message}*`
-          : '';
-
-      return {
-        ...result,
-        answer: `${warningPrefix}${result.answer}${warningSuffix}`,
-        formattedAnswer: result.formattedAnswer
-          ? `${warningPrefix}${result.formattedAnswer}${warningSuffix}`
-          : undefined,
-        _confidenceLevel: level,
-        _confidenceWarningAdded: true,
-      };
-    }
+    const warned = buildWarningResult(result, level);
+    if (warned) return warned;
   }
 
   return {

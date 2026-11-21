@@ -39,6 +39,122 @@ interface Graph {
 const byId = (rows?: Row[]): Map<string, Row> =>
   new Map((rows || []).map((r) => [String(r.id), r]));
 
+// Coalesce undefined/null to null (keeps the register's "null, never blank" rule) without a `??`
+// operator per field — moving the branch out of the hot mappers keeps their complexity in bounds.
+const orNull = <T>(v: T | null | undefined): T | null => (v === null || v === undefined ? null : v);
+
+// ── B_01: one row per legal entity ──────────────────────────────────────────
+function buildB01(legalEntities: Row[], entityMap: Map<string, Row>) {
+  return legalEntities.map((e: Row) => ({
+    lei: e.lei,
+    name: e.name,
+    country: e.country,
+    isGroupEntity: e.isGroupEntity,
+    parentName: e.parentEntityId ? orNull(entityMap.get(String(e.parentEntityId))?.name) : null,
+    _ref: e.name,
+  }));
+}
+
+// ── B_02: one row per arrangement (the fact) ────────────────────────────────
+function buildB02(
+  arrangements: Row[],
+  maps: {
+    entityMap: Map<string, Row>;
+    functionMap: Map<string, Row>;
+    serviceMap: Map<string, Row>;
+    providerMap: Map<string, Row>;
+    assessmentByWorkspace: Record<string, AssessmentSummary>;
+  }
+) {
+  const assessmentStatusFor = (provider?: Row) => {
+    const wsId = provider?.workspaceId ? String(provider.workspaceId) : null;
+    const a = wsId ? maps.assessmentByWorkspace[wsId] : null;
+    return a?.status ?? a?.results?.overallRisk ?? null;
+  };
+
+  return arrangements.map((a: Row) => {
+    const entity = maps.entityMap.get(String(a.legalEntityId));
+    const fn = maps.functionMap.get(String(a.businessFunctionId));
+    const provider = maps.providerMap.get(String(a.providerId));
+    const service = a.ictServiceId ? maps.serviceMap.get(String(a.ictServiceId)) : null;
+    return {
+      reference: String(a.id), // stable arrangement reference
+      arrangementType: a.arrangementType,
+      entityLei: orNull(entity?.lei),
+      functionName: orNull(fn?.name),
+      criticalOrImportant: orNull(fn?.criticalOrImportant),
+      providerName: orNull(provider?.displayName),
+      serviceName: orNull(service?.name),
+      criticality: orNull(a.criticality),
+      dataClasses: a.dataClasses ?? [],
+      dataResidency: orNull(a.dataResidency),
+      dependency: orNull(a.dependency),
+      exitDifficulty: orNull(a.exitDifficulty),
+      lifecycleStatus: orNull(a.lifecycleStatus), // RTV-31 — register reflects current state
+      assessmentStatus: assessmentStatusFor(provider),
+      _ref: String(a.id),
+      _isIntraGroup: a.arrangementType === 'intra_group',
+    };
+  });
+}
+
+// ── B_05: one row per provider identity ─────────────────────────────────────
+function buildB05(providerNodes: Row[]) {
+  return providerNodes.map((p: Row) => ({
+    lei: p.lei,
+    name: p.displayName,
+    country: orNull(p.country), // provider_nodes carries no country yet → gap (AC-4)
+    providerType: orNull(p.providerType),
+    _ref: p.displayName,
+  }));
+}
+
+// ── subcontracting: one row per provider→subcontractor edge ──────────────────
+function buildSubcontracting(edges: EdgeRow[]) {
+  return edges.map((e: EdgeRow) => ({
+    providerName: orNull(e.parent?.name),
+    subcontractorName: orNull(e.child?.name),
+    relationship: orNull(e.relationship),
+    confirmed: e.confirmed ?? false,
+    _ref: `${e.parent?.name ?? '?'}→${e.child?.name ?? '?'}`,
+  }));
+}
+
+// ── gaps: required field with a null/empty source (AC-4) ─────────────────────
+function collectGaps(
+  templates: Record<string, Array<Record<string, unknown>>>
+): Array<Record<string, unknown>> {
+  const gaps: Array<Record<string, unknown>> = [];
+  for (const key of RT0201_TEMPLATE_ORDER as Array<keyof typeof RT0201_TEMPLATES>) {
+    const def = RT0201_TEMPLATES[key];
+    for (const row of templates[key]) {
+      pushRowGaps(gaps, def.columns, row, key);
+    }
+  }
+  return gaps;
+}
+
+// Append a gap for each REQUIRED column whose source resolves to null/undefined on this row.
+function pushRowGaps(
+  gaps: Array<Record<string, unknown>>,
+  columns: (typeof RT0201_TEMPLATES)[keyof typeof RT0201_TEMPLATES]['columns'],
+  row: Record<string, unknown>,
+  key: string
+) {
+  for (const col of columns) {
+    const value = col.source(row);
+    if (col.required && (value === null || value === undefined)) {
+      gaps.push({
+        template: key,
+        code: col.code,
+        label: col.label,
+        ref: row._ref ?? null,
+        reason: 'missing required field',
+      });
+    }
+  }
+}
+
 /**
  * Assemble the register from a flat graph (pure):
  *   { legalEntities, businessFunctions, ictServices, arrangements, providerNodes,
@@ -60,90 +176,21 @@ export function assembleRegister(graph?: Graph) {
   const serviceMap = byId(ictServices);
   const providerMap = byId(providerNodes);
 
-  // ── B_01: one row per legal entity ──────────────────────────────────────────
-  const b01 = legalEntities.map((e: Row) => ({
-    lei: e.lei,
-    name: e.name,
-    country: e.country,
-    isGroupEntity: e.isGroupEntity,
-    parentName: e.parentEntityId ? (entityMap.get(String(e.parentEntityId))?.name ?? null) : null,
-    _ref: e.name,
-  }));
-
-  // ── B_02: one row per arrangement (the fact) ────────────────────────────────
-  const assessmentStatusFor = (provider?: Row) => {
-    const wsId = provider?.workspaceId ? String(provider.workspaceId) : null;
-    const a = wsId ? assessmentByWorkspace[wsId] : null;
-    return a?.status ?? a?.results?.overallRisk ?? null;
-  };
-
-  const b02 = arrangements.map((a: Row) => {
-    const entity = entityMap.get(String(a.legalEntityId));
-    const fn = functionMap.get(String(a.businessFunctionId));
-    const provider = providerMap.get(String(a.providerId));
-    const service = a.ictServiceId ? serviceMap.get(String(a.ictServiceId)) : null;
-    return {
-      reference: String(a.id), // stable arrangement reference
-      arrangementType: a.arrangementType,
-      entityLei: entity?.lei ?? null,
-      functionName: fn?.name ?? null,
-      criticalOrImportant: fn?.criticalOrImportant ?? null,
-      providerName: provider?.displayName ?? null,
-      serviceName: service?.name ?? null,
-      criticality: a.criticality ?? null,
-      dataClasses: a.dataClasses ?? [],
-      dataResidency: a.dataResidency ?? null,
-      dependency: a.dependency ?? null,
-      exitDifficulty: a.exitDifficulty ?? null,
-      lifecycleStatus: a.lifecycleStatus ?? null, // RTV-31 — the register reflects current state
-      assessmentStatus: assessmentStatusFor(provider),
-      _ref: String(a.id),
-      _isIntraGroup: a.arrangementType === 'intra_group',
-    };
+  const b01 = buildB01(legalEntities, entityMap);
+  const b02 = buildB02(arrangements, {
+    entityMap,
+    functionMap,
+    serviceMap,
+    providerMap,
+    assessmentByWorkspace,
   });
-
   // ── B_03: the intra-group subset of B_02 ────────────────────────────────────
   const b03 = b02.filter((r) => r._isIntraGroup);
-
-  // ── B_05: one row per provider identity ─────────────────────────────────────
-  const b05 = providerNodes.map((p: Row) => ({
-    lei: p.lei,
-    name: p.displayName,
-    country: p.country ?? null, // provider_nodes carries no country yet → gap (AC-4)
-    providerType: p.providerType ?? null,
-    _ref: p.displayName,
-  }));
-
-  // ── subcontracting: one row per provider→subcontractor edge ──────────────────
-  const sub = edges.map((e: EdgeRow) => ({
-    providerName: e.parent?.name ?? null,
-    subcontractorName: e.child?.name ?? null,
-    relationship: e.relationship ?? null,
-    confirmed: e.confirmed ?? false,
-    _ref: `${e.parent?.name ?? '?'}→${e.child?.name ?? '?'}`,
-  }));
+  const b05 = buildB05(providerNodes);
+  const sub = buildSubcontracting(edges);
 
   const templates = { B_01: b01, B_02: b02, B_03: b03, B_05: b05, subcontracting: sub };
-
-  // ── gaps: required field with a null/empty source (AC-4) ─────────────────────
-  const gaps: Array<Record<string, unknown>> = [];
-  for (const key of RT0201_TEMPLATE_ORDER as Array<keyof typeof templates>) {
-    const def = RT0201_TEMPLATES[key];
-    for (const row of templates[key]) {
-      for (const col of def.columns) {
-        const value = col.source(row);
-        if (col.required && (value === null || value === undefined)) {
-          gaps.push({
-            template: key,
-            code: col.code,
-            label: col.label,
-            ref: row._ref ?? null,
-            reason: 'missing required field',
-          });
-        }
-      }
-    }
-  }
+  const gaps = collectGaps(templates);
 
   return { version: REGISTER_TEMPLATE_VERSION, templates, gaps };
 }

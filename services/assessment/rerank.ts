@@ -19,7 +19,7 @@ export const RERANK_CANDIDATES = Number(process.env.ASSESSMENT_RERANK_CANDIDATES
 export const RERANK_TOP_N = Number(process.env.ASSESSMENT_RERANK_TOP_N) || 3;
 
 // A selector maps (control, spans) → the indices of the relevant spans, most-relevant first.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous domain objects
+ 
 export type RerankSelector = (control: any, spans: any[]) => Promise<number[]>;
 
 /**
@@ -31,9 +31,9 @@ export type RerankSelector = (control: any, spans: any[]) => Promise<number[]>;
  * caller decides whether to invoke; this stays safe regardless).
  */
 export async function rerankSpans(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   control: any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   spans: any[],
   selector: RerankSelector,
   opts: { topN?: number } = {}
@@ -63,7 +63,7 @@ export async function rerankSpans(
 
 /** LLM-backed selector — a cheap, JSON-mode relevance pass on a free model. */
 export function makeRerankSelector(ctx: { sessionId?: string } = {}): RerankSelector {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   return async function select(control: any, spans: any[]) {
     const llm = await createLLM({ purpose: 'formatter', temperature: 0, maxTokens: 256, jsonMode: true });
     const callbacks = getCallbacks({ feature: 'assessment-rerank', sessionId: ctx.sessionId });

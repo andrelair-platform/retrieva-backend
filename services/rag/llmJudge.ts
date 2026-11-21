@@ -11,8 +11,7 @@
  */
 
 import { ChatPromptTemplate } from '@langchain/core/prompts';
-/* eslint-disable @typescript-eslint/no-explicit-any -- the LLM-judge works over untyped model JSON
-   (evaluations, sources); typing every heterogeneous field adds noise without safety here. */
+ 
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { getJudgeLLM } from '../../config/llm.js';
 import logger from '../../config/logger.js';
